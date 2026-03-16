@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@pchmn/expo-material3-theme": "^1.4.0",
     "@react-native-vector-icons/material-design-icons": "^12.4.2",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
@@ -33,6 +34,7 @@
     "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-paper": "^5.15.0",
+    "react-native-paper-dates": "^0.23.4",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "^5.7.0",
     "react-native-screens": "~4.16.0",
