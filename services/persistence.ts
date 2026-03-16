@@ -2,9 +2,15 @@ import * as SQLite from "expo-sqlite";
 
 import {
     AppSettings,
+    Aquarium,
+    Asset,
+    Consumable,
+    DosingLog,
     Issue,
+    Livestock,
     Memo,
     TaskExecution,
+    TaskTemplate,
     TimelineEvent,
     WaterParameterLog,
 } from "@/types/aquapt";
@@ -13,7 +19,13 @@ const DB_NAME = "aquapt.db";
 const STATE_KEY = "app-state-v1";
 
 export interface PersistedAppState {
+  aquariums: Aquarium[];
+  taskTemplates: TaskTemplate[];
+  livestock: Livestock[];
   taskExecutions: TaskExecution[];
+  dosingLogs: DosingLog[];
+  assets: Asset[];
+  consumables: Consumable[];
   parameterLogs: WaterParameterLog[];
   issues: Issue[];
   memos: Memo[];

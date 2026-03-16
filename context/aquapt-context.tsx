@@ -11,6 +11,9 @@ import {
 
 import {
     aquariumsSeed,
+    assetsSeed,
+    consumablesSeed,
+    dosingLogsSeed,
     issuesSeed,
     livestockSeed,
     memosSeed,
@@ -27,9 +30,14 @@ import {
 import {
     AppSettings,
     Aquarium,
+    Asset,
+    Consumable,
+    DosingLog,
     Issue,
+    Livestock,
     Memo,
     TaskExecution,
+    TaskFrequency,
     TaskTemplate,
     TimelineEvent,
     WaterParameterLog,
@@ -42,8 +50,12 @@ const nowId = (prefix: string) =>
 interface AquaptContextValue {
   isHydrated: boolean;
   aquariums: Aquarium[];
+  livestock: Livestock[];
   taskTemplates: TaskTemplate[];
   taskExecutions: TaskExecution[];
+  dosingLogs: DosingLog[];
+  assets: Asset[];
+  consumables: Consumable[];
   parameterLogs: WaterParameterLog[];
   issues: Issue[];
   memos: Memo[];
@@ -51,12 +63,42 @@ interface AquaptContextValue {
   settings: AppSettings;
   livestockCountByAquarium: Record<string, number>;
   openIssuesByAquarium: Record<string, number>;
+  addAquarium: (input: Omit<Aquarium, "id">) => void;
+  editAquarium: (
+    aquariumId: string,
+    updates: Partial<Omit<Aquarium, "id">>,
+  ) => void;
+  addTaskTemplate: (input: {
+    title: string;
+    frequency: TaskFrequency;
+    aquariumIds: string[];
+    description?: string;
+  }) => void;
   completeTask: (
     taskTemplateId: string,
     aquariumId: string,
     note?: string,
   ) => void;
+  logDosing: (
+    aquariumId: string,
+    product: string,
+    amountMl: number,
+    note?: string,
+  ) => void;
   logParameters: (aquariumId: string, values: WaterParameters) => void;
+  addLivestock: (input: Omit<Livestock, "id">) => void;
+  transferLivestock: (
+    livestockId: string,
+    targetAquariumId: string,
+    note?: string,
+  ) => void;
+  addOffspring: (
+    parentLivestockId: string,
+    input: Omit<Livestock, "id" | "parentId" | "aquariumId"> & {
+      aquariumId?: string;
+    },
+  ) => void;
+  setLivestockFeedingNotes: (livestockId: string, dietaryNotes: string) => void;
   addIssue: (aquariumId: string, title: string) => void;
   setIssueStatus: (
     issueId: string,
@@ -64,22 +106,35 @@ interface AquaptContextValue {
     resolutionNote?: string,
   ) => void;
   addMemo: (aquariumId: string, content: string) => void;
+  addAsset: (input: Omit<Asset, "id">) => void;
+  addConsumable: (input: Omit<Consumable, "id" | "updatedAt">) => void;
+  consumeConsumable: (
+    consumableId: string,
+    amountUsed: number,
+    note?: string,
+  ) => void;
   saveApiKey: (value: string) => void;
+  saveAiModel: (value: string) => void;
 }
 
 const AquaptContext = createContext<AquaptContextValue | null>(null);
 
 export function AquaptProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setHydrated] = useState(false);
-  const [aquariums] = useState(aquariumsSeed);
-  const [taskTemplates] = useState(taskTemplatesSeed);
+  const [aquariums, setAquariums] = useState(aquariumsSeed);
+  const [livestock, setLivestock] = useState(livestockSeed);
+  const [taskTemplates, setTaskTemplates] = useState(taskTemplatesSeed);
   const [taskExecutions, setTaskExecutions] = useState(taskExecutionsSeed);
+  const [dosingLogs, setDosingLogs] = useState(dosingLogsSeed);
+  const [assets, setAssets] = useState(assetsSeed);
+  const [consumables, setConsumables] = useState(consumablesSeed);
   const [parameterLogs, setParameterLogs] = useState(parameterLogsSeed);
   const [issues, setIssues] = useState(issuesSeed);
   const [memos, setMemos] = useState(memosSeed);
   const [timeline, setTimeline] = useState(timelineSeed);
   const [settings, setSettings] = useState<AppSettings>({
     openRouterApiKey: "",
+    aiModel: "openai/gpt-4o-mini",
   });
   const hasHydratedOnceRef = useRef(false);
 
@@ -95,12 +150,23 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        setAquariums(persisted.aquariums ?? aquariumsSeed);
+        setLivestock(persisted.livestock ?? livestockSeed);
+        setTaskTemplates(persisted.taskTemplates ?? taskTemplatesSeed);
         setTaskExecutions(persisted.taskExecutions ?? taskExecutionsSeed);
+        setDosingLogs(persisted.dosingLogs ?? dosingLogsSeed);
+        setAssets(persisted.assets ?? assetsSeed);
+        setConsumables(persisted.consumables ?? consumablesSeed);
         setParameterLogs(persisted.parameterLogs ?? parameterLogsSeed);
         setIssues(persisted.issues ?? issuesSeed);
         setMemos(persisted.memos ?? memosSeed);
         setTimeline(persisted.timeline ?? timelineSeed);
-        setSettings(persisted.settings ?? { openRouterApiKey: "" });
+        setSettings(
+          persisted.settings ?? {
+            openRouterApiKey: "",
+            aiModel: "openai/gpt-4o-mini",
+          },
+        );
       } catch (error) {
         console.warn("Persistence bootstrap failed", error);
       } finally {
@@ -126,7 +192,13 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     const persist = async () => {
       try {
         await savePersistedState({
+          aquariums,
+          livestock,
+          taskTemplates,
           taskExecutions,
+          dosingLogs,
+          assets,
+          consumables,
           parameterLogs,
           issues,
           memos,
@@ -139,14 +211,27 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     };
 
     persist();
-  }, [issues, memos, parameterLogs, settings, taskExecutions, timeline]);
+  }, [
+    aquariums,
+    livestock,
+    taskTemplates,
+    taskExecutions,
+    dosingLogs,
+    assets,
+    consumables,
+    issues,
+    memos,
+    parameterLogs,
+    settings,
+    timeline,
+  ]);
 
   const livestockCountByAquarium = useMemo(() => {
-    return livestockSeed.reduce<Record<string, number>>((acc, item) => {
+    return livestock.reduce<Record<string, number>>((acc, item) => {
       acc[item.aquariumId] = (acc[item.aquariumId] ?? 0) + item.quantity;
       return acc;
     }, {});
-  }, []);
+  }, [livestock]);
 
   const openIssuesByAquarium = useMemo(() => {
     return issues.reduce<Record<string, number>>((acc, issue) => {
@@ -156,6 +241,39 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       return acc;
     }, {});
   }, [issues]);
+
+  const addAquarium = useCallback((input: Omit<Aquarium, "id">) => {
+    setAquariums((prev) => [{ ...input, id: nowId("tank") }, ...prev]);
+  }, []);
+
+  const editAquarium = useCallback(
+    (aquariumId: string, updates: Partial<Omit<Aquarium, "id">>) => {
+      setAquariums((prev) =>
+        prev.map((aq) => (aq.id === aquariumId ? { ...aq, ...updates } : aq)),
+      );
+    },
+    [],
+  );
+
+  const addTaskTemplate = useCallback(
+    (input: {
+      title: string;
+      frequency: TaskFrequency;
+      aquariumIds: string[];
+      description?: string;
+    }) => {
+      const task: TaskTemplate = {
+        id: nowId("task"),
+        title: input.title,
+        frequency: input.frequency,
+        aquariumIds: input.aquariumIds,
+        description: input.description,
+      };
+
+      setTaskTemplates((prev) => [task, ...prev]);
+    },
+    [],
+  );
 
   const completeTask = useCallback(
     (taskTemplateId: string, aquariumId: string, note?: string) => {
@@ -185,6 +303,38 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       ]);
     },
     [taskTemplates],
+  );
+
+  const logDosing = useCallback(
+    (aquariumId: string, product: string, amountMl: number, note?: string) => {
+      if (!product.trim() || !Number.isFinite(amountMl) || amountMl <= 0) {
+        return;
+      }
+
+      const createdAt = new Date().toISOString();
+      const dosing: DosingLog = {
+        id: nowId("dose"),
+        aquariumId,
+        product: product.trim(),
+        amountMl,
+        createdAt,
+        note,
+      };
+
+      setDosingLogs((prev) => [dosing, ...prev]);
+      setTimeline((prev) => [
+        {
+          id: nowId("event"),
+          aquariumId,
+          type: "dosing",
+          createdAt,
+          title: `Dosed ${dosing.product}`,
+          description: `${amountMl}ml${note ? ` • ${note}` : ""}`,
+        },
+        ...prev,
+      ]);
+    },
+    [],
   );
 
   const logParameters = useCallback(
@@ -312,12 +462,204 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     setSettings((prev) => ({ ...prev, openRouterApiKey: value.trim() }));
   }, []);
 
+  const saveAiModel = useCallback((value: string) => {
+    setSettings((prev) => ({ ...prev, aiModel: value.trim() || prev.aiModel }));
+  }, []);
+
+  const addLivestock = useCallback((input: Omit<Livestock, "id">) => {
+    const livestockItem: Livestock = {
+      ...input,
+      id: nowId("live"),
+      status: input.status ?? "active",
+    };
+
+    setLivestock((prev) => [livestockItem, ...prev]);
+    setTimeline((prev) => [
+      {
+        id: nowId("event"),
+        aquariumId: livestockItem.aquariumId,
+        type: "livestock",
+        createdAt: new Date().toISOString(),
+        title: "Livestock added",
+        description: `${livestockItem.name} (${livestockItem.quantity})`,
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const transferLivestock = useCallback(
+    (livestockId: string, targetAquariumId: string, note?: string) => {
+      let moved: Livestock | null = null;
+
+      setLivestock((prev) =>
+        prev.map((item) => {
+          if (item.id !== livestockId) {
+            return item;
+          }
+
+          moved = { ...item, aquariumId: targetAquariumId };
+          return moved;
+        }),
+      );
+
+      if (moved) {
+        setTimeline((prev) => [
+          {
+            id: nowId("event"),
+            aquariumId: targetAquariumId,
+            type: "livestock",
+            createdAt: new Date().toISOString(),
+            title: `Transferred ${moved?.name}`,
+            description: note,
+          },
+          ...prev,
+        ]);
+      }
+    },
+    [],
+  );
+
+  const addOffspring = useCallback(
+    (
+      parentLivestockId: string,
+      input: Omit<Livestock, "id" | "parentId" | "aquariumId"> & {
+        aquariumId?: string;
+      },
+    ) => {
+      const parent = livestock.find((item) => item.id === parentLivestockId);
+      if (!parent) {
+        return;
+      }
+
+      const createdAt = new Date().toISOString();
+      const offspring: Livestock = {
+        ...input,
+        id: nowId("live"),
+        parentId: parent.id,
+        aquariumId: input.aquariumId ?? parent.aquariumId,
+        acquiredAt: input.acquiredAt || createdAt,
+      };
+
+      setLivestock((prev) => [offspring, ...prev]);
+      setTimeline((prev) => [
+        {
+          id: nowId("event"),
+          aquariumId: offspring.aquariumId,
+          type: "livestock",
+          createdAt,
+          title: "Offspring linked",
+          description: `${offspring.name} linked to ${parent.name}`,
+        },
+        ...prev,
+      ]);
+    },
+    [livestock],
+  );
+
+  const setLivestockFeedingNotes = useCallback(
+    (livestockId: string, dietaryNotes: string) => {
+      setLivestock((prev) =>
+        prev.map((item) =>
+          item.id === livestockId ? { ...item, dietaryNotes } : item,
+        ),
+      );
+    },
+    [],
+  );
+
+  const addAsset = useCallback((input: Omit<Asset, "id">) => {
+    const created: Asset = { ...input, id: nowId("asset") };
+    setAssets((prev) => [created, ...prev]);
+    setTimeline((prev) => [
+      {
+        id: nowId("event"),
+        aquariumId: created.aquariumId,
+        type: "asset",
+        createdAt: new Date().toISOString(),
+        title: "Asset registered",
+        description: created.brandModel,
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const addConsumable = useCallback(
+    (input: Omit<Consumable, "id" | "updatedAt">) => {
+      const createdAt = new Date().toISOString();
+      const created: Consumable = {
+        ...input,
+        id: nowId("cons"),
+        updatedAt: createdAt,
+      };
+
+      setConsumables((prev) => [created, ...prev]);
+      setTimeline((prev) => [
+        {
+          id: nowId("event"),
+          aquariumId: created.aquariumId,
+          type: "consumable",
+          createdAt,
+          title: "Consumable tracked",
+          description: `${created.name} (${created.remaining}${created.unit})`,
+        },
+        ...prev,
+      ]);
+    },
+    [],
+  );
+
+  const consumeConsumable = useCallback(
+    (consumableId: string, amountUsed: number, note?: string) => {
+      if (!Number.isFinite(amountUsed) || amountUsed <= 0) {
+        return;
+      }
+
+      let updated: Consumable | null = null;
+
+      setConsumables((prev) =>
+        prev.map((item) => {
+          if (item.id !== consumableId) {
+            return item;
+          }
+
+          updated = {
+            ...item,
+            remaining: Math.max(0, item.remaining - amountUsed),
+            updatedAt: new Date().toISOString(),
+          };
+
+          return updated;
+        }),
+      );
+
+      if (updated !== null) {
+        const consumed = updated as Consumable;
+        setTimeline((prev) => [
+          {
+            id: nowId("event"),
+            aquariumId: consumed.aquariumId,
+            type: "consumable",
+            createdAt: new Date().toISOString(),
+            title: `Used ${consumed.name}`,
+            description: `${amountUsed}${consumed.unit}${note ? ` • ${note}` : ""}`,
+          },
+          ...prev,
+        ]);
+      }
+    },
+    [],
+  );
+
   const value = useMemo<AquaptContextValue>(
     () => ({
       isHydrated,
       aquariums,
+      livestock,
       taskTemplates,
       taskExecutions,
+      dosingLogs,
+      assets,
+      consumables,
       parameterLogs,
       issues,
       memos,
@@ -325,18 +667,34 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       settings,
       livestockCountByAquarium,
       openIssuesByAquarium,
+      addAquarium,
+      editAquarium,
+      addTaskTemplate,
       completeTask,
+      logDosing,
       logParameters,
+      addLivestock,
+      transferLivestock,
+      addOffspring,
+      setLivestockFeedingNotes,
       addIssue,
       setIssueStatus,
       addMemo,
+      addAsset,
+      addConsumable,
+      consumeConsumable,
       saveApiKey,
+      saveAiModel,
     }),
     [
       isHydrated,
       aquariums,
+      livestock,
       taskTemplates,
       taskExecutions,
+      dosingLogs,
+      assets,
+      consumables,
       parameterLogs,
       issues,
       memos,
@@ -344,12 +702,24 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       settings,
       livestockCountByAquarium,
       openIssuesByAquarium,
+      addAquarium,
+      editAquarium,
+      addTaskTemplate,
       completeTask,
+      logDosing,
       logParameters,
+      addLivestock,
+      transferLivestock,
+      addOffspring,
+      setLivestockFeedingNotes,
       addIssue,
       setIssueStatus,
       addMemo,
+      addAsset,
+      addConsumable,
+      consumeConsumable,
       saveApiKey,
+      saveAiModel,
     ],
   );
 

@@ -1,5 +1,8 @@
 import {
     Aquarium,
+    Asset,
+    Consumable,
+    DosingLog,
     Issue,
     Livestock,
     Memo,
@@ -34,19 +37,77 @@ export const livestockSeed: Livestock[] = [
   {
     id: "live-1",
     aquariumId: "tank-1",
+    kind: "shrimp",
     name: "Red Cherry Shrimp Colony",
     species: "Neocaridina davidi",
     quantity: 18,
     acquiredAt: "2025-09-10",
+    dietaryNotes: "Bacter AE twice weekly, blanched spinach monthly.",
+    status: "active",
   },
   {
     id: "live-2",
     aquariumId: "tank-2",
+    kind: "fish",
     name: "Clownfish Pair",
     species: "Amphiprion ocellaris",
     quantity: 2,
     acquiredAt: "2025-11-10",
     purchasePrice: 90,
+    dietaryNotes: "Pellets AM, frozen mysis PM.",
+    status: "active",
+  },
+];
+
+export const dosingLogsSeed: DosingLog[] = [
+  {
+    id: "dose-1",
+    aquariumId: "tank-2",
+    product: "Seachem Reef Trace",
+    amountMl: 5,
+    createdAt: "2026-03-16T06:30:00.000Z",
+    note: "Daily micro-elements",
+  },
+];
+
+export const assetsSeed: Asset[] = [
+  {
+    id: "asset-1",
+    aquariumId: "tank-1",
+    category: "filter",
+    brandModel: "Oase Biomaster 350",
+    purchasedAt: "2025-08-18",
+    price: 220,
+    maintenanceTaskTemplateIds: ["task-2"],
+  },
+  {
+    id: "asset-2",
+    aquariumId: "tank-2",
+    category: "light",
+    brandModel: "AI Prime 16HD",
+    purchasedAt: "2025-10-30",
+    price: 280,
+  },
+];
+
+export const consumablesSeed: Consumable[] = [
+  {
+    id: "cons-1",
+    aquariumId: "tank-1",
+    name: "Filter floss",
+    unit: "pcs",
+    remaining: 12,
+    reorderAt: 4,
+    updatedAt: "2026-03-10T00:00:00.000Z",
+  },
+  {
+    id: "cons-2",
+    aquariumId: "tank-2",
+    name: "RO/DI resin",
+    unit: "g",
+    remaining: 700,
+    reorderAt: 200,
+    updatedAt: "2026-03-12T00:00:00.000Z",
   },
 ];
 
@@ -170,5 +231,13 @@ export const timelineSeed: TimelineEvent[] = [
     createdAt: "2026-03-16T08:30:00.000Z",
     title: "Issue reported",
     description: "Skimmer overflowing after dosing",
+  },
+  {
+    id: "event-4",
+    aquariumId: "tank-2",
+    type: "dosing",
+    createdAt: "2026-03-16T06:30:00.000Z",
+    title: "Dosed Seachem Reef Trace",
+    description: "5ml • Daily micro-elements",
   },
 ];

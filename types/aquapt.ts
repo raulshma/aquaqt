@@ -10,7 +10,9 @@ export type TimelineEventType =
   | "issue"
   | "livestock"
   | "memo"
-  | "dosing";
+  | "dosing"
+  | "asset"
+  | "consumable";
 
 export interface Aquarium {
   id: string;
@@ -45,11 +47,45 @@ export interface WaterParameterLog {
 export interface Livestock {
   id: string;
   aquariumId: string;
+  kind: "fish" | "shrimp" | "snail" | "coral" | "plant" | "other";
   name: string;
   species: string;
   quantity: number;
   acquiredAt: string;
   purchasePrice?: number;
+  photoUri?: string;
+  dietaryNotes?: string;
+  parentId?: string;
+  status?: "active" | "ill" | "deceased";
+}
+
+export interface DosingLog {
+  id: string;
+  aquariumId: string;
+  product: string;
+  amountMl: number;
+  createdAt: string;
+  note?: string;
+}
+
+export interface Asset {
+  id: string;
+  aquariumId: string;
+  category: "filter" | "heater" | "light" | "co2" | "other";
+  brandModel: string;
+  purchasedAt?: string;
+  price?: number;
+  maintenanceTaskTemplateIds?: string[];
+}
+
+export interface Consumable {
+  id: string;
+  aquariumId: string;
+  name: string;
+  unit: "g" | "ml" | "pcs";
+  remaining: number;
+  reorderAt?: number;
+  updatedAt: string;
 }
 
 export interface TaskTemplate {
@@ -95,4 +131,5 @@ export interface TimelineEvent {
 
 export interface AppSettings {
   openRouterApiKey: string;
+  aiModel: string;
 }

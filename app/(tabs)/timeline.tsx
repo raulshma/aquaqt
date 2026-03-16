@@ -4,14 +4,13 @@ import {
     Button,
     Card,
     Chip,
-    Dialog,
     FAB,
-    Portal,
     SegmentedButtons,
     Text,
     TextInput,
 } from "react-native-paper";
 
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useAquapt } from "@/context/aquapt-context";
 import { TimelineEventType } from "@/types/aquapt";
 
@@ -19,17 +18,24 @@ const filters: { value: TimelineEventType | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "task", label: "Tasks" },
   { value: "parameter", label: "Parameters" },
+  { value: "dosing", label: "Dosing" },
   { value: "issue", label: "Issues" },
+  { value: "livestock", label: "Livestock" },
+  { value: "asset", label: "Assets" },
+  { value: "consumable", label: "Consumables" },
   { value: "memo", label: "Memos" },
 ];
 
 export default function TimelineScreen() {
-  const { timeline, aquariums, addMemo, addIssue, logParameters } = useAquapt();
+  const { timeline, aquariums, addMemo, addIssue, logParameters, logDosing } =
+    useAquapt();
   const [selectedFilter, setSelectedFilter] = useState<
     TimelineEventType | "all"
   >("all");
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const [action, setAction] = useState<"memo" | "issue" | "parameter">("memo");
+  const [action, setAction] = useState<
+    "memo" | "issue" | "parameter" | "dosing"
+  >("memo");
   const [selectedAquariumId, setSelectedAquariumId] = useState(
     aquariums[0]?.id ?? "",
   );
@@ -37,6 +43,8 @@ export default function TimelineScreen() {
   const [issueTitle, setIssueTitle] = useState("");
   const [nitrate, setNitrate] = useState("");
   const [ph, setPh] = useState("");
+  const [doseProduct, setDoseProduct] = useState("");
+  const [doseAmount, setDoseAmount] = useState("");
 
   const filteredTimeline = useMemo(() => {
     const list = [...timeline].sort(
@@ -85,6 +93,20 @@ export default function TimelineScreen() {
       setPh("");
     }
 
+    if (action === "dosing") {
+      const amountValue = Number(doseAmount);
+
+      if (
+        doseProduct.trim() &&
+        Number.isFinite(amountValue) &&
+        amountValue > 0
+      ) {
+        logDosing(selectedAquariumId, doseProduct.trim(), amountValue);
+        setDoseProduct("");
+        setDoseAmount("");
+      }
+    }
+
     setDialogOpen(false);
   };
 
@@ -130,82 +152,112 @@ export default function TimelineScreen() {
             </Card.Content>
           </Card>
         ))}
+
+        {filteredTimeline.length === 0 ? (
+          <Card mode="outlined">
+            <Card.Content>
+              <Text variant="bodyMedium">
+                No timeline events for this filter yet.
+              </Text>
+            </Card.Content>
+          </Card>
+        ) : null}
       </ScrollView>
 
-      <Portal>
-        <Dialog visible={isDialogOpen} onDismiss={() => setDialogOpen(false)}>
-          <Dialog.Title>Quick action</Dialog.Title>
-          <Dialog.Content>
-            <SegmentedButtons
-              value={selectedAquariumId}
-              onValueChange={setSelectedAquariumId}
-              buttons={aquariums.map((aq) => ({
-                label: aq.name,
-                value: aq.id,
-              }))}
-              density="small"
-            />
-
-            <SegmentedButtons
-              value={action}
-              onValueChange={(value) =>
-                setAction(value as "memo" | "issue" | "parameter")
-              }
-              style={styles.quickActionSelector}
-              buttons={[
-                { value: "memo", label: "Memo" },
-                { value: "issue", label: "Issue" },
-                { value: "parameter", label: "Params" },
-              ]}
-            />
-
-            {action === "memo" ? (
-              <TextInput
-                mode="outlined"
-                label="Memo"
-                multiline
-                numberOfLines={4}
-                value={memo}
-                onChangeText={setMemo}
-                style={styles.quickActionInput}
-              />
-            ) : null}
-
-            {action === "issue" ? (
-              <TextInput
-                mode="outlined"
-                label="Issue title"
-                value={issueTitle}
-                onChangeText={setIssueTitle}
-                style={styles.quickActionInput}
-              />
-            ) : null}
-
-            {action === "parameter" ? (
-              <View style={styles.parameterInputs}>
-                <TextInput
-                  mode="outlined"
-                  label="Nitrate"
-                  value={nitrate}
-                  onChangeText={setNitrate}
-                  keyboardType="numeric"
-                />
-                <TextInput
-                  mode="outlined"
-                  label="pH"
-                  value={ph}
-                  onChangeText={setPh}
-                  keyboardType="numeric"
-                />
-              </View>
-            ) : null}
-          </Dialog.Content>
-          <Dialog.Actions>
+      <BottomSheet
+        visible={isDialogOpen}
+        onDismiss={() => setDialogOpen(false)}
+        title="Quick action"
+        actions={
+          <>
             <Button onPress={() => setDialogOpen(false)}>Cancel</Button>
             <Button onPress={saveQuickLog}>Save</Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+          </>
+        }
+      >
+        <SegmentedButtons
+          value={selectedAquariumId}
+          onValueChange={setSelectedAquariumId}
+          buttons={aquariums.map((aq) => ({
+            label: aq.name,
+            value: aq.id,
+          }))}
+          density="small"
+        />
+
+        <SegmentedButtons
+          value={action}
+          onValueChange={(value) =>
+            setAction(value as "memo" | "issue" | "parameter" | "dosing")
+          }
+          style={styles.quickActionSelector}
+          buttons={[
+            { value: "memo", label: "Memo" },
+            { value: "issue", label: "Issue" },
+            { value: "parameter", label: "Params" },
+            { value: "dosing", label: "Dosing" },
+          ]}
+        />
+
+        {action === "memo" ? (
+          <TextInput
+            mode="outlined"
+            label="Memo"
+            multiline
+            numberOfLines={4}
+            value={memo}
+            onChangeText={setMemo}
+            style={styles.quickActionInput}
+          />
+        ) : null}
+
+        {action === "issue" ? (
+          <TextInput
+            mode="outlined"
+            label="Issue title"
+            value={issueTitle}
+            onChangeText={setIssueTitle}
+            style={styles.quickActionInput}
+          />
+        ) : null}
+
+        {action === "parameter" ? (
+          <View style={styles.parameterInputs}>
+            <TextInput
+              mode="outlined"
+              label="Nitrate"
+              value={nitrate}
+              onChangeText={setNitrate}
+              keyboardType="numeric"
+            />
+            <TextInput
+              mode="outlined"
+              label="pH"
+              value={ph}
+              onChangeText={setPh}
+              keyboardType="numeric"
+            />
+          </View>
+        ) : null}
+
+        {action === "dosing" ? (
+          <View style={styles.parameterInputs}>
+            <TextInput
+              mode="outlined"
+              label="Product"
+              value={doseProduct}
+              onChangeText={setDoseProduct}
+            />
+            <TextInput
+              mode="outlined"
+              label="Amount (ml)"
+              value={doseAmount}
+              onChangeText={setDoseAmount}
+              keyboardType="numeric"
+            />
+          </View>
+        ) : null}
+      </BottomSheet>
 
       <FAB
         icon="plus"

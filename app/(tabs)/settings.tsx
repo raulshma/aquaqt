@@ -1,17 +1,113 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet } from "react-native";
-import { Button, Card, Text, TextInput } from "react-native-paper";
+import {
+    ActivityIndicator,
+    Button,
+    Card,
+    Text,
+    TextInput,
+} from "react-native-paper";
 
 import { useAquapt } from "@/context/aquapt-context";
 
 export default function SettingsScreen() {
-  const { settings, saveApiKey } = useAquapt();
+  const {
+    settings,
+    aquariums,
+    issues,
+    parameterLogs,
+    saveApiKey,
+    saveAiModel,
+  } = useAquapt();
   const [apiKey, setApiKey] = useState(settings.openRouterApiKey);
+  const [model, setModel] = useState(settings.aiModel);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [isAsking, setAsking] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
+
+  const aquariumSummary = useMemo(() => {
+    return aquariums
+      .map((aq) => {
+        const latestParams = parameterLogs
+          .filter((p) => p.aquariumId === aq.id)
+          .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0];
+        const openIssues = issues.filter(
+          (issue) => issue.aquariumId === aq.id && issue.status !== "resolved",
+        );
+
+        return {
+          name: aq.name,
+          waterType: aq.waterType,
+          latestParams: latestParams?.values ?? null,
+          openIssues: openIssues.map((issue) => issue.title),
+        };
+      })
+      .slice(0, 8);
+  }, [aquariums, issues, parameterLogs]);
 
   const handleSave = () => {
     saveApiKey(apiKey);
+    saveAiModel(model);
     setSavedAt(new Date().toLocaleString());
+  };
+
+  const askAssistant = async () => {
+    if (!apiKey.trim() || !question.trim()) {
+      return;
+    }
+
+    setAsking(true);
+    setAssistantError(null);
+
+    try {
+      const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey.trim()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: model.trim() || settings.aiModel,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are Aquapt assistant. Give concise, practical aquarium advice based on provided context. If uncertain, say so.",
+              },
+              {
+                role: "system",
+                content: `App context: ${JSON.stringify({ aquariumSummary })}`,
+              },
+              {
+                role: "user",
+                content: question.trim(),
+              },
+            ],
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "Assistant request failed.");
+      }
+
+      const data = (await response.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+
+      setAnswer(data.choices?.[0]?.message?.content?.trim() ?? "No response.");
+    } catch (error) {
+      setAssistantError(
+        error instanceof Error ? error.message : "Unknown error",
+      );
+    } finally {
+      setAsking(false);
+    }
   };
 
   return (
@@ -24,7 +120,7 @@ export default function SettingsScreen() {
       <Card mode="contained">
         <Card.Title
           title="OpenRouter API Key (BYOK)"
-          subtitle="Stored in app state for this MVP"
+          subtitle="Stored in local encrypted-ish app storage context"
         />
         <Card.Content>
           <TextInput
@@ -35,6 +131,15 @@ export default function SettingsScreen() {
             autoCorrect={false}
             value={apiKey}
             onChangeText={setApiKey}
+          />
+          <TextInput
+            mode="outlined"
+            label="Assistant model"
+            value={model}
+            onChangeText={setModel}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.modelInput}
           />
           <Button
             mode="contained"
@@ -52,12 +157,37 @@ export default function SettingsScreen() {
       </Card>
 
       <Card mode="outlined" style={styles.noteCard}>
-        <Card.Title title="Roadmap status" />
+        <Card.Title
+          title="Contextual AI Assistant"
+          subtitle="Uses your BYOK and current app data context"
+        />
         <Card.Content>
-          <Text variant="bodyMedium">
-            Local persistent storage (SQLite), chart analytics, and contextual
-            AI chat are the next build steps.
-          </Text>
+          <TextInput
+            mode="outlined"
+            label="Ask Aquapt AI"
+            value={question}
+            onChangeText={setQuestion}
+            multiline
+            numberOfLines={3}
+          />
+          <Button
+            mode="contained-tonal"
+            onPress={askAssistant}
+            style={styles.askButton}
+          >
+            Ask assistant
+          </Button>
+          {isAsking ? <ActivityIndicator style={styles.answerSpacing} /> : null}
+          {assistantError ? (
+            <Text variant="bodySmall" style={styles.errorText}>
+              {assistantError}
+            </Text>
+          ) : null}
+          {answer ? (
+            <Text variant="bodyMedium" style={styles.answerSpacing}>
+              {answer}
+            </Text>
+          ) : null}
         </Card.Content>
       </Card>
     </ScrollView>
@@ -77,11 +207,25 @@ const styles = StyleSheet.create({
     marginTop: 12,
     alignSelf: "flex-start",
   },
+  modelInput: {
+    marginTop: 10,
+  },
   savedAt: {
     marginTop: 8,
     opacity: 0.75,
   },
   noteCard: {
     marginTop: 2,
+  },
+  askButton: {
+    marginTop: 12,
+    alignSelf: "flex-start",
+  },
+  answerSpacing: {
+    marginTop: 12,
+  },
+  errorText: {
+    marginTop: 12,
+    color: "#b00020",
   },
 });
