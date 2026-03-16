@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
     ActivityIndicator,
@@ -8,6 +8,7 @@ import {
     Text,
     TextInput,
 } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAquapt } from "@/context/aquapt-context";
 
@@ -51,6 +52,7 @@ const QUESTION_PRESETS: {
 ];
 
 export default function SettingsScreen() {
+  const insets = useSafeAreaInsets();
   const {
     settings,
     aquariums,
@@ -72,6 +74,11 @@ export default function SettingsScreen() {
   >("general");
   const [isAsking, setAsking] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setApiKey(settings.openRouterApiKey);
+    setModel(settings.aiModel);
+  }, [settings.aiModel, settings.openRouterApiKey]);
 
   const aquariumSummary = useMemo(() => {
     return aquariums
@@ -183,7 +190,12 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      contentContainerStyle={[
+        styles.container,
+        { paddingTop: 16 + insets.top },
+      ]}
+    >
       <Text variant="headlineMedium">Settings</Text>
       <Text variant="bodyMedium" style={styles.subtitle}>
         Configure your BYOK AI assistant and app preferences.

@@ -1,20 +1,15 @@
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
-import {
-    Button,
-    Card,
-    Chip,
-    FAB,
-    SegmentedButtons,
-    Text,
-    TextInput,
-} from "react-native-paper";
+import { Button, Card, Chip, FAB, Text, TextInput } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
+import { isTaskDue } from "@/services/scheduling";
 import { TimelineEventType } from "@/types/aquapt";
 
 const filters: { value: TimelineEventType | "all"; label: string }[] = [
@@ -30,15 +25,25 @@ const filters: { value: TimelineEventType | "all"; label: string }[] = [
 ];
 
 export default function TimelineScreen() {
-  const { timeline, aquariums, addMemo, addIssue, logParameters, logDosing } =
-    useAquapt();
+  const insets = useSafeAreaInsets();
+  const {
+    timeline,
+    aquariums,
+    taskTemplates,
+    taskExecutions,
+    addMemo,
+    addIssue,
+    logParameters,
+    logDosing,
+    completeTask,
+  } = useAquapt();
   const [selectedFilter, setSelectedFilter] = useState<
     TimelineEventType | "all"
   >("all");
   const [selectedAquariumFilter, setSelectedAquariumFilter] = useState("all");
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [action, setAction] = useState<
-    "memo" | "issue" | "parameter" | "dosing"
+    "memo" | "issue" | "parameter" | "dosing" | "task"
   >("memo");
   const [selectedAquariumId, setSelectedAquariumId] = useState(
     aquariums[0]?.id ?? "",
@@ -49,10 +54,26 @@ export default function TimelineScreen() {
   const [ph, setPh] = useState("");
   const [doseProduct, setDoseProduct] = useState("");
   const [doseAmount, setDoseAmount] = useState("");
+  const [quickTaskTemplateId, setQuickTaskTemplateId] = useState("");
+  const [quickTaskNote, setQuickTaskNote] = useState("");
   const [memoPhotoUri, setMemoPhotoUri] = useState("");
   const [isPickingMemoPhoto, setPickingMemoPhoto] = useState(false);
   const [memoDate, setMemoDate] = useState(new Date());
   const [isMemoDatePickerOpen, setMemoDatePickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (aquariums.length === 0) {
+      if (selectedAquariumId !== "") {
+        setSelectedAquariumId("");
+      }
+      return;
+    }
+
+    const selectedExists = aquariums.some((aq) => aq.id === selectedAquariumId);
+    if (!selectedExists) {
+      setSelectedAquariumId(aquariums[0].id);
+    }
+  }, [aquariums, selectedAquariumId]);
 
   const filteredTimeline = useMemo(() => {
     const list = [...timeline].sort(
@@ -77,6 +98,18 @@ export default function TimelineScreen() {
       return acc;
     }, {});
   }, [aquariums]);
+
+  const dueTasksForSelectedAquarium = useMemo(() => {
+    if (!selectedAquariumId) {
+      return [];
+    }
+
+    return taskTemplates.filter(
+      (task) =>
+        task.aquariumIds.includes(selectedAquariumId) &&
+        isTaskDue(task, selectedAquariumId, taskExecutions, new Date()),
+    );
+  }, [selectedAquariumId, taskExecutions, taskTemplates]);
 
   const pickMemoPhoto = async () => {
     setPickingMemoPhoto(true);
@@ -151,12 +184,31 @@ export default function TimelineScreen() {
       }
     }
 
+    if (action === "task") {
+      if (!quickTaskTemplateId) {
+        return;
+      }
+
+      completeTask(
+        quickTaskTemplateId,
+        selectedAquariumId,
+        quickTaskNote.trim() || undefined,
+      );
+      setQuickTaskTemplateId("");
+      setQuickTaskNote("");
+    }
+
     setDialogOpen(false);
   };
 
   return (
     <>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: 16 + insets.top },
+        ]}
+      >
         <Text variant="headlineMedium">Unified Timeline</Text>
         <Text variant="bodyMedium" style={styles.subtitle}>
           Chronological events across tasks, parameters, issues, and memos.
@@ -245,7 +297,7 @@ export default function TimelineScreen() {
           </>
         }
       >
-        <SegmentedButtons
+        <ScrollableSegmentedButtons
           value={selectedAquariumId}
           onValueChange={setSelectedAquariumId}
           buttons={aquariums.map((aq) => ({
@@ -255,19 +307,46 @@ export default function TimelineScreen() {
           density="small"
         />
 
-        <SegmentedButtons
+        <ScrollableSegmentedButtons
           value={action}
           onValueChange={(value) =>
-            setAction(value as "memo" | "issue" | "parameter" | "dosing")
+            setAction(
+              value as "memo" | "issue" | "parameter" | "dosing" | "task",
+            )
           }
           style={styles.quickActionSelector}
           buttons={[
+            { value: "task", label: "Task" },
             { value: "memo", label: "Memo" },
             { value: "issue", label: "Issue" },
             { value: "parameter", label: "Params" },
             { value: "dosing", label: "Dosing" },
           ]}
         />
+
+        {action === "task" ? (
+          <View style={styles.parameterInputs}>
+            <ScrollableSegmentedButtons
+              value={quickTaskTemplateId}
+              onValueChange={setQuickTaskTemplateId}
+              buttons={dueTasksForSelectedAquarium.map((task) => ({
+                label: task.title,
+                value: task.id,
+              }))}
+            />
+            {dueTasksForSelectedAquarium.length === 0 ? (
+              <Text variant="bodySmall">No due tasks for this aquarium.</Text>
+            ) : null}
+            <TextInput
+              mode="outlined"
+              label="Completion note (optional)"
+              value={quickTaskNote}
+              onChangeText={setQuickTaskNote}
+              multiline
+              numberOfLines={2}
+            />
+          </View>
+        ) : null}
 
         {action === "memo" ? (
           <View style={styles.parameterInputs}>

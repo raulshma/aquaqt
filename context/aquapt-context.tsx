@@ -10,19 +10,6 @@ import {
 } from "react";
 
 import {
-    aquariumsSeed,
-    assetsSeed,
-    consumablesSeed,
-    dosingLogsSeed,
-    issuesSeed,
-    livestockSeed,
-    memosSeed,
-    parameterLogsSeed,
-    taskExecutionsSeed,
-    taskTemplatesSeed,
-    timelineSeed,
-} from "@/data/seed";
-import {
     initPersistence,
     loadPersistedState,
     savePersistedState,
@@ -72,6 +59,14 @@ interface AquaptContextValue {
     title: string;
     frequency: TaskFrequency;
     aquariumIds: string[];
+    description?: string;
+    category?: "maintenance" | "feeding";
+    livestockId?: string;
+  }) => void;
+  addLivestockFeedingTask: (input: {
+    livestockId: string;
+    title: string;
+    frequency: TaskFrequency;
     description?: string;
   }) => void;
   completeTask: (
@@ -131,17 +126,17 @@ const AquaptContext = createContext<AquaptContextValue | null>(null);
 
 export function AquaptProvider({ children }: { children: ReactNode }) {
   const [isHydrated, setHydrated] = useState(false);
-  const [aquariums, setAquariums] = useState(aquariumsSeed);
-  const [livestock, setLivestock] = useState(livestockSeed);
-  const [taskTemplates, setTaskTemplates] = useState(taskTemplatesSeed);
-  const [taskExecutions, setTaskExecutions] = useState(taskExecutionsSeed);
-  const [dosingLogs, setDosingLogs] = useState(dosingLogsSeed);
-  const [assets, setAssets] = useState(assetsSeed);
-  const [consumables, setConsumables] = useState(consumablesSeed);
-  const [parameterLogs, setParameterLogs] = useState(parameterLogsSeed);
-  const [issues, setIssues] = useState(issuesSeed);
-  const [memos, setMemos] = useState(memosSeed);
-  const [timeline, setTimeline] = useState(timelineSeed);
+  const [aquariums, setAquariums] = useState<Aquarium[]>([]);
+  const [livestock, setLivestock] = useState<Livestock[]>([]);
+  const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
+  const [taskExecutions, setTaskExecutions] = useState<TaskExecution[]>([]);
+  const [dosingLogs, setDosingLogs] = useState<DosingLog[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [consumables, setConsumables] = useState<Consumable[]>([]);
+  const [parameterLogs, setParameterLogs] = useState<WaterParameterLog[]>([]);
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [memos, setMemos] = useState<Memo[]>([]);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [settings, setSettings] = useState<AppSettings>({
     openRouterApiKey: "",
     aiModel: "openai/gpt-4o-mini",
@@ -156,21 +151,25 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         await initPersistence();
         const persisted = await loadPersistedState();
 
-        if (!isMounted || !persisted) {
+        if (!isMounted) {
           return;
         }
 
-        setAquariums(persisted.aquariums ?? aquariumsSeed);
-        setLivestock(persisted.livestock ?? livestockSeed);
-        setTaskTemplates(persisted.taskTemplates ?? taskTemplatesSeed);
-        setTaskExecutions(persisted.taskExecutions ?? taskExecutionsSeed);
-        setDosingLogs(persisted.dosingLogs ?? dosingLogsSeed);
-        setAssets(persisted.assets ?? assetsSeed);
-        setConsumables(persisted.consumables ?? consumablesSeed);
-        setParameterLogs(persisted.parameterLogs ?? parameterLogsSeed);
-        setIssues(persisted.issues ?? issuesSeed);
-        setMemos(persisted.memos ?? memosSeed);
-        setTimeline(persisted.timeline ?? timelineSeed);
+        if (!persisted) {
+          return;
+        }
+
+        setAquariums(persisted.aquariums ?? []);
+        setLivestock(persisted.livestock ?? []);
+        setTaskTemplates(persisted.taskTemplates ?? []);
+        setTaskExecutions(persisted.taskExecutions ?? []);
+        setDosingLogs(persisted.dosingLogs ?? []);
+        setAssets(persisted.assets ?? []);
+        setConsumables(persisted.consumables ?? []);
+        setParameterLogs(persisted.parameterLogs ?? []);
+        setIssues(persisted.issues ?? []);
+        setMemos(persisted.memos ?? []);
+        setTimeline(persisted.timeline ?? []);
         setSettings(
           persisted.settings ?? {
             openRouterApiKey: "",
@@ -271,6 +270,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       frequency: TaskFrequency;
       aquariumIds: string[];
       description?: string;
+      category?: "maintenance" | "feeding";
+      livestockId?: string;
     }) => {
       const task: TaskTemplate = {
         id: nowId("task"),
@@ -278,11 +279,39 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         frequency: input.frequency,
         aquariumIds: input.aquariumIds,
         description: input.description,
+        category: input.category,
+        livestockId: input.livestockId,
       };
 
       setTaskTemplates((prev) => [task, ...prev]);
     },
     [],
+  );
+
+  const addLivestockFeedingTask = useCallback(
+    (input: {
+      livestockId: string;
+      title: string;
+      frequency: TaskFrequency;
+      description?: string;
+    }) => {
+      const livestockItem = livestock.find(
+        (item) => item.id === input.livestockId,
+      );
+      if (!livestockItem) {
+        return;
+      }
+
+      addTaskTemplate({
+        title: input.title,
+        frequency: input.frequency,
+        aquariumIds: [livestockItem.aquariumId],
+        description: input.description,
+        category: "feeding",
+        livestockId: livestockItem.id,
+      });
+    },
+    [addTaskTemplate, livestock],
   );
 
   const completeTask = useCallback(
@@ -746,6 +775,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       addAquarium,
       editAquarium,
       addTaskTemplate,
+      addLivestockFeedingTask,
       completeTask,
       logDosing,
       logParameters,
@@ -782,6 +812,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       addAquarium,
       editAquarium,
       addTaskTemplate,
+      addLivestockFeedingTask,
       completeTask,
       logDosing,
       logParameters,

@@ -92,6 +92,8 @@ export interface TaskTemplate {
   id: string;
   title: string;
   description?: string;
+  category?: "maintenance" | "feeding";
+  livestockId?: string;
   frequency: TaskFrequency;
   aquariumIds: string[];
 }

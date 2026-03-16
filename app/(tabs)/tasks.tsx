@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
     Button,
@@ -6,19 +6,22 @@ import {
     Chip,
     Divider,
     FAB,
-    SegmentedButtons,
     Text,
     TextInput,
 } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
 import { TaskFrequency } from "@/types/aquapt";
 
 export default function TasksScreen() {
+  const insets = useSafeAreaInsets();
   const {
     aquariums,
+    livestock,
     taskTemplates,
     taskExecutions,
     dosingLogs,
@@ -43,6 +46,28 @@ export default function TasksScreen() {
   const [completionNoteDraft, setCompletionNoteDraft] = useState<
     Record<string, string>
   >({});
+
+  useEffect(() => {
+    if (aquariums.length === 0) {
+      if (selectedAquariumId !== "") {
+        setSelectedAquariumId("");
+      }
+      if (taskAquariumIds.length > 0) {
+        setTaskAquariumIds([]);
+      }
+      return;
+    }
+
+    const aquariumIds = new Set(aquariums.map((aquarium) => aquarium.id));
+    if (!aquariumIds.has(selectedAquariumId)) {
+      setSelectedAquariumId(aquariums[0].id);
+    }
+
+    setTaskAquariumIds((prev) => {
+      const valid = prev.filter((id) => aquariumIds.has(id));
+      return valid.length > 0 ? valid : [aquariums[0].id];
+    });
+  }, [aquariums, selectedAquariumId, taskAquariumIds.length]);
 
   const taskMatrix = useMemo(() => {
     return taskTemplates.flatMap((task) =>
@@ -109,6 +134,7 @@ export default function TasksScreen() {
       addTaskTemplate({
         title: taskTitle.trim(),
         description: taskDescription.trim() || undefined,
+        category: "maintenance",
         frequency: taskFrequency,
         aquariumIds: taskAquariumIds.length
           ? taskAquariumIds
@@ -142,7 +168,12 @@ export default function TasksScreen() {
 
   return (
     <>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: 16 + insets.top },
+        ]}
+      >
         <Text variant="headlineMedium">Tasks & Maintenance</Text>
         <Text variant="bodyMedium" style={styles.subtitle}>
           Recurring schedules, one-tap completion, and dosing logs.
@@ -154,6 +185,9 @@ export default function TasksScreen() {
 
         {dueTasks.map(({ key, task, aquariumId }) => {
           const doneAt = latestExecutionByTemplate[key];
+          const targetLivestock = task.livestockId
+            ? livestock.find((item) => item.id === task.livestockId)
+            : undefined;
 
           return (
             <Card key={key} style={styles.card} mode="contained">
@@ -165,6 +199,11 @@ export default function TasksScreen() {
                 <Text variant="bodySmall" style={styles.targetTank}>
                   {getAquariumName(aquariumId)}
                 </Text>
+                {targetLivestock ? (
+                  <Text variant="bodySmall" style={styles.targetTank}>
+                    Target livestock: {targetLivestock.name}
+                  </Text>
+                ) : null}
                 {task.description ? (
                   <Text variant="bodyMedium">{task.description}</Text>
                 ) : null}
@@ -249,6 +288,9 @@ export default function TasksScreen() {
             const task = taskTemplates.find(
               (template) => template.id === execution.taskTemplateId,
             );
+            const targetLivestock = task?.livestockId
+              ? livestock.find((item) => item.id === task.livestockId)
+              : undefined;
 
             return (
               <Card key={execution.id} style={styles.card} mode="outlined">
@@ -260,6 +302,11 @@ export default function TasksScreen() {
                   </Text>
                   {execution.note ? (
                     <Text variant="bodyMedium">{execution.note}</Text>
+                  ) : null}
+                  {targetLivestock ? (
+                    <Text variant="bodySmall" style={styles.targetTank}>
+                      Target livestock: {targetLivestock.name}
+                    </Text>
                   ) : null}
                 </Card.Content>
               </Card>
@@ -279,7 +326,7 @@ export default function TasksScreen() {
           </>
         }
       >
-        <SegmentedButtons
+        <ScrollableSegmentedButtons
           value={selectedAquariumId}
           onValueChange={setSelectedAquariumId}
           buttons={aquariums.map((aq) => ({
@@ -288,7 +335,7 @@ export default function TasksScreen() {
           }))}
         />
 
-        <SegmentedButtons
+        <ScrollableSegmentedButtons
           value={dialogAction}
           onValueChange={(value) => setDialogAction(value as "task" | "dosing")}
           style={styles.actionToggle}
@@ -326,7 +373,7 @@ export default function TasksScreen() {
                 );
               })}
             </View>
-            <SegmentedButtons
+            <ScrollableSegmentedButtons
               value={taskFrequency}
               onValueChange={(value) =>
                 setTaskFrequency(value as TaskFrequency)

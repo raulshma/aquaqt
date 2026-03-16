@@ -1,28 +1,22 @@
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-    ScrollView,
-    StyleSheet,
-    useWindowDimensions,
-    View,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
-import {
-    Button,
-    Card,
-    Chip,
-    FAB,
-    SegmentedButtons,
-    Text,
-    TextInput,
-} from "react-native-paper";
+import { Button, Card, Chip, FAB, Text, TextInput } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
-import { IssueStatus, Livestock } from "@/types/aquapt";
+import { IssueStatus, Livestock, TaskFrequency } from "@/types/aquapt";
 
 const WATER_TYPES = ["freshwater", "marine", "brackish"] as const;
 const LIVESTOCK_KINDS = [
@@ -43,6 +37,7 @@ const parseIsoDate = (value: string) => {
 
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const {
     aquariums,
     livestock,
@@ -62,6 +57,7 @@ export default function HomeScreen() {
     addLivestock,
     transferLivestock,
     addOffspring,
+    addLivestockFeedingTask,
     setLivestockFeedingNotes,
     setLivestockStatus,
     addAsset,
@@ -69,6 +65,7 @@ export default function HomeScreen() {
     consumeConsumable,
     logDosing,
     logParameters,
+    completeTask,
     setIssueStatus,
   } = useAquapt();
   const [isDialogOpen, setDialogOpen] = useState(false);
@@ -76,7 +73,7 @@ export default function HomeScreen() {
     aquariums[0]?.id ?? "",
   );
   const [action, setAction] = useState<
-    "parameter" | "memo" | "issue" | "dosing"
+    "parameter" | "memo" | "issue" | "dosing" | "task"
   >("parameter");
   const [newAquariumName, setNewAquariumName] = useState("");
   const [newAquariumVolume, setNewAquariumVolume] = useState("");
@@ -129,6 +126,8 @@ export default function HomeScreen() {
   const [alkalinity, setAlkalinity] = useState("");
   const [doseProduct, setDoseProduct] = useState("");
   const [doseAmount, setDoseAmount] = useState("");
+  const [quickTaskTemplateId, setQuickTaskTemplateId] = useState("");
+  const [quickTaskNote, setQuickTaskNote] = useState("");
   const [issueStatusDraft, setIssueStatusDraft] = useState<
     Record<string, IssueStatus>
   >({});
@@ -140,6 +139,12 @@ export default function HomeScreen() {
   >({});
   const [livestockStatusNoteDraft, setLivestockStatusNoteDraft] = useState<
     Record<string, string>
+  >({});
+  const [feedingTaskTitleDraft, setFeedingTaskTitleDraft] = useState<
+    Record<string, string>
+  >({});
+  const [feedingTaskFrequencyDraft, setFeedingTaskFrequencyDraft] = useState<
+    Record<string, TaskFrequency>
   >({});
   const [resolutionNoteDraft, setResolutionNoteDraft] = useState<
     Record<string, string>
@@ -154,6 +159,20 @@ export default function HomeScreen() {
   const [editAquariumInvestment, setEditAquariumInvestment] = useState("");
   const [isNewDatePickerOpen, setNewDatePickerOpen] = useState(false);
   const [isEditDatePickerOpen, setEditDatePickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (aquariums.length === 0) {
+      if (selectedAquariumId !== "") {
+        setSelectedAquariumId("");
+      }
+      return;
+    }
+
+    const selectedExists = aquariums.some((aq) => aq.id === selectedAquariumId);
+    if (!selectedExists) {
+      setSelectedAquariumId(aquariums[0].id);
+    }
+  }, [aquariums, selectedAquariumId]);
 
   const latestParameterByAquarium = useMemo(() => {
     return aquariums.reduce<Record<string, string>>((acc, aquarium) => {
@@ -244,6 +263,20 @@ export default function HomeScreen() {
       }
     }
 
+    if (action === "task") {
+      if (!quickTaskTemplateId) {
+        return;
+      }
+
+      completeTask(
+        quickTaskTemplateId,
+        selectedAquariumId,
+        quickTaskNote.trim() || undefined,
+      );
+      setQuickTaskTemplateId("");
+      setQuickTaskNote("");
+    }
+
     setDialogOpen(false);
   };
 
@@ -298,6 +331,18 @@ export default function HomeScreen() {
       task.aquariumIds.includes(selectedAquariumId),
     );
   }, [selectedAquariumId, taskTemplates]);
+
+  const dueTasksForSelectedAquarium = useMemo(() => {
+    if (!selectedAquariumId) {
+      return [];
+    }
+
+    return taskTemplates.filter(
+      (task) =>
+        task.aquariumIds.includes(selectedAquariumId) &&
+        isTaskDue(task, selectedAquariumId, taskExecutions, new Date()),
+    );
+  }, [selectedAquariumId, taskExecutions, taskTemplates]);
 
   const createAquarium = () => {
     const volume = Number(newAquariumVolume);
@@ -523,7 +568,12 @@ export default function HomeScreen() {
 
   return (
     <>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: 16 + insets.top },
+        ]}
+      >
         <Text variant="headlineMedium">Aquapt Dashboard</Text>
         <Text variant="bodyMedium" style={styles.subtitle}>
           Monitor tank health, log key events, and catch issues early.
@@ -601,7 +651,7 @@ export default function HomeScreen() {
               onChangeText={setNewAquariumInvestment}
               keyboardType="numeric"
             />
-            <SegmentedButtons
+            <ScrollableSegmentedButtons
               value={newAquariumType}
               onValueChange={(value) =>
                 setNewAquariumType(
@@ -662,7 +712,7 @@ export default function HomeScreen() {
             subtitle="Nitrate trend (recent logs)"
           />
           <Card.Content>
-            <SegmentedButtons
+            <ScrollableSegmentedButtons
               value={chartAquariumId}
               onValueChange={setSelectedAquariumId}
               buttons={aquariums.map((aq) => ({
@@ -702,7 +752,7 @@ export default function HomeScreen() {
         </Text>
         <Card mode="outlined">
           <Card.Content style={styles.formStack}>
-            <SegmentedButtons
+            <ScrollableSegmentedButtons
               value={selectedAquariumId}
               onValueChange={setSelectedAquariumId}
               buttons={aquariums.map((aq) => ({
@@ -722,7 +772,7 @@ export default function HomeScreen() {
               value={newLivestockSpecies}
               onChangeText={setNewLivestockSpecies}
             />
-            <SegmentedButtons
+            <ScrollableSegmentedButtons
               value={newLivestockKind}
               onValueChange={(value) =>
                 setNewLivestockKind(value as Livestock["kind"])
@@ -812,7 +862,7 @@ export default function HomeScreen() {
                   numberOfLines={2}
                   style={styles.issueResolutionInput}
                 />
-                <SegmentedButtons
+                <ScrollableSegmentedButtons
                   value={livestockStatus}
                   onValueChange={(value) =>
                     setLivestockStatusDraft((prev) => ({
@@ -895,6 +945,58 @@ export default function HomeScreen() {
                     Add offspring
                   </Button>
                 </View>
+                <TextInput
+                  mode="outlined"
+                  label="Feeding task title"
+                  value={feedingTaskTitleDraft[item.id] ?? ""}
+                  onChangeText={(value) =>
+                    setFeedingTaskTitleDraft((prev) => ({
+                      ...prev,
+                      [item.id]: value,
+                    }))
+                  }
+                  style={styles.issueResolutionInput}
+                  placeholder={`Feed ${item.name}`}
+                />
+                <ScrollableSegmentedButtons
+                  value={feedingTaskFrequencyDraft[item.id] ?? "daily"}
+                  onValueChange={(value) =>
+                    setFeedingTaskFrequencyDraft((prev) => ({
+                      ...prev,
+                      [item.id]: value as TaskFrequency,
+                    }))
+                  }
+                  buttons={[
+                    { label: "Daily", value: "daily" },
+                    { label: "Weekly", value: "weekly" },
+                    { label: "Bi-weekly", value: "bi-weekly" },
+                    { label: "Monthly", value: "monthly" },
+                  ]}
+                  style={styles.issueStatusSelector}
+                />
+                <Button
+                  mode="contained-tonal"
+                  style={styles.issueSaveButton}
+                  onPress={() => {
+                    const customTitle = feedingTaskTitleDraft[item.id]?.trim();
+                    addLivestockFeedingTask({
+                      livestockId: item.id,
+                      title: customTitle || `Feed ${item.name}`,
+                      frequency: feedingTaskFrequencyDraft[item.id] ?? "daily",
+                      description:
+                        feedingNote.trim() ||
+                        item.dietaryNotes ||
+                        `Targeted feeding regimen for ${item.name}`,
+                    });
+
+                    setFeedingTaskTitleDraft((prev) => ({
+                      ...prev,
+                      [item.id]: "",
+                    }));
+                  }}
+                >
+                  Create feeding task
+                </Button>
               </Card.Content>
             </Card>
           );
@@ -911,7 +1013,7 @@ export default function HomeScreen() {
               value={newAssetModel}
               onChangeText={setNewAssetModel}
             />
-            <SegmentedButtons
+            <ScrollableSegmentedButtons
               value={newAssetCategory}
               onValueChange={(value) =>
                 setNewAssetCategory(
@@ -977,7 +1079,7 @@ export default function HomeScreen() {
               onChangeText={setNewConsumableRemaining}
               keyboardType="numeric"
             />
-            <SegmentedButtons
+            <ScrollableSegmentedButtons
               value={newConsumableUnit}
               onValueChange={(value) =>
                 setNewConsumableUnit(value as "pcs" | "ml" | "g")
@@ -1071,7 +1173,7 @@ export default function HomeScreen() {
                   • Logged {new Date(issue.createdAt).toLocaleString()}
                 </Text>
 
-                <SegmentedButtons
+                <ScrollableSegmentedButtons
                   value={currentStatus}
                   onValueChange={(value) =>
                     setIssueStatusDraft((prev) => ({
@@ -1212,7 +1314,7 @@ export default function HomeScreen() {
           </>
         }
       >
-        <SegmentedButtons
+        <ScrollableSegmentedButtons
           value={selectedAquariumId}
           onValueChange={setSelectedAquariumId}
           buttons={aquariums.map((aq) => ({
@@ -1223,12 +1325,15 @@ export default function HomeScreen() {
           density="small"
         />
 
-        <SegmentedButtons
+        <ScrollableSegmentedButtons
           value={action}
           onValueChange={(value) =>
-            setAction(value as "parameter" | "memo" | "issue" | "dosing")
+            setAction(
+              value as "parameter" | "memo" | "issue" | "dosing" | "task",
+            )
           }
           buttons={[
+            { label: "Task", value: "task" },
             { label: "Parameters", value: "parameter" },
             { label: "Memo", value: "memo" },
             { label: "Issue", value: "issue" },
@@ -1236,6 +1341,32 @@ export default function HomeScreen() {
           ]}
           style={styles.actionSelector}
         />
+
+        {action === "task" ? (
+          <View style={styles.inputsContainer}>
+            <ScrollableSegmentedButtons
+              value={quickTaskTemplateId}
+              onValueChange={setQuickTaskTemplateId}
+              buttons={dueTasksForSelectedAquarium.map((task) => ({
+                label: task.title,
+                value: task.id,
+              }))}
+            />
+            {dueTasksForSelectedAquarium.length === 0 ? (
+              <Text variant="bodySmall" style={styles.issueMeta}>
+                No due tasks for this aquarium.
+              </Text>
+            ) : null}
+            <TextInput
+              label="Completion note (optional)"
+              mode="outlined"
+              value={quickTaskNote}
+              onChangeText={setQuickTaskNote}
+              multiline
+              numberOfLines={2}
+            />
+          </View>
+        ) : null}
 
         {action === "parameter" ? (
           <View style={styles.inputsContainer}>

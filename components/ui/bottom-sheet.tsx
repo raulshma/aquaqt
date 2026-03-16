@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { Modal, Portal, Surface, Text } from "react-native-paper";
 
 interface BottomSheetProps {
@@ -29,7 +29,9 @@ export function BottomSheet({
           <Text variant="titleMedium" style={styles.title}>
             {title}
           </Text>
-          <View style={styles.content}>{children}</View>
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {children}
+          </ScrollView>
           {actions ? <View style={styles.actions}>{actions}</View> : null}
         </Surface>
       </Modal>
@@ -48,7 +50,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 16,
-    maxHeight: "85%",
+    maxHeight: "95%",
+    flex: 1,
   },
   handle: {
     width: 48,
@@ -63,6 +66,7 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: 10,
+    flexGrow: 1,
   },
   actions: {
     marginTop: 14,
