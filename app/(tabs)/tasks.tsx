@@ -40,6 +40,9 @@ export default function TasksScreen() {
   const [doseProduct, setDoseProduct] = useState("");
   const [doseAmount, setDoseAmount] = useState("");
   const [doseNote, setDoseNote] = useState("");
+  const [completionNoteDraft, setCompletionNoteDraft] = useState<
+    Record<string, string>
+  >({});
 
   const taskMatrix = useMemo(() => {
     return taskTemplates.flatMap((task) =>
@@ -86,6 +89,12 @@ export default function TasksScreen() {
       return acc;
     }, {});
   }, [dosingLogs]);
+
+  const recentExecutions = useMemo(() => {
+    return [...taskExecutions]
+      .sort((a, b) => +new Date(b.completedAt) - +new Date(a.completedAt))
+      .slice(0, 24);
+  }, [taskExecutions]);
 
   const saveDialog = () => {
     if (!selectedAquariumId) {
@@ -167,11 +176,33 @@ export default function TasksScreen() {
                   </Text>
                   <Button
                     mode="contained"
-                    onPress={() => completeTask(task.id, aquariumId)}
+                    onPress={() => {
+                      completeTask(
+                        task.id,
+                        aquariumId,
+                        completionNoteDraft[key]?.trim() || undefined,
+                      );
+                      setCompletionNoteDraft((prev) => ({
+                        ...prev,
+                        [key]: "",
+                      }));
+                    }}
                   >
                     Complete
                   </Button>
                 </View>
+                <TextInput
+                  mode="outlined"
+                  label="Completion note (optional)"
+                  value={completionNoteDraft[key] ?? ""}
+                  onChangeText={(value) =>
+                    setCompletionNoteDraft((prev) => ({
+                      ...prev,
+                      [key]: value,
+                    }))
+                  }
+                  style={styles.completionNoteInput}
+                />
               </Card.Content>
             </Card>
           );
@@ -202,6 +233,39 @@ export default function TasksScreen() {
             </Card.Content>
           </Card>
         ))}
+
+        <Text variant="titleMedium" style={styles.sectionTitle}>
+          Recent task history
+        </Text>
+
+        {recentExecutions.length === 0 ? (
+          <Card style={styles.card} mode="outlined">
+            <Card.Content>
+              <Text variant="bodyMedium">No task execution history yet.</Text>
+            </Card.Content>
+          </Card>
+        ) : (
+          recentExecutions.map((execution) => {
+            const task = taskTemplates.find(
+              (template) => template.id === execution.taskTemplateId,
+            );
+
+            return (
+              <Card key={execution.id} style={styles.card} mode="outlined">
+                <Card.Content>
+                  <Text variant="titleSmall">{task?.title ?? "Task"}</Text>
+                  <Text variant="bodySmall" style={styles.targetTank}>
+                    {getAquariumName(execution.aquariumId)} •{" "}
+                    {new Date(execution.completedAt).toLocaleString()}
+                  </Text>
+                  {execution.note ? (
+                    <Text variant="bodyMedium">{execution.note}</Text>
+                  ) : null}
+                </Card.Content>
+              </Card>
+            );
+          })
+        )}
       </ScrollView>
 
       <BottomSheet
@@ -360,6 +424,9 @@ const styles = StyleSheet.create({
   },
   actionToggle: {
     marginTop: 12,
+  },
+  completionNoteInput: {
+    marginTop: 10,
   },
   formSection: {
     marginTop: 12,

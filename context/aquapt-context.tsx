@@ -99,6 +99,11 @@ interface AquaptContextValue {
     },
   ) => void;
   setLivestockFeedingNotes: (livestockId: string, dietaryNotes: string) => void;
+  setLivestockStatus: (
+    livestockId: string,
+    status: NonNullable<Livestock["status"]>,
+    note?: string,
+  ) => void;
   addIssue: (aquariumId: string, title: string) => void;
   setIssueStatus: (
     issueId: string,
@@ -504,6 +509,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
 
   const transferLivestock = useCallback(
     (livestockId: string, targetAquariumId: string, note?: string) => {
+      let sourceAquariumId = "";
       let moved: Livestock | null = null;
 
       setLivestock((prev) =>
@@ -512,26 +518,43 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             return item;
           }
 
+          sourceAquariumId = item.aquariumId;
           moved = { ...item, aquariumId: targetAquariumId };
           return moved;
         }),
       );
 
-      if (moved) {
+      if (moved && sourceAquariumId) {
+        const sourceAquariumName =
+          aquariums.find((aq) => aq.id === sourceAquariumId)?.name ??
+          "source tank";
+        const targetAquariumName =
+          aquariums.find((aq) => aq.id === targetAquariumId)?.name ??
+          "target tank";
+        const createdAt = new Date().toISOString();
+
         setTimeline((prev) => [
+          {
+            id: nowId("event"),
+            aquariumId: sourceAquariumId,
+            type: "livestock",
+            createdAt,
+            title: `Transferred out ${moved?.name}`,
+            description: `Moved to ${targetAquariumName}${note ? ` • ${note}` : ""}`,
+          },
           {
             id: nowId("event"),
             aquariumId: targetAquariumId,
             type: "livestock",
-            createdAt: new Date().toISOString(),
+            createdAt,
             title: `Transferred ${moved?.name}`,
-            description: note,
+            description: `From ${sourceAquariumName}${note ? ` • ${note}` : ""}`,
           },
           ...prev,
         ]);
       }
     },
-    [],
+    [aquariums],
   );
 
   const addOffspring = useCallback(
@@ -578,6 +601,44 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           item.id === livestockId ? { ...item, dietaryNotes } : item,
         ),
       );
+    },
+    [],
+  );
+
+  const setLivestockStatus = useCallback(
+    (
+      livestockId: string,
+      status: NonNullable<Livestock["status"]>,
+      note?: string,
+    ) => {
+      let updatedAquariumId = "";
+      let updatedName = "";
+
+      setLivestock((prev) =>
+        prev.map((item) => {
+          if (item.id !== livestockId) {
+            return item;
+          }
+
+          updatedAquariumId = item.aquariumId;
+          updatedName = item.name;
+          return { ...item, status };
+        }),
+      );
+
+      if (updatedAquariumId) {
+        setTimeline((prev) => [
+          {
+            id: nowId("event"),
+            aquariumId: updatedAquariumId,
+            type: "livestock",
+            createdAt: new Date().toISOString(),
+            title: `${updatedName} status: ${status}`,
+            description: note,
+          },
+          ...prev,
+        ]);
+      }
     },
     [],
   );
@@ -692,6 +753,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       transferLivestock,
       addOffspring,
       setLivestockFeedingNotes,
+      setLivestockStatus,
       addIssue,
       setIssueStatus,
       addMemo,
@@ -727,6 +789,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       transferLivestock,
       addOffspring,
       setLivestockFeedingNotes,
+      setLivestockStatus,
       addIssue,
       setIssueStatus,
       addMemo,

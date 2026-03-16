@@ -22,9 +22,19 @@ import { DatePickerModal } from "react-native-paper-dates";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
-import { IssueStatus } from "@/types/aquapt";
+import { IssueStatus, Livestock } from "@/types/aquapt";
 
 const WATER_TYPES = ["freshwater", "marine", "brackish"] as const;
+const LIVESTOCK_KINDS = [
+  "fish",
+  "shrimp",
+  "snail",
+  "coral",
+  "plant",
+  "other",
+] as const;
+const ASSET_CATEGORIES = ["filter", "heater", "light", "co2", "other"] as const;
+const CONSUMABLE_UNITS = ["pcs", "ml", "g"] as const;
 const toIsoDate = (date: Date) => date.toISOString().slice(0, 10);
 const parseIsoDate = (value: string) => {
   const parsed = new Date(value);
@@ -53,6 +63,7 @@ export default function HomeScreen() {
     transferLivestock,
     addOffspring,
     setLivestockFeedingNotes,
+    setLivestockStatus,
     addAsset,
     addConsumable,
     consumeConsumable,
@@ -82,15 +93,28 @@ export default function HomeScreen() {
   const [newLivestockName, setNewLivestockName] = useState("");
   const [newLivestockSpecies, setNewLivestockSpecies] = useState("");
   const [newLivestockQty, setNewLivestockQty] = useState("1");
+  const [newLivestockKind, setNewLivestockKind] =
+    useState<Livestock["kind"]>("other");
+  const [newLivestockPrice, setNewLivestockPrice] = useState("");
   const [newLivestockPhotoUri, setNewLivestockPhotoUri] = useState("");
   const [isPickingPhoto, setPickingPhoto] = useState(false);
   const [isPickingMemoPhoto, setPickingMemoPhoto] = useState(false);
   const [memoPhotoUri, setMemoPhotoUri] = useState("");
   const [newAssetModel, setNewAssetModel] = useState("");
+  const [newAssetCategory, setNewAssetCategory] = useState<
+    "filter" | "heater" | "light" | "co2" | "other"
+  >("other");
+  const [newAssetPurchasedAt, setNewAssetPurchasedAt] = useState(
+    toIsoDate(new Date()),
+  );
+  const [newAssetPrice, setNewAssetPrice] = useState("");
   const [selectedAssetTaskTemplateIds, setSelectedAssetTaskTemplateIds] =
     useState<string[]>([]);
   const [newConsumableName, setNewConsumableName] = useState("");
   const [newConsumableRemaining, setNewConsumableRemaining] = useState("0");
+  const [newConsumableUnit, setNewConsumableUnit] = useState<
+    "pcs" | "ml" | "g"
+  >("pcs");
   const [memo, setMemo] = useState("");
   const [issueTitle, setIssueTitle] = useState("");
   const [ammonia, setAmmonia] = useState("");
@@ -107,6 +131,15 @@ export default function HomeScreen() {
   const [doseAmount, setDoseAmount] = useState("");
   const [issueStatusDraft, setIssueStatusDraft] = useState<
     Record<string, IssueStatus>
+  >({});
+  const [feedingNoteDraft, setFeedingNoteDraft] = useState<
+    Record<string, string>
+  >({});
+  const [livestockStatusDraft, setLivestockStatusDraft] = useState<
+    Record<string, NonNullable<Livestock["status"]>>
+  >({});
+  const [livestockStatusNoteDraft, setLivestockStatusNoteDraft] = useState<
+    Record<string, string>
   >({});
   const [resolutionNoteDraft, setResolutionNoteDraft] = useState<
     Record<string, string>
@@ -294,6 +327,7 @@ export default function HomeScreen() {
 
   const createLivestock = () => {
     const quantity = Number(newLivestockQty);
+    const purchasePrice = Number(newLivestockPrice);
     if (
       !selectedAquariumId ||
       !newLivestockName.trim() ||
@@ -304,17 +338,23 @@ export default function HomeScreen() {
 
     addLivestock({
       aquariumId: selectedAquariumId,
-      kind: "other",
+      kind: newLivestockKind,
       name: newLivestockName.trim(),
       species: newLivestockSpecies.trim(),
       quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
       acquiredAt: new Date().toISOString(),
+      purchasePrice:
+        Number.isFinite(purchasePrice) && purchasePrice >= 0
+          ? purchasePrice
+          : undefined,
       photoUri: newLivestockPhotoUri || undefined,
       status: "active",
     });
     setNewLivestockName("");
     setNewLivestockSpecies("");
     setNewLivestockQty("1");
+    setNewLivestockKind("other");
+    setNewLivestockPrice("");
     setNewLivestockPhotoUri("");
   };
 
@@ -371,16 +411,23 @@ export default function HomeScreen() {
       return;
     }
 
+    const price = Number(newAssetPrice);
+
     addAsset({
       aquariumId: selectedAquariumId,
-      category: "other",
+      category: newAssetCategory,
       brandModel: newAssetModel.trim(),
+      purchasedAt: newAssetPurchasedAt,
+      price: Number.isFinite(price) && price >= 0 ? price : undefined,
       maintenanceTaskTemplateIds:
         selectedAssetTaskTemplateIds.length > 0
           ? selectedAssetTaskTemplateIds
           : undefined,
     });
     setNewAssetModel("");
+    setNewAssetCategory("other");
+    setNewAssetPurchasedAt(toIsoDate(new Date()));
+    setNewAssetPrice("");
     setSelectedAssetTaskTemplateIds([]);
   };
 
@@ -441,12 +488,13 @@ export default function HomeScreen() {
     addConsumable({
       aquariumId: selectedAquariumId,
       name: newConsumableName.trim(),
-      unit: "pcs",
+      unit: newConsumableUnit,
       remaining,
       reorderAt: Math.max(1, Math.floor(remaining * 0.25)),
     });
     setNewConsumableName("");
     setNewConsumableRemaining("0");
+    setNewConsumableUnit("pcs");
   };
 
   const totalOpenIssues = issues.filter(
@@ -674,11 +722,28 @@ export default function HomeScreen() {
               value={newLivestockSpecies}
               onChangeText={setNewLivestockSpecies}
             />
+            <SegmentedButtons
+              value={newLivestockKind}
+              onValueChange={(value) =>
+                setNewLivestockKind(value as Livestock["kind"])
+              }
+              buttons={LIVESTOCK_KINDS.map((kind) => ({
+                label: kind,
+                value: kind,
+              }))}
+            />
             <TextInput
               mode="outlined"
               label="Quantity"
               value={newLivestockQty}
               onChangeText={setNewLivestockQty}
+              keyboardType="numeric"
+            />
+            <TextInput
+              mode="outlined"
+              label="Purchase price (optional)"
+              value={newLivestockPrice}
+              onChangeText={setNewLivestockPrice}
               keyboardType="numeric"
             />
             <Button
@@ -707,8 +772,11 @@ export default function HomeScreen() {
           const fallbackTarget =
             aquariums[(currentIndex + 1 + aquariums.length) % aquariums.length]
               ?.id;
-          const resolutionNote =
-            resolutionNoteDraft[item.id] ?? item.dietaryNotes ?? "";
+          const feedingNote =
+            feedingNoteDraft[item.id] ?? item.dietaryNotes ?? "";
+          const livestockStatus =
+            livestockStatusDraft[item.id] ?? item.status ?? "active";
+          const livestockStatusNote = livestockStatusNoteDraft[item.id] ?? "";
 
           return (
             <Card key={item.id} style={styles.issueCard} mode="outlined">
@@ -720,6 +788,10 @@ export default function HomeScreen() {
                   {item.species} •{" "}
                   {aquariums.find((aq) => aq.id === item.aquariumId)?.name}
                 </Text>
+                <View style={styles.summaryRow}>
+                  <Chip compact>{item.kind}</Chip>
+                  <Chip compact>{item.status ?? "active"}</Chip>
+                </View>
                 {item.photoUri ? (
                   <Image
                     source={{ uri: item.photoUri }}
@@ -729,9 +801,38 @@ export default function HomeScreen() {
                 <TextInput
                   mode="outlined"
                   label="Feeding notes"
-                  value={resolutionNote}
+                  value={feedingNote}
                   onChangeText={(value) =>
-                    setResolutionNoteDraft((prev) => ({
+                    setFeedingNoteDraft((prev) => ({
+                      ...prev,
+                      [item.id]: value,
+                    }))
+                  }
+                  multiline
+                  numberOfLines={2}
+                  style={styles.issueResolutionInput}
+                />
+                <SegmentedButtons
+                  value={livestockStatus}
+                  onValueChange={(value) =>
+                    setLivestockStatusDraft((prev) => ({
+                      ...prev,
+                      [item.id]: value as NonNullable<Livestock["status"]>,
+                    }))
+                  }
+                  buttons={[
+                    { label: "Active", value: "active" },
+                    { label: "Ill", value: "ill" },
+                    { label: "Deceased", value: "deceased" },
+                  ]}
+                  style={styles.issueStatusSelector}
+                />
+                <TextInput
+                  mode="outlined"
+                  label="Status note (optional)"
+                  value={livestockStatusNote}
+                  onChangeText={(value) =>
+                    setLivestockStatusNoteDraft((prev) => ({
                       ...prev,
                       [item.id]: value,
                     }))
@@ -744,10 +845,22 @@ export default function HomeScreen() {
                   <Button
                     mode="contained-tonal"
                     onPress={() =>
-                      setLivestockFeedingNotes(item.id, resolutionNote.trim())
+                      setLivestockFeedingNotes(item.id, feedingNote.trim())
                     }
                   >
                     Save feeding
+                  </Button>
+                  <Button
+                    mode="contained-tonal"
+                    onPress={() =>
+                      setLivestockStatus(
+                        item.id,
+                        livestockStatus,
+                        livestockStatusNote.trim() || undefined,
+                      )
+                    }
+                  >
+                    Save status
                   </Button>
                   <Button
                     mode="contained-tonal"
@@ -798,6 +911,31 @@ export default function HomeScreen() {
               value={newAssetModel}
               onChangeText={setNewAssetModel}
             />
+            <SegmentedButtons
+              value={newAssetCategory}
+              onValueChange={(value) =>
+                setNewAssetCategory(
+                  value as "filter" | "heater" | "light" | "co2" | "other",
+                )
+              }
+              buttons={ASSET_CATEGORIES.map((category) => ({
+                label: category,
+                value: category,
+              }))}
+            />
+            <TextInput
+              mode="outlined"
+              label="Purchased date (YYYY-MM-DD)"
+              value={newAssetPurchasedAt}
+              onChangeText={setNewAssetPurchasedAt}
+            />
+            <TextInput
+              mode="outlined"
+              label="Asset price (optional)"
+              value={newAssetPrice}
+              onChangeText={setNewAssetPrice}
+              keyboardType="numeric"
+            />
             {availableTaskTemplatesForAsset.length > 0 ? (
               <View style={styles.summaryRow}>
                 {availableTaskTemplatesForAsset.map((task) => {
@@ -834,10 +972,20 @@ export default function HomeScreen() {
             />
             <TextInput
               mode="outlined"
-              label="Remaining (pcs)"
+              label={`Remaining (${newConsumableUnit})`}
               value={newConsumableRemaining}
               onChangeText={setNewConsumableRemaining}
               keyboardType="numeric"
+            />
+            <SegmentedButtons
+              value={newConsumableUnit}
+              onValueChange={(value) =>
+                setNewConsumableUnit(value as "pcs" | "ml" | "g")
+              }
+              buttons={CONSUMABLE_UNITS.map((unit) => ({
+                label: unit,
+                value: unit,
+              }))}
             />
             <Button mode="contained-tonal" onPress={createConsumable}>
               Add consumable
@@ -852,6 +1000,10 @@ export default function HomeScreen() {
               <Text variant="bodySmall" style={styles.issueMeta}>
                 {asset.category} •{" "}
                 {aquariums.find((aq) => aq.id === asset.aquariumId)?.name}
+              </Text>
+              <Text variant="bodySmall" style={styles.issueMeta}>
+                Purchased: {asset.purchasedAt ?? "-"}
+                {asset.price !== undefined ? ` • $${asset.price}` : ""}
               </Text>
               {asset.maintenanceTaskTemplateIds?.length ? (
                 <Text variant="bodySmall" style={styles.issueMeta}>

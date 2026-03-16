@@ -35,6 +35,7 @@ export default function TimelineScreen() {
   const [selectedFilter, setSelectedFilter] = useState<
     TimelineEventType | "all"
   >("all");
+  const [selectedAquariumFilter, setSelectedAquariumFilter] = useState("all");
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [action, setAction] = useState<
     "memo" | "issue" | "parameter" | "dosing"
@@ -58,12 +59,17 @@ export default function TimelineScreen() {
       (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
     );
 
-    if (selectedFilter === "all") {
-      return list;
+    const byType =
+      selectedFilter === "all"
+        ? list
+        : list.filter((item) => item.type === selectedFilter);
+
+    if (selectedAquariumFilter === "all") {
+      return byType;
     }
 
-    return list.filter((item) => item.type === selectedFilter);
-  }, [selectedFilter, timeline]);
+    return byType.filter((item) => item.aquariumId === selectedAquariumFilter);
+  }, [selectedAquariumFilter, selectedFilter, timeline]);
 
   const aquariumNameById = useMemo(() => {
     return aquariums.reduce<Record<string, string>>((acc, aquarium) => {
@@ -165,6 +171,26 @@ export default function TimelineScreen() {
               style={styles.filterChip}
             >
               {filter.label}
+            </Chip>
+          ))}
+        </View>
+
+        <View style={styles.filterRow}>
+          <Chip
+            selected={selectedAquariumFilter === "all"}
+            onPress={() => setSelectedAquariumFilter("all")}
+            style={styles.filterChip}
+          >
+            All tanks
+          </Chip>
+          {aquariums.map((aquarium) => (
+            <Chip
+              key={aquarium.id}
+              selected={selectedAquariumFilter === aquarium.id}
+              onPress={() => setSelectedAquariumFilter(aquarium.id)}
+              style={styles.filterChip}
+            >
+              {aquarium.name}
             </Chip>
           ))}
         </View>
