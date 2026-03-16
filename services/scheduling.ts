@@ -12,14 +12,27 @@ export function getLatestExecutionIso(
   taskTemplateId: string,
   aquariumId: string,
 ) {
-  return taskExecutions
-    .filter(
-      (entry) =>
-        entry.taskTemplateId === taskTemplateId &&
-        entry.aquariumId === aquariumId,
-    )
-    .sort((a, b) => +new Date(b.completedAt) - +new Date(a.completedAt))[0]
-    ?.completedAt;
+  let latestIso: string | undefined;
+  let latestTs = -1;
+
+  for (const entry of taskExecutions) {
+    if (
+      entry.taskTemplateId !== taskTemplateId ||
+      entry.aquariumId !== aquariumId
+    ) {
+      continue;
+    }
+
+    const ts = new Date(entry.completedAt).getTime();
+    if (Number.isNaN(ts) || ts <= latestTs) {
+      continue;
+    }
+
+    latestTs = ts;
+    latestIso = entry.completedAt;
+  }
+
+  return latestIso;
 }
 
 export function isTaskDue(

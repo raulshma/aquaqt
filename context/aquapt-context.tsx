@@ -1,34 +1,34 @@
 import {
-    createContext,
-    ReactNode,
-    useCallback,
-    useContext,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 
 import {
-    initPersistence,
-    loadPersistedState,
-    savePersistedState,
+  initPersistence,
+  loadPersistedState,
+  savePersistedState,
 } from "@/services/persistence";
 import {
-    AppSettings,
-    Aquarium,
-    Asset,
-    Consumable,
-    DosingLog,
-    Issue,
-    Livestock,
-    Memo,
-    TaskExecution,
-    TaskFrequency,
-    TaskTemplate,
-    TimelineEvent,
-    WaterParameterLog,
-    WaterParameters,
+  AppSettings,
+  Aquarium,
+  Asset,
+  Consumable,
+  DosingLog,
+  Issue,
+  Livestock,
+  Memo,
+  TaskExecution,
+  TaskFrequency,
+  TaskTemplate,
+  TimelineEvent,
+  WaterParameterLog,
+  WaterParameters,
 } from "@/types/aquapt";
 
 const nowId = (prefix: string) =>
@@ -139,9 +139,10 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [settings, setSettings] = useState<AppSettings>({
     openRouterApiKey: "",
-    aiModel: "openai/gpt-4o-mini",
+    aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
   });
   const hasHydratedOnceRef = useRef(false);
+  const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -198,28 +199,41 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const persist = async () => {
-      try {
-        await savePersistedState({
-          aquariums,
-          livestock,
-          taskTemplates,
-          taskExecutions,
-          dosingLogs,
-          assets,
-          consumables,
-          parameterLogs,
-          issues,
-          memos,
-          timeline,
-          settings,
-        });
-      } catch (error) {
-        console.warn("Persistence save failed", error);
-      }
+    if (persistTimeoutRef.current) {
+      clearTimeout(persistTimeoutRef.current);
+    }
+
+    const stateSnapshot = {
+      aquariums,
+      livestock,
+      taskTemplates,
+      taskExecutions,
+      dosingLogs,
+      assets,
+      consumables,
+      parameterLogs,
+      issues,
+      memos,
+      timeline,
+      settings,
     };
 
-    persist();
+    persistTimeoutRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          await savePersistedState(stateSnapshot);
+        } catch (error) {
+          console.warn("Persistence save failed", error);
+        }
+      })();
+    }, 250);
+
+    return () => {
+      if (persistTimeoutRef.current) {
+        clearTimeout(persistTimeoutRef.current);
+        persistTimeoutRef.current = null;
+      }
+    };
   }, [
     aquariums,
     livestock,

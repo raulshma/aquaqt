@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
-    ActivityIndicator,
-    Button,
-    Card,
-    Chip,
-    Text,
-    TextInput,
+  ActivityIndicator,
+  Button,
+  Card,
+  Chip,
+  Divider,
+  Text,
+  TextInput,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -51,6 +52,58 @@ const QUESTION_PRESETS: {
   },
 ];
 
+type OpenRouterModel = {
+  id: string;
+  name?: string;
+  created?: number;
+  context_length?: number;
+  pricing?: Record<string, string | number | null | undefined>;
+};
+
+const parsePricingValue = (value: string | number | null | undefined) => {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const isFreeModel = (model: OpenRouterModel) => {
+  if (model.id.includes(":free")) {
+    return true;
+  }
+
+  const pricingValues = Object.values(model.pricing ?? {})
+    .map(parsePricingValue)
+    .filter((value): value is number => value !== null);
+
+  return pricingValues.length > 0 && pricingValues.every((value) => value <= 0);
+};
+
+const formatCreatedDate = (created?: number) => {
+  if (!created || !Number.isFinite(created)) {
+    return "-";
+  }
+
+  return new Date(created * 1000).toLocaleDateString();
+};
+
+const formatPricingPreview = (pricing?: OpenRouterModel["pricing"]) => {
+  if (!pricing) {
+    return "p: - | c: -";
+  }
+
+  const prompt = parsePricingValue(pricing.prompt);
+  const completion = parsePricingValue(pricing.completion);
+
+  return `p: ${prompt ?? "-"} | c: ${completion ?? "-"}`;
+};
+
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const {
@@ -74,11 +127,57 @@ export default function SettingsScreen() {
   >("general");
   const [isAsking, setAsking] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [models, setModels] = useState<OpenRouterModel[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelQuery, setModelQuery] = useState("");
+  const [createdAfter, setCreatedAfter] = useState("");
+  const [minContext, setMinContext] = useState("");
+  const [showPricing, setShowPricing] = useState<"all" | "free" | "paid">(
+    "all",
+  );
+  const [sortBy, setSortBy] = useState<"name" | "created" | "context">("name");
+  const askRequestIdRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  const loadOpenRouterModels = useCallback(async () => {
+    setIsLoadingModels(true);
+    setModelsError(null);
+
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/models");
+      if (!response.ok) {
+        throw new Error(`Failed to load models (${response.status})`);
+      }
+
+      const data = (await response.json()) as {
+        data?: OpenRouterModel[];
+      };
+
+      setModels(Array.isArray(data.data) ? data.data : []);
+    } catch (error) {
+      setModelsError(
+        error instanceof Error ? error.message : "Failed to load models",
+      );
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setApiKey(settings.openRouterApiKey);
     setModel(settings.aiModel);
   }, [settings.aiModel, settings.openRouterApiKey]);
+
+  useEffect(() => {
+    void loadOpenRouterModels();
+  }, [loadOpenRouterModels]);
 
   const aquariumSummary = useMemo(() => {
     return aquariums
@@ -118,6 +217,92 @@ export default function SettingsScreen() {
     taskTemplates,
   ]);
 
+  const minContextValue = useMemo(() => {
+    const parsed = Number.parseInt(minContext.trim(), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [minContext]);
+
+  const createdAfterEpoch = useMemo(() => {
+    if (!createdAfter.trim()) {
+      return null;
+    }
+
+    const parsed = Date.parse(createdAfter.trim());
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+
+    return Math.floor(parsed / 1000);
+  }, [createdAfter]);
+
+  const filteredModels = useMemo(() => {
+    const query = modelQuery.trim().toLowerCase();
+
+    const sorted = models
+      .filter((candidate) => {
+        if (showPricing === "free" && !isFreeModel(candidate)) {
+          return false;
+        }
+        if (showPricing === "paid" && isFreeModel(candidate)) {
+          return false;
+        }
+
+        if (query) {
+          const haystack =
+            `${candidate.id} ${candidate.name ?? ""}`.toLowerCase();
+          if (!haystack.includes(query)) {
+            return false;
+          }
+        }
+
+        if (createdAfterEpoch !== null) {
+          const created = candidate.created ?? 0;
+          if (created < createdAfterEpoch) {
+            return false;
+          }
+        }
+
+        if (minContextValue !== null) {
+          const contextLength = candidate.context_length ?? 0;
+          if (contextLength < minContextValue) {
+            return false;
+          }
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === "name") {
+          return (a.name ?? a.id).localeCompare(b.name ?? b.id);
+        }
+
+        if (sortBy === "created") {
+          return (b.created ?? 0) - (a.created ?? 0);
+        }
+
+        return (b.context_length ?? 0) - (a.context_length ?? 0);
+      });
+
+    return sorted;
+  }, [
+    createdAfterEpoch,
+    minContextValue,
+    modelQuery,
+    models,
+    showPricing,
+    sortBy,
+  ]);
+
+  const freeModels = useMemo(
+    () => filteredModels.filter((candidate) => isFreeModel(candidate)),
+    [filteredModels],
+  );
+
+  const paidModels = useMemo(
+    () => filteredModels.filter((candidate) => !isFreeModel(candidate)),
+    [filteredModels],
+  );
+
   const handleSave = () => {
     saveApiKey(apiKey);
     saveAiModel(model);
@@ -129,6 +314,11 @@ export default function SettingsScreen() {
       return;
     }
 
+    const requestId = askRequestIdRef.current + 1;
+    askRequestIdRef.current = requestId;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
     setAsking(true);
     setAssistantError(null);
 
@@ -137,6 +327,7 @@ export default function SettingsScreen() {
         "https://openrouter.ai/api/v1/chat/completions",
         {
           method: "POST",
+          signal: controller.signal,
           headers: {
             Authorization: `Bearer ${apiKey.trim()}`,
             "Content-Type": "application/json",
@@ -179,13 +370,29 @@ export default function SettingsScreen() {
         choices?: { message?: { content?: string } }[];
       };
 
+      if (!mountedRef.current || askRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setAnswer(data.choices?.[0]?.message?.content?.trim() ?? "No response.");
     } catch (error) {
+      if (!mountedRef.current || askRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (error instanceof Error && error.name === "AbortError") {
+        setAssistantError("Request timed out. Please try again.");
+        return;
+      }
+
       setAssistantError(
         error instanceof Error ? error.message : "Unknown error",
       );
     } finally {
-      setAsking(false);
+      clearTimeout(timeoutId);
+      if (mountedRef.current && askRequestIdRef.current === requestId) {
+        setAsking(false);
+      }
     }
   };
 
@@ -225,6 +432,9 @@ export default function SettingsScreen() {
             autoCorrect={false}
             style={styles.modelInput}
           />
+          <Text variant="bodySmall" style={styles.helperText}>
+            Pick a model from the OpenRouter list below, or type your own ID.
+          </Text>
           <Button
             mode="contained"
             onPress={handleSave}
@@ -235,6 +445,135 @@ export default function SettingsScreen() {
           {savedAt ? (
             <Text variant="bodySmall" style={styles.savedAt}>
               Saved: {savedAt}
+            </Text>
+          ) : null}
+        </Card.Content>
+      </Card>
+
+      <Card mode="outlined">
+        <Card.Title
+          title="OpenRouter models"
+          subtitle="Grouped by free and paid with filters"
+        />
+        <Card.Content>
+          <View style={styles.modeRow}>
+            <Button
+              mode="contained-tonal"
+              onPress={() => {
+                void loadOpenRouterModels();
+              }}
+              disabled={isLoadingModels}
+            >
+              Refresh list
+            </Button>
+            {isLoadingModels ? <ActivityIndicator /> : null}
+          </View>
+
+          <TextInput
+            mode="outlined"
+            label="Filter by model name or ID"
+            value={modelQuery}
+            onChangeText={setModelQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <View style={styles.filterRow}>
+            <TextInput
+              mode="outlined"
+              label="Created after (YYYY-MM-DD)"
+              value={createdAfter}
+              onChangeText={setCreatedAfter}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.filterInput}
+            />
+            <TextInput
+              mode="outlined"
+              label="Min context"
+              value={minContext}
+              onChangeText={setMinContext}
+              keyboardType="number-pad"
+              style={styles.filterInput}
+            />
+          </View>
+
+          <View style={styles.modeRow}>
+            {[
+              { label: "All", value: "all" as const },
+              { label: "Free", value: "free" as const },
+              { label: "Paid", value: "paid" as const },
+            ].map((option) => (
+              <Chip
+                key={option.value}
+                selected={showPricing === option.value}
+                onPress={() => setShowPricing(option.value)}
+              >
+                {option.label}
+              </Chip>
+            ))}
+          </View>
+
+          <View style={styles.modeRow}>
+            {[
+              { label: "Sort: Name", value: "name" as const },
+              { label: "Sort: Created", value: "created" as const },
+              { label: "Sort: Context", value: "context" as const },
+            ].map((option) => (
+              <Chip
+                key={option.value}
+                selected={sortBy === option.value}
+                onPress={() => setSortBy(option.value)}
+              >
+                {option.label}
+              </Chip>
+            ))}
+          </View>
+
+          {modelsError ? (
+            <Text variant="bodySmall" style={styles.errorText}>
+              {modelsError}
+            </Text>
+          ) : null}
+
+          <Text variant="bodySmall" style={styles.helperText}>
+            Showing {filteredModels.length} filtered models
+          </Text>
+
+          <Divider style={styles.groupDivider} />
+          <Text variant="titleMedium">Free models ({freeModels.length})</Text>
+          {freeModels.slice(0, 40).map((candidate) => (
+            <Button
+              key={candidate.id}
+              mode="text"
+              onPress={() => setModel(candidate.id)}
+              contentStyle={styles.modelRowContent}
+              style={styles.modelRowButton}
+            >
+              {`${candidate.name ?? candidate.id} • ${candidate.context_length ?? "-"} ctx • ${formatCreatedDate(candidate.created)} • ${formatPricingPreview(candidate.pricing)}`}
+            </Button>
+          ))}
+          {freeModels.length > 40 ? (
+            <Text variant="bodySmall" style={styles.helperText}>
+              +{freeModels.length - 40} more free models (refine filters)
+            </Text>
+          ) : null}
+
+          <Divider style={styles.groupDivider} />
+          <Text variant="titleMedium">Paid models ({paidModels.length})</Text>
+          {paidModels.slice(0, 40).map((candidate) => (
+            <Button
+              key={candidate.id}
+              mode="text"
+              onPress={() => setModel(candidate.id)}
+              contentStyle={styles.modelRowContent}
+              style={styles.modelRowButton}
+            >
+              {`${candidate.name ?? candidate.id} • ${candidate.context_length ?? "-"} ctx • ${formatCreatedDate(candidate.created)} • ${formatPricingPreview(candidate.pricing)}`}
+            </Button>
+          ))}
+          {paidModels.length > 40 ? (
+            <Text variant="bodySmall" style={styles.helperText}>
+              +{paidModels.length - 40} more paid models (refine filters)
             </Text>
           ) : null}
         </Card.Content>
@@ -330,6 +669,29 @@ const styles = StyleSheet.create({
   },
   modelInput: {
     marginTop: 10,
+  },
+  helperText: {
+    marginTop: 8,
+    opacity: 0.75,
+  },
+  filterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  filterInput: {
+    flex: 1,
+  },
+  groupDivider: {
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  modelRowButton: {
+    alignSelf: "stretch",
+    marginTop: 4,
+  },
+  modelRowContent: {
+    justifyContent: "flex-start",
   },
   savedAt: {
     marginTop: 8,
