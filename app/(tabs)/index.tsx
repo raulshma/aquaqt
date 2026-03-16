@@ -1,3 +1,4 @@
+import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
@@ -72,21 +73,6 @@ export default function HomeScreen() {
   const [selectedAquariumId, setSelectedAquariumId] = useState(
     aquariums[0]?.id ?? "",
   );
-  const [action, setAction] = useState<
-    "parameter" | "memo" | "issue" | "dosing" | "task"
-  >("parameter");
-  const [newAquariumName, setNewAquariumName] = useState("");
-  const [newAquariumVolume, setNewAquariumVolume] = useState("");
-  const [newAquariumDimensions, setNewAquariumDimensions] = useState("");
-  const [newAquariumSetupDate, setNewAquariumSetupDate] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
-  const [newAquariumSetupDateValue, setNewAquariumSetupDateValue] =
-    useState<Date>(new Date());
-  const [newAquariumInvestment, setNewAquariumInvestment] = useState("");
-  const [newAquariumType, setNewAquariumType] = useState<
-    "freshwater" | "marine" | "brackish"
-  >("freshwater");
   const [newLivestockName, setNewLivestockName] = useState("");
   const [newLivestockSpecies, setNewLivestockSpecies] = useState("");
   const [newLivestockQty, setNewLivestockQty] = useState("1");
@@ -96,7 +82,6 @@ export default function HomeScreen() {
   const [newLivestockPhotoUri, setNewLivestockPhotoUri] = useState("");
   const [isPickingPhoto, setPickingPhoto] = useState(false);
   const [isPickingMemoPhoto, setPickingMemoPhoto] = useState(false);
-  const [memoPhotoUri, setMemoPhotoUri] = useState("");
   const [newAssetModel, setNewAssetModel] = useState("");
   const [newAssetCategory, setNewAssetCategory] = useState<
     "filter" | "heater" | "light" | "co2" | "other"
@@ -112,22 +97,6 @@ export default function HomeScreen() {
   const [newConsumableUnit, setNewConsumableUnit] = useState<
     "pcs" | "ml" | "g"
   >("pcs");
-  const [memo, setMemo] = useState("");
-  const [issueTitle, setIssueTitle] = useState("");
-  const [ammonia, setAmmonia] = useState("");
-  const [nitrite, setNitrite] = useState("");
-  const [nitrate, setNitrate] = useState("");
-  const [ph, setPh] = useState("");
-  const [temperature, setTemperature] = useState("");
-  const [gh, setGh] = useState("");
-  const [kh, setKh] = useState("");
-  const [salinity, setSalinity] = useState("");
-  const [calcium, setCalcium] = useState("");
-  const [alkalinity, setAlkalinity] = useState("");
-  const [doseProduct, setDoseProduct] = useState("");
-  const [doseAmount, setDoseAmount] = useState("");
-  const [quickTaskTemplateId, setQuickTaskTemplateId] = useState("");
-  const [quickTaskNote, setQuickTaskNote] = useState("");
   const [issueStatusDraft, setIssueStatusDraft] = useState<
     Record<string, IssueStatus>
   >({});
@@ -149,16 +118,213 @@ export default function HomeScreen() {
   const [resolutionNoteDraft, setResolutionNoteDraft] = useState<
     Record<string, string>
   >({});
-  const [editAquariumId, setEditAquariumId] = useState("");
-  const [editAquariumName, setEditAquariumName] = useState("");
-  const [editAquariumVolume, setEditAquariumVolume] = useState("");
-  const [editAquariumDimensions, setEditAquariumDimensions] = useState("");
-  const [editAquariumSetupDate, setEditAquariumSetupDate] = useState("");
-  const [editAquariumSetupDateValue, setEditAquariumSetupDateValue] =
-    useState<Date>(new Date());
-  const [editAquariumInvestment, setEditAquariumInvestment] = useState("");
+  const [isEditAquariumOpen, setEditAquariumOpen] = useState(false);
   const [isNewDatePickerOpen, setNewDatePickerOpen] = useState(false);
   const [isEditDatePickerOpen, setEditDatePickerOpen] = useState(false);
+
+  const addAquariumForm = useForm({
+    defaultValues: {
+      name: "",
+      volume: "",
+      dimensions: "",
+      setupDate: toIsoDate(new Date()),
+      setupDateValue: new Date(),
+      investment: "",
+      waterType: "freshwater" as "freshwater" | "marine" | "brackish",
+    },
+    onSubmit: ({ value }) => {
+      const volume = Number(value.volume);
+      const investment = Number(value.investment);
+      if (!value.name.trim() || !Number.isFinite(volume) || volume <= 0) {
+        return;
+      }
+
+      addAquarium({
+        name: value.name.trim(),
+        volumeLiters: volume,
+        dimensions: value.dimensions.trim() || "-",
+        waterType: value.waterType,
+        setupDate: value.setupDate.trim() || toIsoDate(new Date()),
+        investmentCost:
+          Number.isFinite(investment) && investment >= 0
+            ? investment
+            : undefined,
+      });
+
+      addAquariumForm.setFieldValue("name", "");
+      addAquariumForm.setFieldValue("volume", "");
+      addAquariumForm.setFieldValue("dimensions", "");
+      addAquariumForm.setFieldValue("setupDate", toIsoDate(new Date()));
+      addAquariumForm.setFieldValue("setupDateValue", new Date());
+      addAquariumForm.setFieldValue("investment", "");
+      addAquariumForm.setFieldValue("waterType", "freshwater");
+    },
+  });
+
+  const editAquariumForm = useForm({
+    defaultValues: {
+      id: "",
+      name: "",
+      volume: "",
+      dimensions: "",
+      setupDate: "",
+      setupDateValue: new Date(),
+      investment: "",
+    },
+    onSubmit: ({ value }) => {
+      if (!value.id || !value.name.trim()) {
+        return;
+      }
+
+      const volume = Number(value.volume);
+      const investment = Number(value.investment);
+      if (!Number.isFinite(volume) || volume <= 0) {
+        return;
+      }
+
+      editAquarium(value.id, {
+        name: value.name.trim(),
+        volumeLiters: volume,
+        dimensions: value.dimensions.trim() || "-",
+        setupDate: value.setupDate.trim() || toIsoDate(new Date()),
+        investmentCost:
+          Number.isFinite(investment) && investment >= 0
+            ? investment
+            : undefined,
+      });
+
+      setEditAquariumOpen(false);
+      editAquariumForm.setFieldValue("id", "");
+    },
+  });
+
+  const quickLogForm = useForm({
+    defaultValues: {
+      action: "parameter" as "parameter" | "memo" | "issue" | "dosing" | "task",
+      selectedAquariumId: aquariums[0]?.id ?? "",
+      memo: {
+        text: "",
+        photoUri: "",
+      },
+      issue: {
+        title: "",
+      },
+      parameter: {
+        ammonia: "",
+        nitrite: "",
+        nitrate: "",
+        ph: "",
+        temperature: "",
+        gh: "",
+        kh: "",
+        salinity: "",
+        calcium: "",
+        alkalinity: "",
+      },
+      dosing: {
+        product: "",
+        amount: "",
+      },
+      task: {
+        templateId: "",
+        note: "",
+      },
+    },
+    onSubmit: ({ value }) => {
+      if (!value.selectedAquariumId) {
+        return;
+      }
+
+      if (value.action === "memo" && value.memo.text.trim()) {
+        addMemo(
+          value.selectedAquariumId,
+          value.memo.text.trim(),
+          value.memo.photoUri || undefined,
+        );
+        quickLogForm.setFieldValue("memo.text", "");
+        quickLogForm.setFieldValue("memo.photoUri", "");
+      }
+
+      if (value.action === "issue" && value.issue.title.trim()) {
+        addIssue(value.selectedAquariumId, value.issue.title.trim());
+        quickLogForm.setFieldValue("issue.title", "");
+      }
+
+      if (value.action === "parameter") {
+        const ammoniaValue = Number(value.parameter.ammonia);
+        const nitriteValue = Number(value.parameter.nitrite);
+        const nitrateValue = Number(value.parameter.nitrate);
+        const phValue = Number(value.parameter.ph);
+        const temperatureValue = Number(value.parameter.temperature);
+        const ghValue = Number(value.parameter.gh);
+        const khValue = Number(value.parameter.kh);
+        const salinityValue = Number(value.parameter.salinity);
+        const calciumValue = Number(value.parameter.calcium);
+        const alkalinityValue = Number(value.parameter.alkalinity);
+
+        logParameters(value.selectedAquariumId, {
+          ammonia: Number.isFinite(ammoniaValue) ? ammoniaValue : undefined,
+          nitrite: Number.isFinite(nitriteValue) ? nitriteValue : undefined,
+          nitrate: Number.isFinite(nitrateValue) ? nitrateValue : undefined,
+          ph: Number.isFinite(phValue) ? phValue : undefined,
+          temperatureC: Number.isFinite(temperatureValue)
+            ? temperatureValue
+            : undefined,
+          gh: Number.isFinite(ghValue) ? ghValue : undefined,
+          kh: Number.isFinite(khValue) ? khValue : undefined,
+          salinity: Number.isFinite(salinityValue) ? salinityValue : undefined,
+          calcium: Number.isFinite(calciumValue) ? calciumValue : undefined,
+          alkalinity: Number.isFinite(alkalinityValue)
+            ? alkalinityValue
+            : undefined,
+        });
+
+        quickLogForm.setFieldValue("parameter.ammonia", "");
+        quickLogForm.setFieldValue("parameter.nitrite", "");
+        quickLogForm.setFieldValue("parameter.nitrate", "");
+        quickLogForm.setFieldValue("parameter.ph", "");
+        quickLogForm.setFieldValue("parameter.temperature", "");
+        quickLogForm.setFieldValue("parameter.gh", "");
+        quickLogForm.setFieldValue("parameter.kh", "");
+        quickLogForm.setFieldValue("parameter.salinity", "");
+        quickLogForm.setFieldValue("parameter.calcium", "");
+        quickLogForm.setFieldValue("parameter.alkalinity", "");
+      }
+
+      if (value.action === "dosing") {
+        const amountValue = Number(value.dosing.amount);
+        if (
+          value.dosing.product.trim() &&
+          Number.isFinite(amountValue) &&
+          amountValue > 0
+        ) {
+          logDosing(
+            value.selectedAquariumId,
+            value.dosing.product.trim(),
+            amountValue,
+          );
+          quickLogForm.setFieldValue("dosing.product", "");
+          quickLogForm.setFieldValue("dosing.amount", "");
+        }
+      }
+
+      if (value.action === "task") {
+        if (!value.task.templateId) {
+          return;
+        }
+
+        completeTask(
+          value.task.templateId,
+          value.selectedAquariumId,
+          value.task.note.trim() || undefined,
+        );
+        quickLogForm.setFieldValue("task.templateId", "");
+        quickLogForm.setFieldValue("task.note", "");
+      }
+
+      setDialogOpen(false);
+    },
+  });
 
   useEffect(() => {
     if (aquariums.length === 0) {
@@ -194,90 +360,7 @@ export default function HomeScreen() {
   }, [aquariums, parameterLogs]);
 
   const handleSubmitQuickAction = () => {
-    if (!selectedAquariumId) {
-      return;
-    }
-
-    if (action === "memo" && memo.trim()) {
-      addMemo(selectedAquariumId, memo.trim(), memoPhotoUri || undefined);
-      setMemo("");
-      setMemoPhotoUri("");
-    }
-
-    if (action === "issue" && issueTitle.trim()) {
-      addIssue(selectedAquariumId, issueTitle.trim());
-      setIssueTitle("");
-    }
-
-    if (action === "parameter") {
-      const ammoniaValue = Number(ammonia);
-      const nitriteValue = Number(nitrite);
-      const nitrateValue = Number(nitrate);
-      const phValue = Number(ph);
-      const temperatureValue = Number(temperature);
-      const ghValue = Number(gh);
-      const khValue = Number(kh);
-      const salinityValue = Number(salinity);
-      const calciumValue = Number(calcium);
-      const alkalinityValue = Number(alkalinity);
-
-      logParameters(selectedAquariumId, {
-        ammonia: Number.isFinite(ammoniaValue) ? ammoniaValue : undefined,
-        nitrite: Number.isFinite(nitriteValue) ? nitriteValue : undefined,
-        nitrate: Number.isFinite(nitrateValue) ? nitrateValue : undefined,
-        ph: Number.isFinite(phValue) ? phValue : undefined,
-        temperatureC: Number.isFinite(temperatureValue)
-          ? temperatureValue
-          : undefined,
-        gh: Number.isFinite(ghValue) ? ghValue : undefined,
-        kh: Number.isFinite(khValue) ? khValue : undefined,
-        salinity: Number.isFinite(salinityValue) ? salinityValue : undefined,
-        calcium: Number.isFinite(calciumValue) ? calciumValue : undefined,
-        alkalinity: Number.isFinite(alkalinityValue)
-          ? alkalinityValue
-          : undefined,
-      });
-
-      setAmmonia("");
-      setNitrite("");
-      setNitrate("");
-      setPh("");
-      setTemperature("");
-      setGh("");
-      setKh("");
-      setSalinity("");
-      setCalcium("");
-      setAlkalinity("");
-    }
-
-    if (action === "dosing") {
-      const amountValue = Number(doseAmount);
-      if (
-        doseProduct.trim() &&
-        Number.isFinite(amountValue) &&
-        amountValue > 0
-      ) {
-        logDosing(selectedAquariumId, doseProduct.trim(), amountValue);
-        setDoseProduct("");
-        setDoseAmount("");
-      }
-    }
-
-    if (action === "task") {
-      if (!quickTaskTemplateId) {
-        return;
-      }
-
-      completeTask(
-        quickTaskTemplateId,
-        selectedAquariumId,
-        quickTaskNote.trim() || undefined,
-      );
-      setQuickTaskTemplateId("");
-      setQuickTaskNote("");
-    }
-
-    setDialogOpen(false);
+    void quickLogForm.handleSubmit();
   };
 
   const nitrateTrend = useMemo(() => {
@@ -332,43 +415,20 @@ export default function HomeScreen() {
     );
   }, [selectedAquariumId, taskTemplates]);
 
-  const dueTasksForSelectedAquarium = useMemo(() => {
-    if (!selectedAquariumId) {
-      return [];
-    }
-
-    return taskTemplates.filter(
-      (task) =>
-        task.aquariumIds.includes(selectedAquariumId) &&
-        isTaskDue(task, selectedAquariumId, taskExecutions, new Date()),
+  const dueTasksByAquarium = useMemo(() => {
+    const now = new Date();
+    return aquariums.reduce<Record<string, typeof taskTemplates>>(
+      (acc, aquarium) => {
+        acc[aquarium.id] = taskTemplates.filter(
+          (task) =>
+            task.aquariumIds.includes(aquarium.id) &&
+            isTaskDue(task, aquarium.id, taskExecutions, now),
+        );
+        return acc;
+      },
+      {},
     );
-  }, [selectedAquariumId, taskExecutions, taskTemplates]);
-
-  const createAquarium = () => {
-    const volume = Number(newAquariumVolume);
-    const investment = Number(newAquariumInvestment);
-    if (!newAquariumName.trim() || !Number.isFinite(volume) || volume <= 0) {
-      return;
-    }
-
-    addAquarium({
-      name: newAquariumName.trim(),
-      volumeLiters: volume,
-      dimensions: newAquariumDimensions.trim() || "-",
-      waterType: newAquariumType,
-      setupDate:
-        newAquariumSetupDate.trim() || new Date().toISOString().slice(0, 10),
-      investmentCost:
-        Number.isFinite(investment) && investment >= 0 ? investment : undefined,
-    });
-    setNewAquariumName("");
-    setNewAquariumVolume("");
-    setNewAquariumDimensions("");
-    setNewAquariumSetupDate(new Date().toISOString().slice(0, 10));
-    setNewAquariumSetupDateValue(new Date());
-    setNewAquariumInvestment("");
-    setNewAquariumType("freshwater");
-  };
+  }, [aquariums, taskExecutions, taskTemplates]);
 
   const createLivestock = () => {
     const quantity = Number(newLivestockQty);
@@ -444,7 +504,7 @@ export default function HomeScreen() {
       });
 
       if (!result.canceled && result.assets?.[0]?.uri) {
-        setMemoPhotoUri(result.assets[0].uri);
+        quickLogForm.setFieldValue("memo.photoUri", result.assets[0].uri);
       }
     } finally {
       setPickingMemoPhoto(false);
@@ -482,42 +542,26 @@ export default function HomeScreen() {
       return;
     }
 
-    setEditAquariumId(aquarium.id);
-    setEditAquariumName(aquarium.name);
-    setEditAquariumVolume(String(aquarium.volumeLiters));
-    setEditAquariumDimensions(aquarium.dimensions);
-    setEditAquariumSetupDate(aquarium.setupDate);
-    setEditAquariumSetupDateValue(parseIsoDate(aquarium.setupDate));
-    setEditAquariumInvestment(
+    editAquariumForm.setFieldValue("id", aquarium.id);
+    editAquariumForm.setFieldValue("name", aquarium.name);
+    editAquariumForm.setFieldValue("volume", String(aquarium.volumeLiters));
+    editAquariumForm.setFieldValue("dimensions", aquarium.dimensions);
+    editAquariumForm.setFieldValue("setupDate", aquarium.setupDate);
+    editAquariumForm.setFieldValue(
+      "setupDateValue",
+      parseIsoDate(aquarium.setupDate),
+    );
+    editAquariumForm.setFieldValue(
+      "investment",
       aquarium.investmentCost !== undefined
         ? String(aquarium.investmentCost)
         : "",
     );
+    setEditAquariumOpen(true);
   };
 
   const saveAquariumEdit = () => {
-    if (!editAquariumId || !editAquariumName.trim()) {
-      return;
-    }
-
-    const volume = Number(editAquariumVolume);
-    const investment = Number(editAquariumInvestment);
-
-    if (!Number.isFinite(volume) || volume <= 0) {
-      return;
-    }
-
-    editAquarium(editAquariumId, {
-      name: editAquariumName.trim(),
-      volumeLiters: volume,
-      dimensions: editAquariumDimensions.trim() || "-",
-      setupDate:
-        editAquariumSetupDate.trim() || new Date().toISOString().slice(0, 10),
-      investmentCost:
-        Number.isFinite(investment) && investment >= 0 ? investment : undefined,
-    });
-
-    setEditAquariumId("");
+    void editAquariumForm.handleSubmit();
   };
 
   const createConsumable = () => {
@@ -617,53 +661,82 @@ export default function HomeScreen() {
         <Card style={styles.tankCard} mode="outlined">
           <Card.Title title="Add Aquarium" subtitle="Multi-tank management" />
           <Card.Content style={styles.formStack}>
-            <TextInput
-              mode="outlined"
-              label="Aquarium name"
-              value={newAquariumName}
-              onChangeText={setNewAquariumName}
-            />
-            <TextInput
-              mode="outlined"
-              label="Volume (L)"
-              value={newAquariumVolume}
-              onChangeText={setNewAquariumVolume}
-              keyboardType="numeric"
-            />
-            <TextInput
-              mode="outlined"
-              label="Dimensions"
-              value={newAquariumDimensions}
-              onChangeText={setNewAquariumDimensions}
-              placeholder="90 x 45 x 45 cm"
-            />
-            <Button
-              mode="outlined"
-              icon="calendar"
-              onPress={() => setNewDatePickerOpen(true)}
+            <addAquariumForm.Field name="name">
+              {(field) => (
+                <TextInput
+                  mode="outlined"
+                  label="Aquarium name"
+                  value={field.state.value}
+                  onChangeText={field.handleChange}
+                />
+              )}
+            </addAquariumForm.Field>
+            <addAquariumForm.Field name="volume">
+              {(field) => (
+                <TextInput
+                  mode="outlined"
+                  label="Volume (L)"
+                  value={field.state.value}
+                  onChangeText={field.handleChange}
+                  keyboardType="numeric"
+                />
+              )}
+            </addAquariumForm.Field>
+            <addAquariumForm.Field name="dimensions">
+              {(field) => (
+                <TextInput
+                  mode="outlined"
+                  label="Dimensions"
+                  value={field.state.value}
+                  onChangeText={field.handleChange}
+                  placeholder="90 x 45 x 45 cm"
+                />
+              )}
+            </addAquariumForm.Field>
+            <addAquariumForm.Subscribe
+              selector={(state) => state.values.setupDate}
             >
-              Setup date: {newAquariumSetupDate}
-            </Button>
-            <TextInput
-              mode="outlined"
-              label="Investment cost (optional)"
-              value={newAquariumInvestment}
-              onChangeText={setNewAquariumInvestment}
-              keyboardType="numeric"
-            />
-            <ScrollableSegmentedButtons
-              value={newAquariumType}
-              onValueChange={(value) =>
-                setNewAquariumType(
-                  value as "freshwater" | "marine" | "brackish",
-                )
-              }
-              buttons={WATER_TYPES.map((type) => ({
-                label: type,
-                value: type,
-              }))}
-            />
-            <Button mode="contained" onPress={createAquarium}>
+              {(setupDate) => (
+                <Button
+                  mode="outlined"
+                  icon="calendar"
+                  onPress={() => setNewDatePickerOpen(true)}
+                >
+                  Setup date: {setupDate}
+                </Button>
+              )}
+            </addAquariumForm.Subscribe>
+            <addAquariumForm.Field name="investment">
+              {(field) => (
+                <TextInput
+                  mode="outlined"
+                  label="Investment cost (optional)"
+                  value={field.state.value}
+                  onChangeText={field.handleChange}
+                  keyboardType="numeric"
+                />
+              )}
+            </addAquariumForm.Field>
+            <addAquariumForm.Field name="waterType">
+              {(field) => (
+                <ScrollableSegmentedButtons
+                  value={field.state.value}
+                  onValueChange={(value) =>
+                    field.handleChange(
+                      value as "freshwater" | "marine" | "brackish",
+                    )
+                  }
+                  buttons={WATER_TYPES.map((type) => ({
+                    label: type,
+                    value: type,
+                  }))}
+                />
+              )}
+            </addAquariumForm.Field>
+            <Button
+              mode="contained"
+              onPress={() => void addAquariumForm.handleSubmit()}
+            >
               Save aquarium
             </Button>
           </Card.Content>
@@ -1226,282 +1299,463 @@ export default function HomeScreen() {
       </ScrollView>
 
       <BottomSheet
-        visible={Boolean(editAquariumId)}
-        onDismiss={() => setEditAquariumId("")}
+        visible={isEditAquariumOpen}
+        onDismiss={() => {
+          setEditAquariumOpen(false);
+          editAquariumForm.setFieldValue("id", "");
+        }}
         title="Edit aquarium"
         actions={
           <>
-            <Button onPress={() => setEditAquariumId("")}>Cancel</Button>
+            <Button
+              onPress={() => {
+                setEditAquariumOpen(false);
+                editAquariumForm.setFieldValue("id", "");
+              }}
+            >
+              Cancel
+            </Button>
             <Button onPress={saveAquariumEdit}>Save</Button>
           </>
         }
       >
         <View style={styles.inputsContainer}>
-          <TextInput
-            mode="outlined"
-            label="Name"
-            value={editAquariumName}
-            onChangeText={setEditAquariumName}
-          />
-          <TextInput
-            mode="outlined"
-            label="Volume (L)"
-            value={editAquariumVolume}
-            onChangeText={setEditAquariumVolume}
-            keyboardType="numeric"
-          />
-          <TextInput
-            mode="outlined"
-            label="Dimensions"
-            value={editAquariumDimensions}
-            onChangeText={setEditAquariumDimensions}
-          />
-          <Button
-            mode="outlined"
-            icon="calendar"
-            onPress={() => setEditDatePickerOpen(true)}
+          <editAquariumForm.Field name="name">
+            {(field) => (
+              <TextInput
+                mode="outlined"
+                label="Name"
+                value={field.state.value}
+                onChangeText={field.handleChange}
+              />
+            )}
+          </editAquariumForm.Field>
+          <editAquariumForm.Field name="volume">
+            {(field) => (
+              <TextInput
+                mode="outlined"
+                label="Volume (L)"
+                value={field.state.value}
+                onChangeText={field.handleChange}
+                keyboardType="numeric"
+              />
+            )}
+          </editAquariumForm.Field>
+          <editAquariumForm.Field name="dimensions">
+            {(field) => (
+              <TextInput
+                mode="outlined"
+                label="Dimensions"
+                value={field.state.value}
+                onChangeText={field.handleChange}
+              />
+            )}
+          </editAquariumForm.Field>
+          <editAquariumForm.Subscribe
+            selector={(state) => state.values.setupDate}
           >
-            Setup date: {editAquariumSetupDate}
-          </Button>
-          <TextInput
-            mode="outlined"
-            label="Investment cost"
-            value={editAquariumInvestment}
-            onChangeText={setEditAquariumInvestment}
-            keyboardType="numeric"
-          />
+            {(setupDate) => (
+              <Button
+                mode="outlined"
+                icon="calendar"
+                onPress={() => setEditDatePickerOpen(true)}
+              >
+                Setup date: {setupDate}
+              </Button>
+            )}
+          </editAquariumForm.Subscribe>
+          <editAquariumForm.Field name="investment">
+            {(field) => (
+              <TextInput
+                mode="outlined"
+                label="Investment cost"
+                value={field.state.value}
+                onChangeText={field.handleChange}
+                keyboardType="numeric"
+              />
+            )}
+          </editAquariumForm.Field>
         </View>
       </BottomSheet>
 
-      <DatePickerModal
-        locale="en"
-        mode="single"
-        visible={isNewDatePickerOpen}
-        date={newAquariumSetupDateValue}
-        onDismiss={() => setNewDatePickerOpen(false)}
-        onConfirm={({ date }) => {
-          if (date) {
-            setNewAquariumSetupDateValue(date);
-            setNewAquariumSetupDate(toIsoDate(date));
-          }
-          setNewDatePickerOpen(false);
-        }}
-      />
+      <addAquariumForm.Subscribe
+        selector={(state) => state.values.setupDateValue}
+      >
+        {(setupDateValue) => (
+          <DatePickerModal
+            locale="en"
+            mode="single"
+            visible={isNewDatePickerOpen}
+            date={setupDateValue}
+            onDismiss={() => setNewDatePickerOpen(false)}
+            onConfirm={({ date }) => {
+              if (date) {
+                addAquariumForm.setFieldValue("setupDateValue", date);
+                addAquariumForm.setFieldValue("setupDate", toIsoDate(date));
+              }
+              setNewDatePickerOpen(false);
+            }}
+          />
+        )}
+      </addAquariumForm.Subscribe>
 
-      <DatePickerModal
-        locale="en"
-        mode="single"
-        visible={isEditDatePickerOpen}
-        date={editAquariumSetupDateValue}
-        onDismiss={() => setEditDatePickerOpen(false)}
-        onConfirm={({ date }) => {
-          if (date) {
-            setEditAquariumSetupDateValue(date);
-            setEditAquariumSetupDate(toIsoDate(date));
-          }
-          setEditDatePickerOpen(false);
-        }}
-      />
+      <editAquariumForm.Subscribe
+        selector={(state) => state.values.setupDateValue}
+      >
+        {(setupDateValue) => (
+          <DatePickerModal
+            locale="en"
+            mode="single"
+            visible={isEditDatePickerOpen}
+            date={setupDateValue}
+            onDismiss={() => setEditDatePickerOpen(false)}
+            onConfirm={({ date }) => {
+              if (date) {
+                editAquariumForm.setFieldValue("setupDateValue", date);
+                editAquariumForm.setFieldValue("setupDate", toIsoDate(date));
+              }
+              setEditDatePickerOpen(false);
+            }}
+          />
+        )}
+      </editAquariumForm.Subscribe>
 
       <BottomSheet
         visible={isDialogOpen}
-        onDismiss={() => setDialogOpen(false)}
+        onDismiss={() => {
+          setDialogOpen(false);
+          quickLogForm.setFieldValue("selectedAquariumId", selectedAquariumId);
+          quickLogForm.setFieldValue("action", "parameter");
+          quickLogForm.setFieldValue("memo.text", "");
+          quickLogForm.setFieldValue("memo.photoUri", "");
+          quickLogForm.setFieldValue("issue.title", "");
+          quickLogForm.setFieldValue("dosing.product", "");
+          quickLogForm.setFieldValue("dosing.amount", "");
+          quickLogForm.setFieldValue("task.templateId", "");
+          quickLogForm.setFieldValue("task.note", "");
+        }}
         title="Quick Log"
         actions={
           <>
-            <Button onPress={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onPress={handleSubmitQuickAction}>Save</Button>
+            <Button
+              onPress={() => {
+                setDialogOpen(false);
+                quickLogForm.setFieldValue(
+                  "selectedAquariumId",
+                  selectedAquariumId,
+                );
+              }}
+            >
+              Cancel
+            </Button>
+            <quickLogForm.Subscribe selector={(state) => state.values}>
+              {(values) => {
+                const canSaveByAction: Record<typeof values.action, boolean> = {
+                  task: values.task.templateId.length > 0,
+                  parameter: true,
+                  memo: values.memo.text.trim().length > 0,
+                  issue: values.issue.title.trim().length > 0,
+                  dosing:
+                    values.dosing.product.trim().length > 0 &&
+                    Number.isFinite(Number(values.dosing.amount)) &&
+                    Number(values.dosing.amount) > 0,
+                };
+
+                return (
+                  <Button
+                    onPress={handleSubmitQuickAction}
+                    disabled={
+                      !values.selectedAquariumId ||
+                      !canSaveByAction[values.action]
+                    }
+                  >
+                    Save
+                  </Button>
+                );
+              }}
+            </quickLogForm.Subscribe>
           </>
         }
       >
-        <ScrollableSegmentedButtons
-          value={selectedAquariumId}
-          onValueChange={setSelectedAquariumId}
-          buttons={aquariums.map((aq) => ({
-            label: aq.name,
-            value: aq.id,
-            style: styles.segmentButton,
-          }))}
-          density="small"
-        />
-
-        <ScrollableSegmentedButtons
-          value={action}
-          onValueChange={(value) =>
-            setAction(
-              value as "parameter" | "memo" | "issue" | "dosing" | "task",
-            )
-          }
-          buttons={[
-            { label: "Task", value: "task" },
-            { label: "Parameters", value: "parameter" },
-            { label: "Memo", value: "memo" },
-            { label: "Issue", value: "issue" },
-            { label: "Dosing", value: "dosing" },
-          ]}
-          style={styles.actionSelector}
-        />
-
-        {action === "task" ? (
-          <View style={styles.inputsContainer}>
+        <quickLogForm.Field name="selectedAquariumId">
+          {(field) => (
             <ScrollableSegmentedButtons
-              value={quickTaskTemplateId}
-              onValueChange={setQuickTaskTemplateId}
-              buttons={dueTasksForSelectedAquarium.map((task) => ({
-                label: task.title,
-                value: task.id,
+              value={field.state.value}
+              onValueChange={(value) => {
+                field.handleChange(value);
+                setSelectedAquariumId(value);
+              }}
+              buttons={aquariums.map((aq) => ({
+                label: aq.name,
+                value: aq.id,
+                style: styles.segmentButton,
               }))}
+              density="small"
             />
-            {dueTasksForSelectedAquarium.length === 0 ? (
-              <Text variant="bodySmall" style={styles.issueMeta}>
-                No due tasks for this aquarium.
-              </Text>
-            ) : null}
-            <TextInput
-              label="Completion note (optional)"
-              mode="outlined"
-              value={quickTaskNote}
-              onChangeText={setQuickTaskNote}
-              multiline
-              numberOfLines={2}
-            />
-          </View>
-        ) : null}
+          )}
+        </quickLogForm.Field>
 
-        {action === "parameter" ? (
-          <View style={styles.inputsContainer}>
-            <TextInput
-              label="Ammonia (ppm)"
-              mode="outlined"
-              value={ammonia}
-              onChangeText={setAmmonia}
-              keyboardType="numeric"
+        <quickLogForm.Field name="action">
+          {(field) => (
+            <ScrollableSegmentedButtons
+              value={field.state.value}
+              onValueChange={(value) =>
+                field.handleChange(
+                  value as "parameter" | "memo" | "issue" | "dosing" | "task",
+                )
+              }
+              buttons={[
+                { label: "Task", value: "task" },
+                { label: "Parameters", value: "parameter" },
+                { label: "Memo", value: "memo" },
+                { label: "Issue", value: "issue" },
+                { label: "Dosing", value: "dosing" },
+              ]}
+              style={styles.actionSelector}
             />
-            <TextInput
-              label="Nitrite (ppm)"
-              mode="outlined"
-              value={nitrite}
-              onChangeText={setNitrite}
-              keyboardType="numeric"
-            />
-            <TextInput
-              label="Nitrate (ppm)"
-              mode="outlined"
-              value={nitrate}
-              onChangeText={setNitrate}
-              keyboardType="numeric"
-            />
-            <TextInput
-              label="pH"
-              mode="outlined"
-              value={ph}
-              onChangeText={setPh}
-              keyboardType="numeric"
-            />
-            <TextInput
-              label="Temperature °C"
-              mode="outlined"
-              value={temperature}
-              onChangeText={setTemperature}
-              keyboardType="numeric"
-            />
-            <TextInput
-              label="GH"
-              mode="outlined"
-              value={gh}
-              onChangeText={setGh}
-              keyboardType="numeric"
-            />
-            <TextInput
-              label="KH"
-              mode="outlined"
-              value={kh}
-              onChangeText={setKh}
-              keyboardType="numeric"
-            />
-            <TextInput
-              label="Salinity"
-              mode="outlined"
-              value={salinity}
-              onChangeText={setSalinity}
-              keyboardType="numeric"
-            />
-            <TextInput
-              label="Calcium"
-              mode="outlined"
-              value={calcium}
-              onChangeText={setCalcium}
-              keyboardType="numeric"
-            />
-            <TextInput
-              label="Alkalinity"
-              mode="outlined"
-              value={alkalinity}
-              onChangeText={setAlkalinity}
-              keyboardType="numeric"
-            />
-          </View>
-        ) : null}
+          )}
+        </quickLogForm.Field>
 
-        {action === "memo" ? (
-          <View style={styles.inputsContainer}>
-            <TextInput
-              label="Memo"
-              mode="outlined"
-              value={memo}
-              onChangeText={setMemo}
-              multiline
-              numberOfLines={4}
-            />
-            <Button
-              mode="contained-tonal"
-              onPress={pickMemoPhoto}
-              loading={isPickingMemoPhoto}
-            >
-              {memoPhotoUri ? "Change memo photo" : "Attach memo photo"}
-            </Button>
-            {memoPhotoUri ? (
-              <Image
-                source={{ uri: memoPhotoUri }}
-                style={styles.photoPreview}
-              />
-            ) : null}
-          </View>
-        ) : null}
+        <quickLogForm.Subscribe selector={(state) => state.values}>
+          {(values) => {
+            const dueTasksForSelectedAquarium =
+              dueTasksByAquarium[values.selectedAquariumId] ?? [];
 
-        {action === "issue" ? (
-          <TextInput
-            label="Issue title"
-            mode="outlined"
-            value={issueTitle}
-            onChangeText={setIssueTitle}
-            style={styles.inputTopSpacing}
-          />
-        ) : null}
+            return (
+              <>
+                {values.action === "task" ? (
+                  <View style={styles.inputsContainer}>
+                    <quickLogForm.Field name="task.templateId">
+                      {(field) => (
+                        <ScrollableSegmentedButtons
+                          value={field.state.value}
+                          onValueChange={field.handleChange}
+                          buttons={dueTasksForSelectedAquarium.map((task) => ({
+                            label: task.title,
+                            value: task.id,
+                          }))}
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    {dueTasksForSelectedAquarium.length === 0 ? (
+                      <Text variant="bodySmall" style={styles.issueMeta}>
+                        No due tasks for this aquarium.
+                      </Text>
+                    ) : null}
+                    <quickLogForm.Field name="task.note">
+                      {(field) => (
+                        <TextInput
+                          label="Completion note (optional)"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          multiline
+                          numberOfLines={2}
+                        />
+                      )}
+                    </quickLogForm.Field>
+                  </View>
+                ) : null}
 
-        {action === "dosing" ? (
-          <View style={styles.inputsContainer}>
-            <TextInput
-              label="Product"
-              mode="outlined"
-              value={doseProduct}
-              onChangeText={setDoseProduct}
-            />
-            <TextInput
-              label="Amount (ml)"
-              mode="outlined"
-              value={doseAmount}
-              onChangeText={setDoseAmount}
-              keyboardType="numeric"
-            />
-          </View>
-        ) : null}
+                {values.action === "parameter" ? (
+                  <View style={styles.inputsContainer}>
+                    <quickLogForm.Field name="parameter.ammonia">
+                      {(field) => (
+                        <TextInput
+                          label="Ammonia (ppm)"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="parameter.nitrite">
+                      {(field) => (
+                        <TextInput
+                          label="Nitrite (ppm)"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="parameter.nitrate">
+                      {(field) => (
+                        <TextInput
+                          label="Nitrate (ppm)"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="parameter.ph">
+                      {(field) => (
+                        <TextInput
+                          label="pH"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="parameter.temperature">
+                      {(field) => (
+                        <TextInput
+                          label="Temperature °C"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="parameter.gh">
+                      {(field) => (
+                        <TextInput
+                          label="GH"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="parameter.kh">
+                      {(field) => (
+                        <TextInput
+                          label="KH"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="parameter.salinity">
+                      {(field) => (
+                        <TextInput
+                          label="Salinity"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="parameter.calcium">
+                      {(field) => (
+                        <TextInput
+                          label="Calcium"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="parameter.alkalinity">
+                      {(field) => (
+                        <TextInput
+                          label="Alkalinity"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                  </View>
+                ) : null}
+
+                {values.action === "memo" ? (
+                  <View style={styles.inputsContainer}>
+                    <quickLogForm.Field name="memo.text">
+                      {(field) => (
+                        <TextInput
+                          label="Memo"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          multiline
+                          numberOfLines={4}
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <Button
+                      mode="contained-tonal"
+                      onPress={pickMemoPhoto}
+                      loading={isPickingMemoPhoto}
+                    >
+                      {values.memo.photoUri
+                        ? "Change memo photo"
+                        : "Attach memo photo"}
+                    </Button>
+                    {values.memo.photoUri ? (
+                      <Image
+                        source={{ uri: values.memo.photoUri }}
+                        style={styles.photoPreview}
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
+
+                {values.action === "issue" ? (
+                  <quickLogForm.Field name="issue.title">
+                    {(field) => (
+                      <TextInput
+                        label="Issue title"
+                        mode="outlined"
+                        value={field.state.value}
+                        onChangeText={field.handleChange}
+                        style={styles.inputTopSpacing}
+                      />
+                    )}
+                  </quickLogForm.Field>
+                ) : null}
+
+                {values.action === "dosing" ? (
+                  <View style={styles.inputsContainer}>
+                    <quickLogForm.Field name="dosing.product">
+                      {(field) => (
+                        <TextInput
+                          label="Product"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                        />
+                      )}
+                    </quickLogForm.Field>
+                    <quickLogForm.Field name="dosing.amount">
+                      {(field) => (
+                        <TextInput
+                          label="Amount (ml)"
+                          mode="outlined"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </quickLogForm.Field>
+                  </View>
+                ) : null}
+              </>
+            );
+          }}
+        </quickLogForm.Subscribe>
       </BottomSheet>
 
       <FAB
         icon="plus"
         style={styles.fab}
-        onPress={() => setDialogOpen(true)}
+        onPress={() => {
+          quickLogForm.setFieldValue("selectedAquariumId", selectedAquariumId);
+          setDialogOpen(true);
+        }}
         label="Quick Log"
       />
     </>
