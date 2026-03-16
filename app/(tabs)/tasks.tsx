@@ -13,6 +13,7 @@ import {
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useAquapt } from "@/context/aquapt-context";
+import { isTaskDue } from "@/services/scheduling";
 import { TaskFrequency } from "@/types/aquapt";
 
 export default function TasksScreen() {
@@ -33,11 +34,14 @@ export default function TasksScreen() {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [taskFrequency, setTaskFrequency] = useState<TaskFrequency>("weekly");
+  const [taskAquariumIds, setTaskAquariumIds] = useState<string[]>(
+    aquariums[0]?.id ? [aquariums[0].id] : [],
+  );
   const [doseProduct, setDoseProduct] = useState("");
   const [doseAmount, setDoseAmount] = useState("");
   const [doseNote, setDoseNote] = useState("");
 
-  const todayTasks = useMemo(() => {
+  const taskMatrix = useMemo(() => {
     return taskTemplates.flatMap((task) =>
       task.aquariumIds.map((aquariumId) => ({
         key: `${task.id}-${aquariumId}`,
@@ -46,6 +50,12 @@ export default function TasksScreen() {
       })),
     );
   }, [taskTemplates]);
+
+  const dueTasks = useMemo(() => {
+    return taskMatrix.filter(({ task, aquariumId }) =>
+      isTaskDue(task, aquariumId, taskExecutions, new Date()),
+    );
+  }, [taskExecutions, taskMatrix]);
 
   const getAquariumName = (aquariumId: string) => {
     return (
@@ -91,12 +101,15 @@ export default function TasksScreen() {
         title: taskTitle.trim(),
         description: taskDescription.trim() || undefined,
         frequency: taskFrequency,
-        aquariumIds: [selectedAquariumId],
+        aquariumIds: taskAquariumIds.length
+          ? taskAquariumIds
+          : [selectedAquariumId],
       });
 
       setTaskTitle("");
       setTaskDescription("");
       setTaskFrequency("weekly");
+      setTaskAquariumIds(selectedAquariumId ? [selectedAquariumId] : []);
       setDialogOpen(false);
       return;
     }
@@ -127,10 +140,10 @@ export default function TasksScreen() {
         </Text>
 
         <Text variant="titleMedium" style={styles.sectionTitle}>
-          Recurring tasks
+          Tasks due now
         </Text>
 
-        {todayTasks.map(({ key, task, aquariumId }) => {
+        {dueTasks.map(({ key, task, aquariumId }) => {
           const doneAt = latestExecutionByTemplate[key];
 
           return (
@@ -163,6 +176,16 @@ export default function TasksScreen() {
             </Card>
           );
         })}
+
+        {dueTasks.length === 0 ? (
+          <Card style={styles.card} mode="outlined">
+            <Card.Content>
+              <Text variant="bodyMedium">
+                No due tasks right now. Your tanks are on schedule ✅
+              </Text>
+            </Card.Content>
+          </Card>
+        ) : null}
 
         <Text variant="titleMedium" style={styles.sectionTitle}>
           Latest dosing by tank
@@ -219,6 +242,26 @@ export default function TasksScreen() {
               value={taskTitle}
               onChangeText={setTaskTitle}
             />
+            <View style={styles.chipsWrap}>
+              {aquariums.map((aq) => {
+                const selected = taskAquariumIds.includes(aq.id);
+                return (
+                  <Chip
+                    key={aq.id}
+                    selected={selected}
+                    onPress={() =>
+                      setTaskAquariumIds((prev) =>
+                        selected
+                          ? prev.filter((id) => id !== aq.id)
+                          : [...prev, aq.id],
+                      )
+                    }
+                  >
+                    {aq.name}
+                  </Chip>
+                );
+              })}
+            </View>
             <SegmentedButtons
               value={taskFrequency}
               onValueChange={(value) =>
@@ -321,6 +364,11 @@ const styles = StyleSheet.create({
   formSection: {
     marginTop: 12,
     gap: 10,
+  },
+  chipsWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
   fab: {
     position: "absolute",

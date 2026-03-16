@@ -1,19 +1,62 @@
 import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import {
     ActivityIndicator,
     Button,
     Card,
+    Chip,
     Text,
     TextInput,
 } from "react-native-paper";
 
 import { useAquapt } from "@/context/aquapt-context";
 
+const MODE_PROMPTS: Record<
+  "general" | "diagnostic" | "compatibility" | "task-suggestion",
+  string
+> = {
+  general:
+    "Answer clearly and concisely. Provide practical aquarium-safe recommendations and include brief rationale.",
+  diagnostic:
+    "Prioritize diagnosis from trends. List likely causes ranked by confidence, then immediate safe actions, then monitoring checks for the next 7 days.",
+  compatibility:
+    "Evaluate species compatibility using current livestock, water parameters, and water type. Highlight conflicts and provide safer alternatives if needed.",
+  "task-suggestion":
+    "Suggest actionable maintenance/task adjustments based on open issues and recent logs. Provide a simple schedule with frequency and expected outcome.",
+};
+
+const QUESTION_PRESETS: {
+  label: string;
+  mode: "general" | "diagnostic" | "compatibility" | "task-suggestion";
+  question: string;
+}[] = [
+  {
+    label: "Shrimp issue",
+    mode: "diagnostic",
+    question:
+      "Why are my shrimp struggling lately? Please analyze my recent trends and suggest next actions.",
+  },
+  {
+    label: "Stocking check",
+    mode: "compatibility",
+    question:
+      "Can I add Cherry Shrimp to my current tank safely? Explain compatibility and parameter constraints.",
+  },
+  {
+    label: "Algae plan",
+    mode: "task-suggestion",
+    question:
+      "I keep getting algae reports. What maintenance and dosing schedule should I follow for the next 2 weeks?",
+  },
+];
+
 export default function SettingsScreen() {
   const {
     settings,
     aquariums,
+    livestock,
+    taskTemplates,
+    taskExecutions,
     issues,
     parameterLogs,
     saveApiKey,
@@ -24,6 +67,9 @@ export default function SettingsScreen() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
+  const [assistantMode, setAssistantMode] = useState<
+    "general" | "diagnostic" | "compatibility" | "task-suggestion"
+  >("general");
   const [isAsking, setAsking] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
 
@@ -46,6 +92,24 @@ export default function SettingsScreen() {
       })
       .slice(0, 8);
   }, [aquariums, issues, parameterLogs]);
+
+  const assistantContext = useMemo(() => {
+    return {
+      aquariumSummary,
+      livestock: livestock.slice(0, 40),
+      recentParameterLogs: parameterLogs.slice(0, 60),
+      openIssues: issues.filter((issue) => issue.status !== "resolved"),
+      taskTemplates,
+      recentTaskExecutions: taskExecutions.slice(0, 80),
+    };
+  }, [
+    aquariumSummary,
+    issues,
+    livestock,
+    parameterLogs,
+    taskExecutions,
+    taskTemplates,
+  ]);
 
   const handleSave = () => {
     saveApiKey(apiKey);
@@ -76,11 +140,19 @@ export default function SettingsScreen() {
               {
                 role: "system",
                 content:
-                  "You are Aquapt assistant. Give concise, practical aquarium advice based on provided context. If uncertain, say so.",
+                  "You are Aquapt assistant. Give concise, practical aquarium advice based on provided context. If uncertain, say so. Prioritize actionable steps with safety-first guidance.",
               },
               {
                 role: "system",
-                content: `App context: ${JSON.stringify({ aquariumSummary })}`,
+                content: `Assistant mode: ${assistantMode}`,
+              },
+              {
+                role: "system",
+                content: MODE_PROMPTS[assistantMode],
+              },
+              {
+                role: "system",
+                content: `App context: ${JSON.stringify(assistantContext)}`,
               },
               {
                 role: "user",
@@ -162,6 +234,43 @@ export default function SettingsScreen() {
           subtitle="Uses your BYOK and current app data context"
         />
         <Card.Content>
+          <View style={styles.modeRow}>
+            {[
+              { label: "General", value: "general" },
+              { label: "Diagnostic", value: "diagnostic" },
+              { label: "Compatibility", value: "compatibility" },
+              { label: "Task Suggest", value: "task-suggestion" },
+            ].map((mode) => (
+              <Chip
+                key={mode.value}
+                selected={assistantMode === mode.value}
+                onPress={() =>
+                  setAssistantMode(
+                    mode.value as
+                      | "general"
+                      | "diagnostic"
+                      | "compatibility"
+                      | "task-suggestion",
+                  )
+                }
+              >
+                {mode.label}
+              </Chip>
+            ))}
+          </View>
+          <View style={styles.modeRow}>
+            {QUESTION_PRESETS.map((preset) => (
+              <Chip
+                key={preset.label}
+                onPress={() => {
+                  setAssistantMode(preset.mode);
+                  setQuestion(preset.question);
+                }}
+              >
+                {preset.label}
+              </Chip>
+            ))}
+          </View>
           <TextInput
             mode="outlined"
             label="Ask Aquapt AI"
@@ -220,6 +329,12 @@ const styles = StyleSheet.create({
   askButton: {
     marginTop: 12,
     alignSelf: "flex-start",
+  },
+  modeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 10,
   },
   answerSpacing: {
     marginTop: 12,

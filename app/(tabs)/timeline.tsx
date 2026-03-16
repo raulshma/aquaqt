@@ -1,3 +1,5 @@
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
@@ -9,6 +11,7 @@ import {
     Text,
     TextInput,
 } from "react-native-paper";
+import { DatePickerModal } from "react-native-paper-dates";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useAquapt } from "@/context/aquapt-context";
@@ -45,6 +48,10 @@ export default function TimelineScreen() {
   const [ph, setPh] = useState("");
   const [doseProduct, setDoseProduct] = useState("");
   const [doseAmount, setDoseAmount] = useState("");
+  const [memoPhotoUri, setMemoPhotoUri] = useState("");
+  const [isPickingMemoPhoto, setPickingMemoPhoto] = useState(false);
+  const [memoDate, setMemoDate] = useState(new Date());
+  const [isMemoDatePickerOpen, setMemoDatePickerOpen] = useState(false);
 
   const filteredTimeline = useMemo(() => {
     const list = [...timeline].sort(
@@ -65,14 +72,45 @@ export default function TimelineScreen() {
     }, {});
   }, [aquariums]);
 
+  const pickMemoPhoto = async () => {
+    setPickingMemoPhoto(true);
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setMemoPhotoUri(result.assets[0].uri);
+      }
+    } finally {
+      setPickingMemoPhoto(false);
+    }
+  };
+
   const saveQuickLog = () => {
     if (!selectedAquariumId) {
       return;
     }
 
     if (action === "memo" && memo.trim()) {
-      addMemo(selectedAquariumId, memo.trim());
+      addMemo(
+        selectedAquariumId,
+        memo.trim(),
+        memoPhotoUri || undefined,
+        memoDate.toISOString(),
+      );
       setMemo("");
+      setMemoPhotoUri("");
+      setMemoDate(new Date());
     }
 
     if (action === "issue" && issueTitle.trim()) {
@@ -149,6 +187,12 @@ export default function TimelineScreen() {
               {event.description ? (
                 <Text variant="bodyMedium">{event.description}</Text>
               ) : null}
+              {event.photoUri ? (
+                <Image
+                  source={{ uri: event.photoUri }}
+                  style={styles.eventPhoto}
+                />
+              ) : null}
             </Card.Content>
           </Card>
         ))}
@@ -200,15 +244,33 @@ export default function TimelineScreen() {
         />
 
         {action === "memo" ? (
-          <TextInput
-            mode="outlined"
-            label="Memo"
-            multiline
-            numberOfLines={4}
-            value={memo}
-            onChangeText={setMemo}
-            style={styles.quickActionInput}
-          />
+          <View style={styles.parameterInputs}>
+            <TextInput
+              mode="outlined"
+              label="Memo"
+              multiline
+              numberOfLines={4}
+              value={memo}
+              onChangeText={setMemo}
+            />
+            <Button
+              mode="contained-tonal"
+              onPress={pickMemoPhoto}
+              loading={isPickingMemoPhoto}
+            >
+              {memoPhotoUri ? "Change photo" : "Attach photo"}
+            </Button>
+            <Button
+              mode="outlined"
+              icon="calendar"
+              onPress={() => setMemoDatePickerOpen(true)}
+            >
+              Log date: {memoDate.toLocaleDateString()}
+            </Button>
+            {memoPhotoUri ? (
+              <Image source={{ uri: memoPhotoUri }} style={styles.eventPhoto} />
+            ) : null}
+          </View>
         ) : null}
 
         {action === "issue" ? (
@@ -259,6 +321,20 @@ export default function TimelineScreen() {
         ) : null}
       </BottomSheet>
 
+      <DatePickerModal
+        locale="en"
+        mode="single"
+        visible={isMemoDatePickerOpen}
+        date={memoDate}
+        onDismiss={() => setMemoDatePickerOpen(false)}
+        onConfirm={({ date }) => {
+          if (date) {
+            setMemoDate(date);
+          }
+          setMemoDatePickerOpen(false);
+        }}
+      />
+
       <FAB
         icon="plus"
         label="Log"
@@ -300,6 +376,12 @@ const styles = StyleSheet.create({
   },
   eventCard: {
     marginBottom: 10,
+  },
+  eventPhoto: {
+    width: "100%",
+    height: 170,
+    borderRadius: 12,
+    marginTop: 10,
   },
   eventHeader: {
     flexDirection: "row",

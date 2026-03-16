@@ -105,7 +105,12 @@ interface AquaptContextValue {
     status: Issue["status"],
     resolutionNote?: string,
   ) => void;
-  addMemo: (aquariumId: string, content: string) => void;
+  addMemo: (
+    aquariumId: string,
+    content: string,
+    photoUri?: string,
+    createdAt?: string,
+  ) => void;
   addAsset: (input: Omit<Asset, "id">) => void;
   addConsumable: (input: Omit<Consumable, "id" | "updatedAt">) => void;
   consumeConsumable: (
@@ -435,28 +440,38 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const addMemo = useCallback((aquariumId: string, content: string) => {
-    const createdAt = new Date().toISOString();
-    const memo: Memo = {
-      id: nowId("memo"),
-      aquariumId,
-      content,
-      createdAt,
-    };
-
-    setMemos((prev) => [memo, ...prev]);
-    setTimeline((prev) => [
-      {
-        id: nowId("event"),
+  const addMemo = useCallback(
+    (
+      aquariumId: string,
+      content: string,
+      photoUri?: string,
+      createdAtInput?: string,
+    ) => {
+      const createdAt = createdAtInput ?? new Date().toISOString();
+      const memo: Memo = {
+        id: nowId("memo"),
         aquariumId,
-        type: "memo",
+        content,
         createdAt,
-        title: "Memo added",
-        description: content,
-      },
-      ...prev,
-    ]);
-  }, []);
+        photoUri,
+      };
+
+      setMemos((prev) => [memo, ...prev]);
+      setTimeline((prev) => [
+        {
+          id: nowId("event"),
+          aquariumId,
+          type: "memo",
+          createdAt,
+          title: "Memo added",
+          description: content,
+          photoUri,
+        },
+        ...prev,
+      ]);
+    },
+    [],
+  );
 
   const saveApiKey = useCallback((value: string) => {
     setSettings((prev) => ({ ...prev, openRouterApiKey: value.trim() }));

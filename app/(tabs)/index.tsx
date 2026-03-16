@@ -17,12 +17,19 @@ import {
     Text,
     TextInput,
 } from "react-native-paper";
+import { DatePickerModal } from "react-native-paper-dates";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { useAquapt } from "@/context/aquapt-context";
+import { isTaskDue } from "@/services/scheduling";
 import { IssueStatus } from "@/types/aquapt";
 
 const WATER_TYPES = ["freshwater", "marine", "brackish"] as const;
+const toIsoDate = (date: Date) => date.toISOString().slice(0, 10);
+const parseIsoDate = (value: string) => {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
 
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
@@ -34,9 +41,12 @@ export default function HomeScreen() {
     dosingLogs,
     issues,
     parameterLogs,
+    taskTemplates,
+    taskExecutions,
     livestockCountByAquarium,
     openIssuesByAquarium,
     addAquarium,
+    editAquarium,
     addMemo,
     addIssue,
     addLivestock,
@@ -59,6 +69,13 @@ export default function HomeScreen() {
   >("parameter");
   const [newAquariumName, setNewAquariumName] = useState("");
   const [newAquariumVolume, setNewAquariumVolume] = useState("");
+  const [newAquariumDimensions, setNewAquariumDimensions] = useState("");
+  const [newAquariumSetupDate, setNewAquariumSetupDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [newAquariumSetupDateValue, setNewAquariumSetupDateValue] =
+    useState<Date>(new Date());
+  const [newAquariumInvestment, setNewAquariumInvestment] = useState("");
   const [newAquariumType, setNewAquariumType] = useState<
     "freshwater" | "marine" | "brackish"
   >("freshwater");
@@ -67,7 +84,11 @@ export default function HomeScreen() {
   const [newLivestockQty, setNewLivestockQty] = useState("1");
   const [newLivestockPhotoUri, setNewLivestockPhotoUri] = useState("");
   const [isPickingPhoto, setPickingPhoto] = useState(false);
+  const [isPickingMemoPhoto, setPickingMemoPhoto] = useState(false);
+  const [memoPhotoUri, setMemoPhotoUri] = useState("");
   const [newAssetModel, setNewAssetModel] = useState("");
+  const [selectedAssetTaskTemplateIds, setSelectedAssetTaskTemplateIds] =
+    useState<string[]>([]);
   const [newConsumableName, setNewConsumableName] = useState("");
   const [newConsumableRemaining, setNewConsumableRemaining] = useState("0");
   const [memo, setMemo] = useState("");
@@ -90,6 +111,16 @@ export default function HomeScreen() {
   const [resolutionNoteDraft, setResolutionNoteDraft] = useState<
     Record<string, string>
   >({});
+  const [editAquariumId, setEditAquariumId] = useState("");
+  const [editAquariumName, setEditAquariumName] = useState("");
+  const [editAquariumVolume, setEditAquariumVolume] = useState("");
+  const [editAquariumDimensions, setEditAquariumDimensions] = useState("");
+  const [editAquariumSetupDate, setEditAquariumSetupDate] = useState("");
+  const [editAquariumSetupDateValue, setEditAquariumSetupDateValue] =
+    useState<Date>(new Date());
+  const [editAquariumInvestment, setEditAquariumInvestment] = useState("");
+  const [isNewDatePickerOpen, setNewDatePickerOpen] = useState(false);
+  const [isEditDatePickerOpen, setEditDatePickerOpen] = useState(false);
 
   const latestParameterByAquarium = useMemo(() => {
     return aquariums.reduce<Record<string, string>>((acc, aquarium) => {
@@ -116,8 +147,9 @@ export default function HomeScreen() {
     }
 
     if (action === "memo" && memo.trim()) {
-      addMemo(selectedAquariumId, memo.trim());
+      addMemo(selectedAquariumId, memo.trim(), memoPhotoUri || undefined);
       setMemo("");
+      setMemoPhotoUri("");
     }
 
     if (action === "issue" && issueTitle.trim()) {
@@ -210,8 +242,33 @@ export default function HomeScreen() {
     }, {});
   }, [aquariums, parameterLogs]);
 
+  const pendingTasksToday = useMemo(() => {
+    return taskTemplates.flatMap((task) =>
+      task.aquariumIds
+        .filter((aquariumId) =>
+          isTaskDue(task, aquariumId, taskExecutions, new Date()),
+        )
+        .map((aquariumId) => ({
+          taskId: task.id,
+          taskTitle: task.title,
+          aquariumId,
+        })),
+    );
+  }, [taskTemplates, taskExecutions]);
+
+  const availableTaskTemplatesForAsset = useMemo(() => {
+    if (!selectedAquariumId) {
+      return [];
+    }
+
+    return taskTemplates.filter((task) =>
+      task.aquariumIds.includes(selectedAquariumId),
+    );
+  }, [selectedAquariumId, taskTemplates]);
+
   const createAquarium = () => {
     const volume = Number(newAquariumVolume);
+    const investment = Number(newAquariumInvestment);
     if (!newAquariumName.trim() || !Number.isFinite(volume) || volume <= 0) {
       return;
     }
@@ -219,12 +276,19 @@ export default function HomeScreen() {
     addAquarium({
       name: newAquariumName.trim(),
       volumeLiters: volume,
-      dimensions: "-",
+      dimensions: newAquariumDimensions.trim() || "-",
       waterType: newAquariumType,
-      setupDate: new Date().toISOString().slice(0, 10),
+      setupDate:
+        newAquariumSetupDate.trim() || new Date().toISOString().slice(0, 10),
+      investmentCost:
+        Number.isFinite(investment) && investment >= 0 ? investment : undefined,
     });
     setNewAquariumName("");
     setNewAquariumVolume("");
+    setNewAquariumDimensions("");
+    setNewAquariumSetupDate(new Date().toISOString().slice(0, 10));
+    setNewAquariumSetupDateValue(new Date());
+    setNewAquariumInvestment("");
     setNewAquariumType("freshwater");
   };
 
@@ -278,6 +342,30 @@ export default function HomeScreen() {
     }
   };
 
+  const pickMemoPhoto = async () => {
+    setPickingMemoPhoto(true);
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setMemoPhotoUri(result.assets[0].uri);
+      }
+    } finally {
+      setPickingMemoPhoto(false);
+    }
+  };
+
   const createAsset = () => {
     if (!selectedAquariumId || !newAssetModel.trim()) {
       return;
@@ -287,8 +375,57 @@ export default function HomeScreen() {
       aquariumId: selectedAquariumId,
       category: "other",
       brandModel: newAssetModel.trim(),
+      maintenanceTaskTemplateIds:
+        selectedAssetTaskTemplateIds.length > 0
+          ? selectedAssetTaskTemplateIds
+          : undefined,
     });
     setNewAssetModel("");
+    setSelectedAssetTaskTemplateIds([]);
+  };
+
+  const openEditAquarium = (aquariumId: string) => {
+    const aquarium = aquariums.find((item) => item.id === aquariumId);
+    if (!aquarium) {
+      return;
+    }
+
+    setEditAquariumId(aquarium.id);
+    setEditAquariumName(aquarium.name);
+    setEditAquariumVolume(String(aquarium.volumeLiters));
+    setEditAquariumDimensions(aquarium.dimensions);
+    setEditAquariumSetupDate(aquarium.setupDate);
+    setEditAquariumSetupDateValue(parseIsoDate(aquarium.setupDate));
+    setEditAquariumInvestment(
+      aquarium.investmentCost !== undefined
+        ? String(aquarium.investmentCost)
+        : "",
+    );
+  };
+
+  const saveAquariumEdit = () => {
+    if (!editAquariumId || !editAquariumName.trim()) {
+      return;
+    }
+
+    const volume = Number(editAquariumVolume);
+    const investment = Number(editAquariumInvestment);
+
+    if (!Number.isFinite(volume) || volume <= 0) {
+      return;
+    }
+
+    editAquarium(editAquariumId, {
+      name: editAquariumName.trim(),
+      volumeLiters: volume,
+      dimensions: editAquariumDimensions.trim() || "-",
+      setupDate:
+        editAquariumSetupDate.trim() || new Date().toISOString().slice(0, 10),
+      investmentCost:
+        Number.isFinite(investment) && investment >= 0 ? investment : undefined,
+    });
+
+    setEditAquariumId("");
   };
 
   const createConsumable = () => {
@@ -354,12 +491,30 @@ export default function HomeScreen() {
               <Chip compact icon="alert">
                 {totalOpenIssues} Active issues
               </Chip>
+              <Chip compact icon="calendar-clock">
+                {pendingTasksToday.length} Tasks due
+              </Chip>
               <Chip compact icon="test-tube">
                 {dosingLogs.length} Dosing logs
               </Chip>
             </View>
           </Card.Content>
         </Card>
+
+        {pendingTasksToday.length > 0 ? (
+          <Card style={styles.summaryCard} mode="outlined">
+            <Card.Title title="Tasks due today" />
+            <Card.Content>
+              <View style={styles.summaryRow}>
+                {pendingTasksToday.slice(0, 6).map((entry) => (
+                  <Chip key={`${entry.taskId}-${entry.aquariumId}`} compact>
+                    {entry.taskTitle}
+                  </Chip>
+                ))}
+              </View>
+            </Card.Content>
+          </Card>
+        ) : null}
 
         <Card style={styles.tankCard} mode="outlined">
           <Card.Title title="Add Aquarium" subtitle="Multi-tank management" />
@@ -375,6 +530,27 @@ export default function HomeScreen() {
               label="Volume (L)"
               value={newAquariumVolume}
               onChangeText={setNewAquariumVolume}
+              keyboardType="numeric"
+            />
+            <TextInput
+              mode="outlined"
+              label="Dimensions"
+              value={newAquariumDimensions}
+              onChangeText={setNewAquariumDimensions}
+              placeholder="90 x 45 x 45 cm"
+            />
+            <Button
+              mode="outlined"
+              icon="calendar"
+              onPress={() => setNewDatePickerOpen(true)}
+            >
+              Setup date: {newAquariumSetupDate}
+            </Button>
+            <TextInput
+              mode="outlined"
+              label="Investment cost (optional)"
+              value={newAquariumInvestment}
+              onChangeText={setNewAquariumInvestment}
               keyboardType="numeric"
             />
             <SegmentedButtons
@@ -405,6 +581,12 @@ export default function HomeScreen() {
               <Text variant="bodyMedium">
                 Latest parameters: {latestParameterByAquarium[aquarium.id]}
               </Text>
+              <Text variant="bodySmall" style={styles.issueMeta}>
+                {aquarium.dimensions} • Setup {aquarium.setupDate}
+                {aquarium.investmentCost !== undefined
+                  ? ` • $${aquarium.investmentCost}`
+                  : ""}
+              </Text>
               <View style={styles.summaryRow}>
                 <Chip compact icon="fish">
                   {livestockCountByAquarium[aquarium.id] ?? 0} livestock
@@ -415,6 +597,12 @@ export default function HomeScreen() {
                 <Chip compact icon="chart-line">
                   NO3 trend: {nitrateTrend[aquarium.id]}
                 </Chip>
+                <Button
+                  mode="contained-tonal"
+                  onPress={() => openEditAquarium(aquarium.id)}
+                >
+                  Edit specs
+                </Button>
               </View>
             </Card.Content>
           </Card>
@@ -610,6 +798,30 @@ export default function HomeScreen() {
               value={newAssetModel}
               onChangeText={setNewAssetModel}
             />
+            {availableTaskTemplatesForAsset.length > 0 ? (
+              <View style={styles.summaryRow}>
+                {availableTaskTemplatesForAsset.map((task) => {
+                  const selected = selectedAssetTaskTemplateIds.includes(
+                    task.id,
+                  );
+                  return (
+                    <Chip
+                      key={task.id}
+                      selected={selected}
+                      onPress={() =>
+                        setSelectedAssetTaskTemplateIds((prev) =>
+                          selected
+                            ? prev.filter((id) => id !== task.id)
+                            : [...prev, task.id],
+                        )
+                      }
+                    >
+                      {task.title}
+                    </Chip>
+                  );
+                })}
+              </View>
+            ) : null}
             <Button mode="contained-tonal" onPress={createAsset}>
               Add asset
             </Button>
@@ -641,6 +853,12 @@ export default function HomeScreen() {
                 {asset.category} •{" "}
                 {aquariums.find((aq) => aq.id === asset.aquariumId)?.name}
               </Text>
+              {asset.maintenanceTaskTemplateIds?.length ? (
+                <Text variant="bodySmall" style={styles.issueMeta}>
+                  Linked maintenance tasks:{" "}
+                  {asset.maintenanceTaskTemplateIds.length}
+                </Text>
+              ) : null}
             </Card.Content>
           </Card>
         ))}
@@ -754,6 +972,84 @@ export default function HomeScreen() {
       </ScrollView>
 
       <BottomSheet
+        visible={Boolean(editAquariumId)}
+        onDismiss={() => setEditAquariumId("")}
+        title="Edit aquarium"
+        actions={
+          <>
+            <Button onPress={() => setEditAquariumId("")}>Cancel</Button>
+            <Button onPress={saveAquariumEdit}>Save</Button>
+          </>
+        }
+      >
+        <View style={styles.inputsContainer}>
+          <TextInput
+            mode="outlined"
+            label="Name"
+            value={editAquariumName}
+            onChangeText={setEditAquariumName}
+          />
+          <TextInput
+            mode="outlined"
+            label="Volume (L)"
+            value={editAquariumVolume}
+            onChangeText={setEditAquariumVolume}
+            keyboardType="numeric"
+          />
+          <TextInput
+            mode="outlined"
+            label="Dimensions"
+            value={editAquariumDimensions}
+            onChangeText={setEditAquariumDimensions}
+          />
+          <Button
+            mode="outlined"
+            icon="calendar"
+            onPress={() => setEditDatePickerOpen(true)}
+          >
+            Setup date: {editAquariumSetupDate}
+          </Button>
+          <TextInput
+            mode="outlined"
+            label="Investment cost"
+            value={editAquariumInvestment}
+            onChangeText={setEditAquariumInvestment}
+            keyboardType="numeric"
+          />
+        </View>
+      </BottomSheet>
+
+      <DatePickerModal
+        locale="en"
+        mode="single"
+        visible={isNewDatePickerOpen}
+        date={newAquariumSetupDateValue}
+        onDismiss={() => setNewDatePickerOpen(false)}
+        onConfirm={({ date }) => {
+          if (date) {
+            setNewAquariumSetupDateValue(date);
+            setNewAquariumSetupDate(toIsoDate(date));
+          }
+          setNewDatePickerOpen(false);
+        }}
+      />
+
+      <DatePickerModal
+        locale="en"
+        mode="single"
+        visible={isEditDatePickerOpen}
+        date={editAquariumSetupDateValue}
+        onDismiss={() => setEditDatePickerOpen(false)}
+        onConfirm={({ date }) => {
+          if (date) {
+            setEditAquariumSetupDateValue(date);
+            setEditAquariumSetupDate(toIsoDate(date));
+          }
+          setEditDatePickerOpen(false);
+        }}
+      />
+
+      <BottomSheet
         visible={isDialogOpen}
         onDismiss={() => setDialogOpen(false)}
         title="Quick Log"
@@ -778,7 +1074,7 @@ export default function HomeScreen() {
         <SegmentedButtons
           value={action}
           onValueChange={(value) =>
-            setAction(value as "parameter" | "memo" | "issue")
+            setAction(value as "parameter" | "memo" | "issue" | "dosing")
           }
           buttons={[
             { label: "Parameters", value: "parameter" },
@@ -865,15 +1161,29 @@ export default function HomeScreen() {
         ) : null}
 
         {action === "memo" ? (
-          <TextInput
-            label="Memo"
-            mode="outlined"
-            value={memo}
-            onChangeText={setMemo}
-            multiline
-            numberOfLines={4}
-            style={styles.inputTopSpacing}
-          />
+          <View style={styles.inputsContainer}>
+            <TextInput
+              label="Memo"
+              mode="outlined"
+              value={memo}
+              onChangeText={setMemo}
+              multiline
+              numberOfLines={4}
+            />
+            <Button
+              mode="contained-tonal"
+              onPress={pickMemoPhoto}
+              loading={isPickingMemoPhoto}
+            >
+              {memoPhotoUri ? "Change memo photo" : "Attach memo photo"}
+            </Button>
+            {memoPhotoUri ? (
+              <Image
+                source={{ uri: memoPhotoUri }}
+                style={styles.photoPreview}
+              />
+            ) : null}
+          </View>
         ) : null}
 
         {action === "issue" ? (

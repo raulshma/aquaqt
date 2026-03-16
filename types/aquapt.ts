@@ -118,6 +118,7 @@ export interface Memo {
   aquariumId: string;
   content: string;
   createdAt: string;
+  photoUri?: string;
 }
 
 export interface TimelineEvent {
@@ -127,6 +128,7 @@ export interface TimelineEvent {
   createdAt: string;
   title: string;
   description?: string;
+  photoUri?: string;
 }
 
 export interface AppSettings {
