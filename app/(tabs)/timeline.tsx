@@ -1,3 +1,4 @@
+import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
@@ -42,38 +43,137 @@ export default function TimelineScreen() {
   >("all");
   const [selectedAquariumFilter, setSelectedAquariumFilter] = useState("all");
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const [action, setAction] = useState<
-    "memo" | "issue" | "parameter" | "dosing" | "task"
-  >("memo");
-  const [selectedAquariumId, setSelectedAquariumId] = useState(
-    aquariums[0]?.id ?? "",
-  );
-  const [memo, setMemo] = useState("");
-  const [issueTitle, setIssueTitle] = useState("");
-  const [nitrate, setNitrate] = useState("");
-  const [ph, setPh] = useState("");
-  const [doseProduct, setDoseProduct] = useState("");
-  const [doseAmount, setDoseAmount] = useState("");
-  const [quickTaskTemplateId, setQuickTaskTemplateId] = useState("");
-  const [quickTaskNote, setQuickTaskNote] = useState("");
-  const [memoPhotoUri, setMemoPhotoUri] = useState("");
   const [isPickingMemoPhoto, setPickingMemoPhoto] = useState(false);
-  const [memoDate, setMemoDate] = useState(new Date());
   const [isMemoDatePickerOpen, setMemoDatePickerOpen] = useState(false);
 
+  const form = useForm({
+    defaultValues: {
+      action: "memo" as "memo" | "issue" | "parameter" | "dosing" | "task",
+      selectedAquariumId: aquariums[0]?.id ?? "",
+      memo: {
+        text: "",
+        photoUri: "",
+        date: new Date(),
+      },
+      issue: {
+        title: "",
+      },
+      parameter: {
+        nitrate: "",
+        ph: "",
+      },
+      dosing: {
+        product: "",
+        amount: "",
+      },
+      task: {
+        templateId: "",
+        note: "",
+      },
+    },
+    onSubmit: ({ value }) => {
+      if (!value.selectedAquariumId) {
+        return;
+      }
+
+      if (value.action === "memo" && value.memo.text.trim()) {
+        addMemo(
+          value.selectedAquariumId,
+          value.memo.text.trim(),
+          value.memo.photoUri || undefined,
+          value.memo.date.toISOString(),
+        );
+        form.setFieldValue("memo.text", "");
+        form.setFieldValue("memo.photoUri", "");
+        form.setFieldValue("memo.date", new Date());
+      }
+
+      if (value.action === "issue" && value.issue.title.trim()) {
+        addIssue(value.selectedAquariumId, value.issue.title.trim());
+        form.setFieldValue("issue.title", "");
+      }
+
+      if (value.action === "parameter") {
+        const nitrateValue = Number(value.parameter.nitrate);
+        const phValue = Number(value.parameter.ph);
+
+        logParameters(value.selectedAquariumId, {
+          nitrate: Number.isFinite(nitrateValue) ? nitrateValue : undefined,
+          ph: Number.isFinite(phValue) ? phValue : undefined,
+        });
+
+        form.setFieldValue("parameter.nitrate", "");
+        form.setFieldValue("parameter.ph", "");
+      }
+
+      if (value.action === "dosing") {
+        const amountValue = Number(value.dosing.amount);
+
+        if (
+          value.dosing.product.trim() &&
+          Number.isFinite(amountValue) &&
+          amountValue > 0
+        ) {
+          logDosing(
+            value.selectedAquariumId,
+            value.dosing.product.trim(),
+            amountValue,
+          );
+          form.setFieldValue("dosing.product", "");
+          form.setFieldValue("dosing.amount", "");
+        }
+      }
+
+      if (value.action === "task") {
+        if (!value.task.templateId) {
+          return;
+        }
+
+        completeTask(
+          value.task.templateId,
+          value.selectedAquariumId,
+          value.task.note.trim() || undefined,
+        );
+        form.setFieldValue("task.templateId", "");
+        form.setFieldValue("task.note", "");
+      }
+
+      setDialogOpen(false);
+    },
+  });
+
+  const resetQuickLogForm = (aquariumId: string) => {
+    form.setFieldValue("action", "memo");
+    form.setFieldValue("selectedAquariumId", aquariumId);
+    form.setFieldValue("memo.text", "");
+    form.setFieldValue("memo.photoUri", "");
+    form.setFieldValue("memo.date", new Date());
+    form.setFieldValue("issue.title", "");
+    form.setFieldValue("parameter.nitrate", "");
+    form.setFieldValue("parameter.ph", "");
+    form.setFieldValue("dosing.product", "");
+    form.setFieldValue("dosing.amount", "");
+    form.setFieldValue("task.templateId", "");
+    form.setFieldValue("task.note", "");
+  };
+
   useEffect(() => {
+    const values = form.state.values;
+
     if (aquariums.length === 0) {
-      if (selectedAquariumId !== "") {
-        setSelectedAquariumId("");
+      if (values.selectedAquariumId !== "") {
+        form.setFieldValue("selectedAquariumId", "");
       }
       return;
     }
 
-    const selectedExists = aquariums.some((aq) => aq.id === selectedAquariumId);
+    const selectedExists = aquariums.some(
+      (aq) => aq.id === values.selectedAquariumId,
+    );
     if (!selectedExists) {
-      setSelectedAquariumId(aquariums[0].id);
+      form.setFieldValue("selectedAquariumId", aquariums[0].id);
     }
-  }, [aquariums, selectedAquariumId]);
+  }, [aquariums, form]);
 
   const filteredTimeline = useMemo(() => {
     const list = [...timeline].sort(
@@ -99,17 +199,20 @@ export default function TimelineScreen() {
     }, {});
   }, [aquariums]);
 
-  const dueTasksForSelectedAquarium = useMemo(() => {
-    if (!selectedAquariumId) {
-      return [];
-    }
-
-    return taskTemplates.filter(
-      (task) =>
-        task.aquariumIds.includes(selectedAquariumId) &&
-        isTaskDue(task, selectedAquariumId, taskExecutions, new Date()),
+  const dueTasksByAquarium = useMemo(() => {
+    const now = new Date();
+    return aquariums.reduce<Record<string, typeof taskTemplates>>(
+      (acc, aquarium) => {
+        acc[aquarium.id] = taskTemplates.filter(
+          (task) =>
+            task.aquariumIds.includes(aquarium.id) &&
+            isTaskDue(task, aquarium.id, taskExecutions, now),
+        );
+        return acc;
+      },
+      {},
     );
-  }, [selectedAquariumId, taskExecutions, taskTemplates]);
+  }, [aquariums, taskExecutions, taskTemplates]);
 
   const pickMemoPhoto = async () => {
     setPickingMemoPhoto(true);
@@ -128,7 +231,7 @@ export default function TimelineScreen() {
       });
 
       if (!result.canceled && result.assets?.[0]?.uri) {
-        setMemoPhotoUri(result.assets[0].uri);
+        form.setFieldValue("memo.photoUri", result.assets[0].uri);
       }
     } finally {
       setPickingMemoPhoto(false);
@@ -136,69 +239,7 @@ export default function TimelineScreen() {
   };
 
   const saveQuickLog = () => {
-    if (!selectedAquariumId) {
-      return;
-    }
-
-    if (action === "memo" && memo.trim()) {
-      addMemo(
-        selectedAquariumId,
-        memo.trim(),
-        memoPhotoUri || undefined,
-        memoDate.toISOString(),
-      );
-      setMemo("");
-      setMemoPhotoUri("");
-      setMemoDate(new Date());
-    }
-
-    if (action === "issue" && issueTitle.trim()) {
-      addIssue(selectedAquariumId, issueTitle.trim());
-      setIssueTitle("");
-    }
-
-    if (action === "parameter") {
-      const nitrateValue = Number(nitrate);
-      const phValue = Number(ph);
-
-      logParameters(selectedAquariumId, {
-        nitrate: Number.isFinite(nitrateValue) ? nitrateValue : undefined,
-        ph: Number.isFinite(phValue) ? phValue : undefined,
-      });
-
-      setNitrate("");
-      setPh("");
-    }
-
-    if (action === "dosing") {
-      const amountValue = Number(doseAmount);
-
-      if (
-        doseProduct.trim() &&
-        Number.isFinite(amountValue) &&
-        amountValue > 0
-      ) {
-        logDosing(selectedAquariumId, doseProduct.trim(), amountValue);
-        setDoseProduct("");
-        setDoseAmount("");
-      }
-    }
-
-    if (action === "task") {
-      if (!quickTaskTemplateId) {
-        return;
-      }
-
-      completeTask(
-        quickTaskTemplateId,
-        selectedAquariumId,
-        quickTaskNote.trim() || undefined,
-      );
-      setQuickTaskTemplateId("");
-      setQuickTaskNote("");
-    }
-
-    setDialogOpen(false);
+    void form.handleSubmit();
   };
 
   return (
@@ -288,162 +329,260 @@ export default function TimelineScreen() {
 
       <BottomSheet
         visible={isDialogOpen}
-        onDismiss={() => setDialogOpen(false)}
+        onDismiss={() => {
+          setDialogOpen(false);
+          resetQuickLogForm(aquariums[0]?.id ?? "");
+        }}
         title="Quick action"
         actions={
           <>
-            <Button onPress={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onPress={saveQuickLog}>Save</Button>
+            <Button
+              onPress={() => {
+                setDialogOpen(false);
+                resetQuickLogForm(aquariums[0]?.id ?? "");
+              }}
+            >
+              Cancel
+            </Button>
+            <form.Subscribe selector={(state) => state.values}>
+              {(values) => {
+                const canSaveByAction: Record<typeof values.action, boolean> = {
+                  memo: values.memo.text.trim().length > 0,
+                  issue: values.issue.title.trim().length > 0,
+                  parameter: true,
+                  dosing:
+                    values.dosing.product.trim().length > 0 &&
+                    Number.isFinite(Number(values.dosing.amount)) &&
+                    Number(values.dosing.amount) > 0,
+                  task: values.task.templateId.length > 0,
+                };
+
+                return (
+                  <Button
+                    onPress={saveQuickLog}
+                    disabled={
+                      !values.selectedAquariumId ||
+                      !canSaveByAction[values.action]
+                    }
+                  >
+                    Save
+                  </Button>
+                );
+              }}
+            </form.Subscribe>
           </>
         }
       >
-        <ScrollableSegmentedButtons
-          value={selectedAquariumId}
-          onValueChange={setSelectedAquariumId}
-          buttons={aquariums.map((aq) => ({
-            label: aq.name,
-            value: aq.id,
-          }))}
-          density="small"
-        />
-
-        <ScrollableSegmentedButtons
-          value={action}
-          onValueChange={(value) =>
-            setAction(
-              value as "memo" | "issue" | "parameter" | "dosing" | "task",
-            )
-          }
-          style={styles.quickActionSelector}
-          buttons={[
-            { value: "task", label: "Task" },
-            { value: "memo", label: "Memo" },
-            { value: "issue", label: "Issue" },
-            { value: "parameter", label: "Params" },
-            { value: "dosing", label: "Dosing" },
-          ]}
-        />
-
-        {action === "task" ? (
-          <View style={styles.parameterInputs}>
+        <form.Field name="selectedAquariumId">
+          {(field) => (
             <ScrollableSegmentedButtons
-              value={quickTaskTemplateId}
-              onValueChange={setQuickTaskTemplateId}
-              buttons={dueTasksForSelectedAquarium.map((task) => ({
-                label: task.title,
-                value: task.id,
+              value={field.state.value}
+              onValueChange={field.handleChange}
+              buttons={aquariums.map((aq) => ({
+                label: aq.name,
+                value: aq.id,
               }))}
+              density="small"
             />
-            {dueTasksForSelectedAquarium.length === 0 ? (
-              <Text variant="bodySmall">No due tasks for this aquarium.</Text>
-            ) : null}
-            <TextInput
-              mode="outlined"
-              label="Completion note (optional)"
-              value={quickTaskNote}
-              onChangeText={setQuickTaskNote}
-              multiline
-              numberOfLines={2}
-            />
-          </View>
-        ) : null}
+          )}
+        </form.Field>
 
-        {action === "memo" ? (
-          <View style={styles.parameterInputs}>
-            <TextInput
-              mode="outlined"
-              label="Memo"
-              multiline
-              numberOfLines={4}
-              value={memo}
-              onChangeText={setMemo}
+        <form.Field name="action">
+          {(field) => (
+            <ScrollableSegmentedButtons
+              value={field.state.value}
+              onValueChange={(value) =>
+                field.handleChange(
+                  value as "memo" | "issue" | "parameter" | "dosing" | "task",
+                )
+              }
+              style={styles.quickActionSelector}
+              buttons={[
+                { value: "task", label: "Task" },
+                { value: "memo", label: "Memo" },
+                { value: "issue", label: "Issue" },
+                { value: "parameter", label: "Params" },
+                { value: "dosing", label: "Dosing" },
+              ]}
             />
-            <Button
-              mode="contained-tonal"
-              onPress={pickMemoPhoto}
-              loading={isPickingMemoPhoto}
-            >
-              {memoPhotoUri ? "Change photo" : "Attach photo"}
-            </Button>
-            <Button
-              mode="outlined"
-              icon="calendar"
-              onPress={() => setMemoDatePickerOpen(true)}
-            >
-              Log date: {memoDate.toLocaleDateString()}
-            </Button>
-            {memoPhotoUri ? (
-              <Image source={{ uri: memoPhotoUri }} style={styles.eventPhoto} />
-            ) : null}
-          </View>
-        ) : null}
+          )}
+        </form.Field>
 
-        {action === "issue" ? (
-          <TextInput
-            mode="outlined"
-            label="Issue title"
-            value={issueTitle}
-            onChangeText={setIssueTitle}
-            style={styles.quickActionInput}
-          />
-        ) : null}
+        <form.Subscribe selector={(state) => state.values}>
+          {(values) => {
+            const dueTasksForSelectedAquarium =
+              dueTasksByAquarium[values.selectedAquariumId] ?? [];
 
-        {action === "parameter" ? (
-          <View style={styles.parameterInputs}>
-            <TextInput
-              mode="outlined"
-              label="Nitrate"
-              value={nitrate}
-              onChangeText={setNitrate}
-              keyboardType="numeric"
-            />
-            <TextInput
-              mode="outlined"
-              label="pH"
-              value={ph}
-              onChangeText={setPh}
-              keyboardType="numeric"
-            />
-          </View>
-        ) : null}
+            return (
+              <>
+                {values.action === "task" ? (
+                  <View style={styles.parameterInputs}>
+                    <form.Field name="task.templateId">
+                      {(field) => (
+                        <ScrollableSegmentedButtons
+                          value={field.state.value}
+                          onValueChange={field.handleChange}
+                          buttons={dueTasksForSelectedAquarium.map((task) => ({
+                            label: task.title,
+                            value: task.id,
+                          }))}
+                        />
+                      )}
+                    </form.Field>
+                    {dueTasksForSelectedAquarium.length === 0 ? (
+                      <Text variant="bodySmall">
+                        No due tasks for this aquarium.
+                      </Text>
+                    ) : null}
+                    <form.Field name="task.note">
+                      {(field) => (
+                        <TextInput
+                          mode="outlined"
+                          label="Completion note (optional)"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          multiline
+                          numberOfLines={2}
+                        />
+                      )}
+                    </form.Field>
+                  </View>
+                ) : null}
 
-        {action === "dosing" ? (
-          <View style={styles.parameterInputs}>
-            <TextInput
-              mode="outlined"
-              label="Product"
-              value={doseProduct}
-              onChangeText={setDoseProduct}
-            />
-            <TextInput
-              mode="outlined"
-              label="Amount (ml)"
-              value={doseAmount}
-              onChangeText={setDoseAmount}
-              keyboardType="numeric"
-            />
-          </View>
-        ) : null}
+                {values.action === "memo" ? (
+                  <View style={styles.parameterInputs}>
+                    <form.Field name="memo.text">
+                      {(field) => (
+                        <TextInput
+                          mode="outlined"
+                          label="Memo"
+                          multiline
+                          numberOfLines={4}
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                        />
+                      )}
+                    </form.Field>
+                    <Button
+                      mode="contained-tonal"
+                      onPress={pickMemoPhoto}
+                      loading={isPickingMemoPhoto}
+                    >
+                      {values.memo.photoUri ? "Change photo" : "Attach photo"}
+                    </Button>
+                    <Button
+                      mode="outlined"
+                      icon="calendar"
+                      onPress={() => setMemoDatePickerOpen(true)}
+                    >
+                      Log date: {values.memo.date.toLocaleDateString()}
+                    </Button>
+                    {values.memo.photoUri ? (
+                      <Image
+                        source={{ uri: values.memo.photoUri }}
+                        style={styles.eventPhoto}
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
+
+                {values.action === "issue" ? (
+                  <form.Field name="issue.title">
+                    {(field) => (
+                      <TextInput
+                        mode="outlined"
+                        label="Issue title"
+                        value={field.state.value}
+                        onChangeText={field.handleChange}
+                        style={styles.quickActionInput}
+                      />
+                    )}
+                  </form.Field>
+                ) : null}
+
+                {values.action === "parameter" ? (
+                  <View style={styles.parameterInputs}>
+                    <form.Field name="parameter.nitrate">
+                      {(field) => (
+                        <TextInput
+                          mode="outlined"
+                          label="Nitrate"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </form.Field>
+                    <form.Field name="parameter.ph">
+                      {(field) => (
+                        <TextInput
+                          mode="outlined"
+                          label="pH"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </form.Field>
+                  </View>
+                ) : null}
+
+                {values.action === "dosing" ? (
+                  <View style={styles.parameterInputs}>
+                    <form.Field name="dosing.product">
+                      {(field) => (
+                        <TextInput
+                          mode="outlined"
+                          label="Product"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                        />
+                      )}
+                    </form.Field>
+                    <form.Field name="dosing.amount">
+                      {(field) => (
+                        <TextInput
+                          mode="outlined"
+                          label="Amount (ml)"
+                          value={field.state.value}
+                          onChangeText={field.handleChange}
+                          keyboardType="numeric"
+                        />
+                      )}
+                    </form.Field>
+                  </View>
+                ) : null}
+              </>
+            );
+          }}
+        </form.Subscribe>
       </BottomSheet>
 
-      <DatePickerModal
-        locale="en"
-        mode="single"
-        visible={isMemoDatePickerOpen}
-        date={memoDate}
-        onDismiss={() => setMemoDatePickerOpen(false)}
-        onConfirm={({ date }) => {
-          if (date) {
-            setMemoDate(date);
-          }
-          setMemoDatePickerOpen(false);
-        }}
-      />
+      <form.Subscribe selector={(state) => state.values.memo.date}>
+        {(memoDate) => (
+          <DatePickerModal
+            locale="en"
+            mode="single"
+            visible={isMemoDatePickerOpen}
+            date={memoDate}
+            onDismiss={() => setMemoDatePickerOpen(false)}
+            onConfirm={({ date }) => {
+              if (date) {
+                form.setFieldValue("memo.date", date);
+              }
+              setMemoDatePickerOpen(false);
+            }}
+          />
+        )}
+      </form.Subscribe>
 
       <FAB
         icon="plus"
         label="Log"
-        onPress={() => setDialogOpen(true)}
+        onPress={() => {
+          resetQuickLogForm(aquariums[0]?.id ?? "");
+          setDialogOpen(true);
+        }}
         style={styles.fab}
       />
     </>

@@ -14,6 +14,7 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@tanstack/react-form": "^1.11.0",
     "@expo/vector-icons": "^15.0.3",
     "@pchmn/expo-material3-theme": "^1.4.0",
     "@react-native-vector-icons/material-design-icons": "^12.4.2",

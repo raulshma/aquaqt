@@ -1,13 +1,14 @@
+import { useForm } from "@tanstack/react-form";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
-    Button,
-    Card,
-    Chip,
-    Divider,
-    FAB,
-    Text,
-    TextInput,
+  Button,
+  Card,
+  Chip,
+  Divider,
+  FAB,
+  Text,
+  TextInput,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -30,44 +31,120 @@ export default function TasksScreen() {
     logDosing,
   } = useAquapt();
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const [dialogAction, setDialogAction] = useState<"task" | "dosing">("task");
-  const [selectedAquariumId, setSelectedAquariumId] = useState(
-    aquariums[0]?.id ?? "",
-  );
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDescription, setTaskDescription] = useState("");
-  const [taskFrequency, setTaskFrequency] = useState<TaskFrequency>("weekly");
-  const [taskAquariumIds, setTaskAquariumIds] = useState<string[]>(
-    aquariums[0]?.id ? [aquariums[0].id] : [],
-  );
-  const [doseProduct, setDoseProduct] = useState("");
-  const [doseAmount, setDoseAmount] = useState("");
-  const [doseNote, setDoseNote] = useState("");
   const [completionNoteDraft, setCompletionNoteDraft] = useState<
     Record<string, string>
   >({});
 
-  useEffect(() => {
-    if (aquariums.length === 0) {
-      if (selectedAquariumId !== "") {
-        setSelectedAquariumId("");
+  const form = useForm({
+    defaultValues: {
+      dialogAction: "task" as "task" | "dosing",
+      selectedAquariumId: aquariums[0]?.id ?? "",
+      task: {
+        title: "",
+        description: "",
+        frequency: "weekly" as TaskFrequency,
+        aquariumIds: aquariums[0]?.id ? [aquariums[0].id] : [],
+      },
+      dosing: {
+        product: "",
+        amount: "",
+        note: "",
+      },
+    },
+    onSubmit: ({ value }) => {
+      if (!value.selectedAquariumId) {
+        return;
       }
-      if (taskAquariumIds.length > 0) {
-        setTaskAquariumIds([]);
+
+      if (value.dialogAction === "task") {
+        if (!value.task.title.trim()) {
+          return;
+        }
+
+        addTaskTemplate({
+          title: value.task.title.trim(),
+          description: value.task.description.trim() || undefined,
+          category: "maintenance",
+          frequency: value.task.frequency,
+          aquariumIds: value.task.aquariumIds.length
+            ? value.task.aquariumIds
+            : [value.selectedAquariumId],
+        });
+
+        form.setFieldValue("task.title", "");
+        form.setFieldValue("task.description", "");
+        form.setFieldValue("task.frequency", "weekly");
+        form.setFieldValue("task.aquariumIds", [value.selectedAquariumId]);
+        setDialogOpen(false);
+        return;
+      }
+
+      const amount = Number(value.dosing.amount);
+      if (
+        !value.dosing.product.trim() ||
+        !Number.isFinite(amount) ||
+        amount <= 0
+      ) {
+        return;
+      }
+
+      logDosing(
+        value.selectedAquariumId,
+        value.dosing.product.trim(),
+        amount,
+        value.dosing.note.trim() || undefined,
+      );
+
+      form.setFieldValue("dosing.product", "");
+      form.setFieldValue("dosing.amount", "");
+      form.setFieldValue("dosing.note", "");
+      setDialogOpen(false);
+    },
+  });
+
+  const resetDialogForm = (aquariumId: string) => {
+    form.setFieldValue("dialogAction", "task");
+    form.setFieldValue("selectedAquariumId", aquariumId);
+    form.setFieldValue("task.title", "");
+    form.setFieldValue("task.description", "");
+    form.setFieldValue("task.frequency", "weekly");
+    form.setFieldValue("task.aquariumIds", aquariumId ? [aquariumId] : []);
+    form.setFieldValue("dosing.product", "");
+    form.setFieldValue("dosing.amount", "");
+    form.setFieldValue("dosing.note", "");
+  };
+
+  useEffect(() => {
+    const values = form.state.values;
+
+    if (aquariums.length === 0) {
+      if (values.selectedAquariumId !== "") {
+        form.setFieldValue("selectedAquariumId", "");
+      }
+      if (values.task.aquariumIds.length > 0) {
+        form.setFieldValue("task.aquariumIds", []);
       }
       return;
     }
 
     const aquariumIds = new Set(aquariums.map((aquarium) => aquarium.id));
-    if (!aquariumIds.has(selectedAquariumId)) {
-      setSelectedAquariumId(aquariums[0].id);
+    if (!aquariumIds.has(values.selectedAquariumId)) {
+      form.setFieldValue("selectedAquariumId", aquariums[0].id);
     }
 
-    setTaskAquariumIds((prev) => {
-      const valid = prev.filter((id) => aquariumIds.has(id));
-      return valid.length > 0 ? valid : [aquariums[0].id];
-    });
-  }, [aquariums, selectedAquariumId, taskAquariumIds.length]);
+    const validAquariumIds = values.task.aquariumIds.filter((id) =>
+      aquariumIds.has(id),
+    );
+
+    if (validAquariumIds.length !== values.task.aquariumIds.length) {
+      form.setFieldValue(
+        "task.aquariumIds",
+        validAquariumIds.length > 0 ? validAquariumIds : [aquariums[0].id],
+      );
+    } else if (validAquariumIds.length === 0) {
+      form.setFieldValue("task.aquariumIds", [aquariums[0].id]);
+    }
+  }, [aquariums, form]);
 
   const taskMatrix = useMemo(() => {
     return taskTemplates.flatMap((task) =>
@@ -122,48 +199,7 @@ export default function TasksScreen() {
   }, [taskExecutions]);
 
   const saveDialog = () => {
-    if (!selectedAquariumId) {
-      return;
-    }
-
-    if (dialogAction === "task") {
-      if (!taskTitle.trim()) {
-        return;
-      }
-
-      addTaskTemplate({
-        title: taskTitle.trim(),
-        description: taskDescription.trim() || undefined,
-        category: "maintenance",
-        frequency: taskFrequency,
-        aquariumIds: taskAquariumIds.length
-          ? taskAquariumIds
-          : [selectedAquariumId],
-      });
-
-      setTaskTitle("");
-      setTaskDescription("");
-      setTaskFrequency("weekly");
-      setTaskAquariumIds(selectedAquariumId ? [selectedAquariumId] : []);
-      setDialogOpen(false);
-      return;
-    }
-
-    const amount = Number(doseAmount);
-    if (!doseProduct.trim() || !Number.isFinite(amount) || amount <= 0) {
-      return;
-    }
-
-    logDosing(
-      selectedAquariumId,
-      doseProduct.trim(),
-      amount,
-      doseNote.trim() || undefined,
-    );
-    setDoseProduct("");
-    setDoseAmount("");
-    setDoseNote("");
-    setDialogOpen(false);
+    void form.handleSubmit();
   };
 
   return (
@@ -317,113 +353,197 @@ export default function TasksScreen() {
 
       <BottomSheet
         visible={isDialogOpen}
-        onDismiss={() => setDialogOpen(false)}
+        onDismiss={() => {
+          setDialogOpen(false);
+          resetDialogForm(aquariums[0]?.id ?? "");
+        }}
         title="Add maintenance log"
         actions={
           <>
-            <Button onPress={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onPress={saveDialog}>Save</Button>
+            <Button
+              onPress={() => {
+                setDialogOpen(false);
+                resetDialogForm(aquariums[0]?.id ?? "");
+              }}
+            >
+              Cancel
+            </Button>
+            <form.Subscribe selector={(state) => state.values}>
+              {(values) => {
+                const canSaveTask =
+                  !!values.selectedAquariumId &&
+                  values.task.title.trim().length > 0 &&
+                  values.task.aquariumIds.length > 0;
+
+                const doseAmount = Number(values.dosing.amount);
+                const canSaveDosing =
+                  !!values.selectedAquariumId &&
+                  values.dosing.product.trim().length > 0 &&
+                  Number.isFinite(doseAmount) &&
+                  doseAmount > 0;
+
+                return (
+                  <Button
+                    onPress={saveDialog}
+                    disabled={
+                      values.dialogAction === "task"
+                        ? !canSaveTask
+                        : !canSaveDosing
+                    }
+                  >
+                    Save
+                  </Button>
+                );
+              }}
+            </form.Subscribe>
           </>
         }
       >
-        <ScrollableSegmentedButtons
-          value={selectedAquariumId}
-          onValueChange={setSelectedAquariumId}
-          buttons={aquariums.map((aq) => ({
-            label: aq.name,
-            value: aq.id,
-          }))}
-        />
-
-        <ScrollableSegmentedButtons
-          value={dialogAction}
-          onValueChange={(value) => setDialogAction(value as "task" | "dosing")}
-          style={styles.actionToggle}
-          buttons={[
-            { label: "Task", value: "task" },
-            { label: "Dosing", value: "dosing" },
-          ]}
-        />
-
-        {dialogAction === "task" ? (
-          <View style={styles.formSection}>
-            <TextInput
-              mode="outlined"
-              label="Task title"
-              value={taskTitle}
-              onChangeText={setTaskTitle}
-            />
-            <View style={styles.chipsWrap}>
-              {aquariums.map((aq) => {
-                const selected = taskAquariumIds.includes(aq.id);
-                return (
-                  <Chip
-                    key={aq.id}
-                    selected={selected}
-                    onPress={() =>
-                      setTaskAquariumIds((prev) =>
-                        selected
-                          ? prev.filter((id) => id !== aq.id)
-                          : [...prev, aq.id],
-                      )
-                    }
-                  >
-                    {aq.name}
-                  </Chip>
-                );
-              })}
-            </View>
+        <form.Field name="selectedAquariumId">
+          {(field) => (
             <ScrollableSegmentedButtons
-              value={taskFrequency}
+              value={field.state.value}
+              onValueChange={field.handleChange}
+              buttons={aquariums.map((aq) => ({
+                label: aq.name,
+                value: aq.id,
+              }))}
+            />
+          )}
+        </form.Field>
+
+        <form.Field name="dialogAction">
+          {(field) => (
+            <ScrollableSegmentedButtons
+              value={field.state.value}
               onValueChange={(value) =>
-                setTaskFrequency(value as TaskFrequency)
+                field.handleChange(value as "task" | "dosing")
               }
+              style={styles.actionToggle}
               buttons={[
-                { label: "Daily", value: "daily" },
-                { label: "Weekly", value: "weekly" },
-                { label: "Bi-weekly", value: "bi-weekly" },
-                { label: "Monthly", value: "monthly" },
+                { label: "Task", value: "task" },
+                { label: "Dosing", value: "dosing" },
               ]}
             />
-            <TextInput
-              mode="outlined"
-              label="Description"
-              value={taskDescription}
-              onChangeText={setTaskDescription}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
-        ) : (
-          <View style={styles.formSection}>
-            <TextInput
-              mode="outlined"
-              label="Product"
-              value={doseProduct}
-              onChangeText={setDoseProduct}
-            />
-            <TextInput
-              mode="outlined"
-              label="Amount (ml)"
-              value={doseAmount}
-              onChangeText={setDoseAmount}
-              keyboardType="numeric"
-            />
-            <TextInput
-              mode="outlined"
-              label="Note"
-              value={doseNote}
-              onChangeText={setDoseNote}
-            />
-          </View>
-        )}
+          )}
+        </form.Field>
+
+        <form.Subscribe selector={(state) => state.values.dialogAction}>
+          {(dialogAction) =>
+            dialogAction === "task" ? (
+              <View style={styles.formSection}>
+                <form.Field name="task.title">
+                  {(field) => (
+                    <TextInput
+                      mode="outlined"
+                      label="Task title"
+                      value={field.state.value}
+                      onChangeText={field.handleChange}
+                    />
+                  )}
+                </form.Field>
+                <form.Field name="task.aquariumIds">
+                  {(field) => (
+                    <View style={styles.chipsWrap}>
+                      {aquariums.map((aq) => {
+                        const selected = field.state.value.includes(aq.id);
+                        return (
+                          <Chip
+                            key={aq.id}
+                            selected={selected}
+                            onPress={() =>
+                              field.handleChange(
+                                selected
+                                  ? field.state.value.filter(
+                                      (id) => id !== aq.id,
+                                    )
+                                  : [...field.state.value, aq.id],
+                              )
+                            }
+                          >
+                            {aq.name}
+                          </Chip>
+                        );
+                      })}
+                    </View>
+                  )}
+                </form.Field>
+                <form.Field name="task.frequency">
+                  {(field) => (
+                    <ScrollableSegmentedButtons
+                      value={field.state.value}
+                      onValueChange={(value) =>
+                        field.handleChange(value as TaskFrequency)
+                      }
+                      buttons={[
+                        { label: "Daily", value: "daily" },
+                        { label: "Weekly", value: "weekly" },
+                        { label: "Bi-weekly", value: "bi-weekly" },
+                        { label: "Monthly", value: "monthly" },
+                      ]}
+                    />
+                  )}
+                </form.Field>
+                <form.Field name="task.description">
+                  {(field) => (
+                    <TextInput
+                      mode="outlined"
+                      label="Description"
+                      value={field.state.value}
+                      onChangeText={field.handleChange}
+                      multiline
+                      numberOfLines={3}
+                    />
+                  )}
+                </form.Field>
+              </View>
+            ) : (
+              <View style={styles.formSection}>
+                <form.Field name="dosing.product">
+                  {(field) => (
+                    <TextInput
+                      mode="outlined"
+                      label="Product"
+                      value={field.state.value}
+                      onChangeText={field.handleChange}
+                    />
+                  )}
+                </form.Field>
+                <form.Field name="dosing.amount">
+                  {(field) => (
+                    <TextInput
+                      mode="outlined"
+                      label="Amount (ml)"
+                      value={field.state.value}
+                      onChangeText={field.handleChange}
+                      keyboardType="numeric"
+                    />
+                  )}
+                </form.Field>
+                <form.Field name="dosing.note">
+                  {(field) => (
+                    <TextInput
+                      mode="outlined"
+                      label="Note"
+                      value={field.state.value}
+                      onChangeText={field.handleChange}
+                    />
+                  )}
+                </form.Field>
+              </View>
+            )
+          }
+        </form.Subscribe>
       </BottomSheet>
 
       <FAB
         icon="plus"
         label="Add"
         style={styles.fab}
-        onPress={() => setDialogOpen(true)}
+        onPress={() => {
+          resetDialogForm(aquariums[0]?.id ?? "");
+          setDialogOpen(true);
+        }}
       />
     </>
   );
