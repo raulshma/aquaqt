@@ -72,6 +72,13 @@ const FREQUENCIES: { label: string; value: TaskFrequency }[] = [
   { label: "Monthly", value: "monthly" },
 ];
 
+const QUICK_PROMPT_SUGGESTIONS = [
+  "What should I do for my tanks today?",
+  "Review my open issues and suggest priorities.",
+  "Plan this week's maintenance tasks.",
+  "Any dosing or parameter checks due today?",
+];
+
 const formatNumber = (
   value: number | undefined,
   digits = 0,
@@ -473,6 +480,7 @@ export default function AssistantScreen() {
     string | null
   >(null);
   const [isReviewVisible, setReviewVisible] = useState(false);
+  const [isNearBottom, setIsNearBottom] = useState(true);
   const [rememberedAssistantMessageIds, setRememberedAssistantMessageIds] =
     useState<Record<string, boolean>>({});
   const [memoryActionBusyMessageIds, setMemoryActionBusyMessageIds] = useState<
@@ -968,6 +976,66 @@ export default function AssistantScreen() {
     [askAssistantForPrompt],
   );
 
+  const reuseUserMessage = useCallback((message: AssistantChatMessage) => {
+    if (message.role !== "user") {
+      return;
+    }
+
+    setComposerText(message.content);
+  }, []);
+
+  const regenerateAssistantReply = useCallback(
+    (assistantMessage: AssistantChatMessage) => {
+      if (assistantMessage.role !== "assistant" || isAsking) {
+        return;
+      }
+
+      const messageIndex = activeMessages.findIndex(
+        (message) => message.id === assistantMessage.id,
+      );
+
+      if (messageIndex <= 0) {
+        return;
+      }
+
+      const previousUserMessage = [...activeMessages]
+        .slice(0, messageIndex)
+        .reverse()
+        .find((message) => message.role === "user");
+
+      if (!previousUserMessage) {
+        return;
+      }
+
+      void askAssistantForPrompt({
+        prompt: previousUserMessage.content,
+        retryMessageId: previousUserMessage.id,
+      });
+    },
+    [activeMessages, askAssistantForPrompt, isAsking],
+  );
+
+  const applyQuickPrompt = useCallback((prompt: string) => {
+    setComposerText(prompt);
+  }, []);
+
+  const handleMessageAreaScroll = useCallback(
+    (event: {
+      nativeEvent: {
+        contentOffset: { y: number };
+        layoutMeasurement: { height: number };
+        contentSize: { height: number };
+      };
+    }) => {
+      const { contentOffset, layoutMeasurement, contentSize } =
+        event.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      setIsNearBottom(distanceFromBottom < 120);
+    },
+    [],
+  );
+
   /* ── action updates ──────────────────────────────────────────── */
   const updateAction = useCallback(
     (
@@ -1326,6 +1394,8 @@ export default function AssistantScreen() {
             { paddingBottom: TAB_BAR_HEIGHT + 140 },
           ]}
           showsVerticalScrollIndicator={false}
+          onScroll={handleMessageAreaScroll}
+          scrollEventThrottle={16}
           onContentSizeChange={scrollToBottom}
         >
           {activeMessages.map((message) => {
@@ -1411,6 +1481,20 @@ export default function AssistantScreen() {
                     </Text>
                   )}
 
+                  {isUser && message.content.trim() ? (
+                    <View style={styles.userMessageActionsRow}>
+                      <Button
+                        compact
+                        mode="text"
+                        onPress={() => {
+                          reuseUserMessage(message);
+                        }}
+                      >
+                        Reuse in composer
+                      </Button>
+                    </View>
+                  ) : null}
+
                   {isStreaming ? (
                     <Text variant="labelSmall" style={styles.streamingLabel}>
                       Streaming…
@@ -1450,6 +1534,16 @@ export default function AssistantScreen() {
 
                   {isAssistant && !isStreaming && message.content.trim() ? (
                     <View style={styles.memoryActionsRow}>
+                      <Button
+                        compact
+                        mode="text"
+                        disabled={isAsking}
+                        onPress={() => {
+                          regenerateAssistantReply(message);
+                        }}
+                      >
+                        Regenerate
+                      </Button>
                       {!rememberedAssistantMessageIds[message.id] ? (
                         <Button
                           compact
@@ -1580,6 +1674,26 @@ export default function AssistantScreen() {
             </Text>
           ) : null}
 
+          {composerText.trim().length === 0 && !isAsking && !isDictating ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.quickPromptRow}
+              style={styles.quickPromptScroller}
+            >
+              {QUICK_PROMPT_SUGGESTIONS.map((prompt) => (
+                <Chip
+                  key={prompt}
+                  compact
+                  mode="outlined"
+                  onPress={() => applyQuickPrompt(prompt)}
+                >
+                  {prompt}
+                </Chip>
+              ))}
+            </ScrollView>
+          ) : null}
+
           {/* Pending actions summary bar */}
           {activeDetectedActions.length > 0 ? (
             <Pressable
@@ -1623,6 +1737,14 @@ export default function AssistantScreen() {
               disabled={isAsking || !hasVoiceSupport}
               size={22}
             />
+            {composerText.trim().length > 0 ? (
+              <IconButton
+                icon="backspace-outline"
+                onPress={() => setComposerText("")}
+                disabled={isAsking || isDictating}
+                size={20}
+              />
+            ) : null}
             <TextInput
               mode="outlined"
               placeholder={isDictating ? "Listening…" : "Message AquaPT..."}
@@ -1646,6 +1768,20 @@ export default function AssistantScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {!isNearBottom && activeMessages.length > 3 ? (
+        <IconButton
+          icon="chevron-double-down"
+          mode="contained-tonal"
+          containerColor={theme.colors.secondaryContainer}
+          iconColor={theme.colors.onSecondaryContainer}
+          style={[
+            styles.jumpToLatestButton,
+            { bottom: TAB_BAR_HEIGHT + 110 + insets.bottom },
+          ]}
+          onPress={scrollToBottom}
+        />
+      ) : null}
 
       {/* ── DRAWER BACKDROP ──────────────────────────────────── */}
       {drawerOpen ? (
@@ -2379,6 +2515,14 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: "wrap",
   },
+  userMessageActionsRow: {
+    marginTop: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
   failedMessageActionsRow: {
     marginTop: 6,
     flexDirection: "row",
@@ -2396,6 +2540,14 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 8,
     paddingTop: 6,
+  },
+  quickPromptScroller: {
+    marginHorizontal: 4,
+    marginBottom: 6,
+  },
+  quickPromptRow: {
+    gap: 6,
+    paddingHorizontal: 2,
   },
   composerRow: {
     flexDirection: "row",
@@ -2444,6 +2596,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     width: DRAWER_WIDTH,
+  },
+  jumpToLatestButton: {
+    position: "absolute",
+    right: 12,
+    zIndex: 5,
   },
 
   /* Bottom sheet action editing (kept from original) */
