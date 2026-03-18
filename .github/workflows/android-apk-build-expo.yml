@@ -1,0 +1,137 @@
+name: AquaPT APK Build & Release
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  metadata:
+    name: Resolve release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.package_version.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: package_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build Android APK (${{ matrix.abi }})
+    needs: metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: armeabi-v7a
+            profile: production-armeabi-v7a
+          - abi: arm64-v8a
+            profile: production-arm64-v8a
+          - abi: x86
+            profile: production-x86
+          - abi: x86_64
+            profile: production-x86_64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Android app on EAS Cloud for ${{ matrix.abi }}
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ matrix.profile }} \
+            --non-interactive \
+            --wait \
+            --json > build-output.json
+
+      - name: Download APK from EAS
+        run: |
+          BUILD_URL=$(jq -r '.[0].artifacts.buildUrl' build-output.json)
+          echo "Downloading APK from: $BUILD_URL"
+          curl -L -o "AquaPT-v${{ needs.metadata.outputs.version }}-android-${{ matrix.abi }}.apk" "$BUILD_URL"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aquapt-apk-${{ matrix.abi }}
+          path: AquaPT-v${{ needs.metadata.outputs.version }}-android-${{ matrix.abi }}.apk
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs:
+      - metadata
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download built APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: aquapt-apk-*
+          path: ./release
+          merge-multiple: true
+
+      - name: Summarize APK assets
+        id: release_notes
+        run: |
+          {
+            echo 'body<<EOF'
+            echo '🚀 **New Android build released**'
+            echo
+            echo '- **Version:** v${{ needs.metadata.outputs.version }}'
+            echo '- **Commit:** ${{ github.sha }}'
+            echo '- **Build:** EAS Cloud Build'
+            echo '- **APK assets:**'
+            for file in ./release/*.apk; do
+              echo "  - $(basename "$file")"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release with APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "AquaPT v${{ needs.metadata.outputs.version }}"
+          tag_name: "aquapt-v${{ needs.metadata.outputs.version }}"
+          body: ${{ steps.release_notes.outputs.body }}
+          files: ./release/*.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

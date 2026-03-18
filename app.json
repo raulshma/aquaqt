@@ -3,13 +3,16 @@
     "name": "aquapt",
     "slug": "aquapt",
     "version": "1.0.0",
-    "newArchEnabled": true,
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "aquapt",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "AquaPT needs speech recognition to convert your voice to text.",
+        "NSMicrophoneUsageDescription": "AquaPT needs access to your microphone for voice dictation."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +22,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.keepaside.aquapt"
+      "package": "com.keepaside.aquapt",
+      "permissions": ["android.permission.RECORD_AUDIO"]
     },
     "web": {
       "output": "static",
@@ -62,6 +66,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "be90a9f3-0127-41ef-bd50-58a00fee31e6"
+      }
     }
   }
 }

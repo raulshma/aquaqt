@@ -1,0 +1,88 @@
+{
+  "cli": {
+    "version": ">= 15.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "environment": "development",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "development"
+      }
+    },
+    "preview": {
+      "environment": "preview",
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "remote"
+      },
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "development"
+      }
+    },
+    "preview-armeabi-v7a": {
+      "extends": "preview",
+      "env": {
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "armeabi-v7a"
+      }
+    },
+    "preview-arm64-v8a": {
+      "extends": "preview",
+      "env": {
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a"
+      }
+    },
+    "preview-x86": {
+      "extends": "preview",
+      "env": {
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "x86"
+      }
+    },
+    "preview-x86_64": {
+      "extends": "preview",
+      "env": {
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "x86_64"
+      }
+    },
+    "production": {
+      "environment": "production",
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "remote"
+      },
+      "env": {
+        "APP_VARIANT": "production"
+      }
+    },
+    "production-armeabi-v7a": {
+      "extends": "production",
+      "env": {
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "armeabi-v7a"
+      }
+    },
+    "production-arm64-v8a": {
+      "extends": "production",
+      "env": {
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a"
+      }
+    },
+    "production-x86": {
+      "extends": "production",
+      "env": {
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "x86"
+      }
+    },
+    "production-x86_64": {
+      "extends": "production",
+      "env": {
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "x86_64"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
