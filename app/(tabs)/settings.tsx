@@ -11,6 +11,8 @@ import {
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 
 const MODE_PROMPTS: Record<
@@ -127,6 +129,12 @@ export default function SettingsScreen() {
   >("general");
   const [isAsking, setAsking] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
+  const [compatibilityError, setCompatibilityError] = useState<string | null>(
+    null,
+  );
+  const [diagnosticAnswer, setDiagnosticAnswer] = useState("");
+  const [compatibilityAnswer, setCompatibilityAnswer] = useState("");
   const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -137,6 +145,15 @@ export default function SettingsScreen() {
     "all",
   );
   const [sortBy, setSortBy] = useState<"name" | "created" | "context">("name");
+  const [isModelSheetVisible, setModelSheetVisible] = useState(false);
+  const [diagnosticAquariumId, setDiagnosticAquariumId] = useState("");
+  const [diagnosticSymptoms, setDiagnosticSymptoms] = useState("");
+  const [diagnosticWindowDays, setDiagnosticWindowDays] = useState("14");
+  const [compatibilityAquariumId, setCompatibilityAquariumId] = useState("");
+  const [compatibilitySpecies, setCompatibilitySpecies] = useState("");
+  const [compatibilityKind, setCompatibilityKind] = useState("shrimp");
+  const [compatibilityQuantity, setCompatibilityQuantity] = useState("1");
+  const [compatibilityNotes, setCompatibilityNotes] = useState("");
   const askRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
 
@@ -174,6 +191,22 @@ export default function SettingsScreen() {
     setApiKey(settings.openRouterApiKey);
     setModel(settings.aiModel);
   }, [settings.aiModel, settings.openRouterApiKey]);
+
+  useEffect(() => {
+    if (aquariums.length === 0) {
+      setDiagnosticAquariumId("");
+      setCompatibilityAquariumId("");
+      return;
+    }
+
+    if (!aquariums.some((aq) => aq.id === diagnosticAquariumId)) {
+      setDiagnosticAquariumId(aquariums[0].id);
+    }
+
+    if (!aquariums.some((aq) => aq.id === compatibilityAquariumId)) {
+      setCompatibilityAquariumId(aquariums[0].id);
+    }
+  }, [aquariums, compatibilityAquariumId, diagnosticAquariumId]);
 
   useEffect(() => {
     void loadOpenRouterModels();
@@ -309,25 +342,15 @@ export default function SettingsScreen() {
     setSavedAt(new Date().toLocaleString());
   };
 
-  const askAssistant = async () => {
-    if (!apiKey.trim() || !question.trim()) {
-      return;
-    }
-
-    const requestId = askRequestIdRef.current + 1;
-    askRequestIdRef.current = requestId;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30_000);
-
-    setAsking(true);
-    setAssistantError(null);
-
-    try {
+  const requestAssistantCompletion = useCallback(
+    async (
+      mode: "general" | "diagnostic" | "compatibility" | "task-suggestion",
+      userQuestion: string,
+    ) => {
       const response = await fetch(
         "https://openrouter.ai/api/v1/chat/completions",
         {
           method: "POST",
-          signal: controller.signal,
           headers: {
             Authorization: `Bearer ${apiKey.trim()}`,
             "Content-Type": "application/json",
@@ -342,11 +365,11 @@ export default function SettingsScreen() {
               },
               {
                 role: "system",
-                content: `Assistant mode: ${assistantMode}`,
+                content: `Assistant mode: ${mode}`,
               },
               {
                 role: "system",
-                content: MODE_PROMPTS[assistantMode],
+                content: MODE_PROMPTS[mode],
               },
               {
                 role: "system",
@@ -354,7 +377,7 @@ export default function SettingsScreen() {
               },
               {
                 role: "user",
-                content: question.trim(),
+                content: userQuestion,
               },
             ],
           }),
@@ -370,18 +393,35 @@ export default function SettingsScreen() {
         choices?: { message?: { content?: string } }[];
       };
 
+      return data.choices?.[0]?.message?.content?.trim() ?? "No response.";
+    },
+    [apiKey, assistantContext, model, settings.aiModel],
+  );
+
+  const askAssistant = async () => {
+    if (!apiKey.trim() || !question.trim()) {
+      return;
+    }
+
+    const requestId = askRequestIdRef.current + 1;
+    askRequestIdRef.current = requestId;
+
+    setAsking(true);
+    setAssistantError(null);
+
+    try {
+      const result = await requestAssistantCompletion(
+        assistantMode,
+        question.trim(),
+      );
+
       if (!mountedRef.current || askRequestIdRef.current !== requestId) {
         return;
       }
 
-      setAnswer(data.choices?.[0]?.message?.content?.trim() ?? "No response.");
+      setAnswer(result);
     } catch (error) {
       if (!mountedRef.current || askRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      if (error instanceof Error && error.name === "AbortError") {
-        setAssistantError("Request timed out. Please try again.");
         return;
       }
 
@@ -389,268 +429,512 @@ export default function SettingsScreen() {
         error instanceof Error ? error.message : "Unknown error",
       );
     } finally {
-      clearTimeout(timeoutId);
       if (mountedRef.current && askRequestIdRef.current === requestId) {
         setAsking(false);
       }
     }
   };
 
+  const runDiagnosticWorkflow = async () => {
+    if (!apiKey.trim() || !diagnosticSymptoms.trim() || !diagnosticAquariumId) {
+      return;
+    }
+
+    const aquarium = aquariums.find((aq) => aq.id === diagnosticAquariumId);
+    const days = Number.parseInt(diagnosticWindowDays.trim(), 10);
+    const windowDays = Number.isFinite(days) && days > 0 ? days : 14;
+
+    setAsking(true);
+    setDiagnosticError(null);
+    setDiagnosticAnswer("");
+
+    try {
+      const result = await requestAssistantCompletion(
+        "diagnostic",
+        [
+          `Perform a focused diagnostic review for aquarium "${aquarium?.name ?? "Unknown"}" over the last ${windowDays} days.`,
+          `Observed symptoms: ${diagnosticSymptoms.trim()}`,
+          "Please output:\n1) Most likely root causes ranked\n2) Immediate safe actions (today)\n3) Monitoring checklist for next 7 days\n4) Red flags that require urgent intervention",
+        ].join("\n\n"),
+      );
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setDiagnosticAnswer(result);
+    } catch (error) {
+      setDiagnosticError(
+        error instanceof Error ? error.message : "Diagnostic request failed",
+      );
+    } finally {
+      if (mountedRef.current) {
+        setAsking(false);
+      }
+    }
+  };
+
+  const runCompatibilityWorkflow = async () => {
+    if (
+      !apiKey.trim() ||
+      !compatibilityAquariumId ||
+      !compatibilitySpecies.trim()
+    ) {
+      return;
+    }
+
+    const aquarium = aquariums.find((aq) => aq.id === compatibilityAquariumId);
+    const quantityValue = Number.parseInt(compatibilityQuantity.trim(), 10);
+    const quantity =
+      Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1;
+
+    setAsking(true);
+    setCompatibilityError(null);
+    setCompatibilityAnswer("");
+
+    try {
+      const result = await requestAssistantCompletion(
+        "compatibility",
+        [
+          `Compatibility check for aquarium "${aquarium?.name ?? "Unknown"}" (${aquarium?.waterType ?? "unknown"}).`,
+          `Candidate addition: ${quantity} x ${compatibilitySpecies.trim()} (${compatibilityKind}).`,
+          compatibilityNotes.trim()
+            ? `Extra notes: ${compatibilityNotes.trim()}`
+            : "",
+          "Please output:\n1) Compatibility verdict (Safe / Caution / Not recommended)\n2) Main conflict risks\n3) Parameter gaps to fix before adding\n4) Safer alternatives if needed",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      );
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setCompatibilityAnswer(result);
+    } catch (error) {
+      setCompatibilityError(
+        error instanceof Error ? error.message : "Compatibility request failed",
+      );
+    } finally {
+      if (mountedRef.current) {
+        setAsking(false);
+      }
+    }
+  };
+
   return (
-    <ScrollView
-      contentContainerStyle={[
-        styles.container,
-        { paddingTop: 16 + insets.top },
-      ]}
-    >
-      <Text variant="headlineMedium">Settings</Text>
-      <Text variant="bodyMedium" style={styles.subtitle}>
-        Configure your BYOK AI assistant and app preferences.
-      </Text>
+    <>
+      <ScrollView
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: 16 + insets.top },
+        ]}
+      >
+        <Text variant="headlineMedium">Settings</Text>
+        <Text variant="bodyMedium" style={styles.subtitle}>
+          Configure your BYOK AI assistant and app preferences.
+        </Text>
 
-      <Card mode="contained">
-        <Card.Title
-          title="OpenRouter API Key (BYOK)"
-          subtitle="Stored in local encrypted-ish app storage context"
-        />
-        <Card.Content>
-          <TextInput
-            mode="outlined"
-            label="sk-or-v1-..."
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={apiKey}
-            onChangeText={setApiKey}
+        <Card mode="contained">
+          <Card.Title
+            title="OpenRouter API Key (BYOK)"
+            subtitle="Stored in local encrypted-ish app storage context"
           />
-          <TextInput
-            mode="outlined"
-            label="Assistant model"
-            value={model}
-            onChangeText={setModel}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.modelInput}
-          />
-          <Text variant="bodySmall" style={styles.helperText}>
-            Pick a model from the OpenRouter list below, or type your own ID.
-          </Text>
-          <Button
-            mode="contained"
-            onPress={handleSave}
-            style={styles.saveButton}
-          >
-            Save key
-          </Button>
-          {savedAt ? (
-            <Text variant="bodySmall" style={styles.savedAt}>
-              Saved: {savedAt}
-            </Text>
-          ) : null}
-        </Card.Content>
-      </Card>
-
-      <Card mode="outlined">
-        <Card.Title
-          title="OpenRouter models"
-          subtitle="Grouped by free and paid with filters"
-        />
-        <Card.Content>
-          <View style={styles.modeRow}>
-            <Button
-              mode="contained-tonal"
-              onPress={() => {
-                void loadOpenRouterModels();
-              }}
-              disabled={isLoadingModels}
-            >
-              Refresh list
-            </Button>
-            {isLoadingModels ? <ActivityIndicator /> : null}
-          </View>
-
-          <TextInput
-            mode="outlined"
-            label="Filter by model name or ID"
-            value={modelQuery}
-            onChangeText={setModelQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <View style={styles.filterRow}>
+          <Card.Content>
             <TextInput
               mode="outlined"
-              label="Created after (YYYY-MM-DD)"
-              value={createdAfter}
-              onChangeText={setCreatedAfter}
+              label="sk-or-v1-..."
+              secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
-              style={styles.filterInput}
+              value={apiKey}
+              onChangeText={setApiKey}
             />
             <TextInput
               mode="outlined"
-              label="Min context"
-              value={minContext}
-              onChangeText={setMinContext}
-              keyboardType="number-pad"
-              style={styles.filterInput}
+              label="Assistant model"
+              value={model}
+              onChangeText={setModel}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.modelInput}
             />
-          </View>
-
-          <View style={styles.modeRow}>
-            {[
-              { label: "All", value: "all" as const },
-              { label: "Free", value: "free" as const },
-              { label: "Paid", value: "paid" as const },
-            ].map((option) => (
-              <Chip
-                key={option.value}
-                selected={showPricing === option.value}
-                onPress={() => setShowPricing(option.value)}
-              >
-                {option.label}
-              </Chip>
-            ))}
-          </View>
-
-          <View style={styles.modeRow}>
-            {[
-              { label: "Sort: Name", value: "name" as const },
-              { label: "Sort: Created", value: "created" as const },
-              { label: "Sort: Context", value: "context" as const },
-            ].map((option) => (
-              <Chip
-                key={option.value}
-                selected={sortBy === option.value}
-                onPress={() => setSortBy(option.value)}
-              >
-                {option.label}
-              </Chip>
-            ))}
-          </View>
-
-          {modelsError ? (
-            <Text variant="bodySmall" style={styles.errorText}>
-              {modelsError}
-            </Text>
-          ) : null}
-
-          <Text variant="bodySmall" style={styles.helperText}>
-            Showing {filteredModels.length} filtered models
-          </Text>
-
-          <Divider style={styles.groupDivider} />
-          <Text variant="titleMedium">Free models ({freeModels.length})</Text>
-          {freeModels.slice(0, 40).map((candidate) => (
             <Button
-              key={candidate.id}
-              mode="text"
-              onPress={() => setModel(candidate.id)}
-              contentStyle={styles.modelRowContent}
-              style={styles.modelRowButton}
+              mode="outlined"
+              onPress={() => setModelSheetVisible(true)}
+              style={styles.modelPickerButton}
             >
-              {`${candidate.name ?? candidate.id} • ${candidate.context_length ?? "-"} ctx • ${formatCreatedDate(candidate.created)} • ${formatPricingPreview(candidate.pricing)}`}
+              Select from OpenRouter models
             </Button>
-          ))}
-          {freeModels.length > 40 ? (
             <Text variant="bodySmall" style={styles.helperText}>
-              +{freeModels.length - 40} more free models (refine filters)
+              Browse models in a bottom sheet, or type a custom model ID.
             </Text>
-          ) : null}
-
-          <Divider style={styles.groupDivider} />
-          <Text variant="titleMedium">Paid models ({paidModels.length})</Text>
-          {paidModels.slice(0, 40).map((candidate) => (
             <Button
-              key={candidate.id}
-              mode="text"
-              onPress={() => setModel(candidate.id)}
-              contentStyle={styles.modelRowContent}
-              style={styles.modelRowButton}
+              mode="contained"
+              onPress={handleSave}
+              style={styles.saveButton}
             >
-              {`${candidate.name ?? candidate.id} • ${candidate.context_length ?? "-"} ctx • ${formatCreatedDate(candidate.created)} • ${formatPricingPreview(candidate.pricing)}`}
+              Save key
             </Button>
-          ))}
-          {paidModels.length > 40 ? (
-            <Text variant="bodySmall" style={styles.helperText}>
-              +{paidModels.length - 40} more paid models (refine filters)
-            </Text>
-          ) : null}
-        </Card.Content>
-      </Card>
+            {savedAt ? (
+              <Text variant="bodySmall" style={styles.savedAt}>
+                Saved: {savedAt}
+              </Text>
+            ) : null}
+          </Card.Content>
+        </Card>
 
-      <Card mode="outlined" style={styles.noteCard}>
-        <Card.Title
-          title="Contextual AI Assistant"
-          subtitle="Uses your BYOK and current app data context"
-        />
-        <Card.Content>
-          <View style={styles.modeRow}>
-            {[
-              { label: "General", value: "general" },
-              { label: "Diagnostic", value: "diagnostic" },
-              { label: "Compatibility", value: "compatibility" },
-              { label: "Task Suggest", value: "task-suggestion" },
-            ].map((mode) => (
-              <Chip
-                key={mode.value}
-                selected={assistantMode === mode.value}
-                onPress={() =>
-                  setAssistantMode(
-                    mode.value as
-                      | "general"
-                      | "diagnostic"
-                      | "compatibility"
-                      | "task-suggestion",
-                  )
-                }
-              >
-                {mode.label}
-              </Chip>
-            ))}
-          </View>
-          <View style={styles.modeRow}>
-            {QUESTION_PRESETS.map((preset) => (
-              <Chip
-                key={preset.label}
-                onPress={() => {
-                  setAssistantMode(preset.mode);
-                  setQuestion(preset.question);
-                }}
-              >
-                {preset.label}
-              </Chip>
-            ))}
-          </View>
-          <TextInput
-            mode="outlined"
-            label="Ask Aquapt AI"
-            value={question}
-            onChangeText={setQuestion}
-            multiline
-            numberOfLines={3}
+        <Card mode="outlined" style={styles.noteCard}>
+          <Card.Title
+            title="Contextual AI Assistant"
+            subtitle="Uses your BYOK and current app data context"
           />
+          <Card.Content>
+            <View style={styles.modeRow}>
+              {[
+                { label: "General", value: "general" },
+                { label: "Diagnostic", value: "diagnostic" },
+                { label: "Compatibility", value: "compatibility" },
+                { label: "Task Suggest", value: "task-suggestion" },
+              ].map((mode) => (
+                <Chip
+                  key={mode.value}
+                  selected={assistantMode === mode.value}
+                  onPress={() =>
+                    setAssistantMode(
+                      mode.value as
+                        | "general"
+                        | "diagnostic"
+                        | "compatibility"
+                        | "task-suggestion",
+                    )
+                  }
+                >
+                  {mode.label}
+                </Chip>
+              ))}
+            </View>
+            <View style={styles.modeRow}>
+              {QUESTION_PRESETS.map((preset) => (
+                <Chip
+                  key={preset.label}
+                  onPress={() => {
+                    setAssistantMode(preset.mode);
+                    setQuestion(preset.question);
+                  }}
+                >
+                  {preset.label}
+                </Chip>
+              ))}
+            </View>
+            <TextInput
+              mode="outlined"
+              label="Ask Aquapt AI"
+              value={question}
+              onChangeText={setQuestion}
+              multiline
+              numberOfLines={3}
+            />
+            <Button
+              mode="contained-tonal"
+              onPress={askAssistant}
+              style={styles.askButton}
+            >
+              Ask assistant
+            </Button>
+            {isAsking ? (
+              <ActivityIndicator style={styles.answerSpacing} />
+            ) : null}
+            {assistantError ? (
+              <Text variant="bodySmall" style={styles.errorText}>
+                {assistantError}
+              </Text>
+            ) : null}
+            {answer ? (
+              <Text variant="bodyMedium" style={styles.answerSpacing}>
+                {answer}
+              </Text>
+            ) : null}
+          </Card.Content>
+        </Card>
+
+        <Card mode="outlined" style={styles.noteCard}>
+          <Card.Title
+            title="Diagnostic workflow"
+            subtitle="Guided root-cause analysis for tank problems"
+          />
+          <Card.Content>
+            <ScrollableSegmentedButtons
+              value={diagnosticAquariumId}
+              onValueChange={setDiagnosticAquariumId}
+              buttons={aquariums.map((aq) => ({
+                label: aq.name,
+                value: aq.id,
+              }))}
+              density="small"
+            />
+            <View style={styles.filterRow}>
+              <TextInput
+                mode="outlined"
+                label="Review window (days)"
+                value={diagnosticWindowDays}
+                onChangeText={setDiagnosticWindowDays}
+                keyboardType="number-pad"
+                style={styles.filterInput}
+              />
+            </View>
+            <TextInput
+              mode="outlined"
+              label="Symptoms observed"
+              value={diagnosticSymptoms}
+              onChangeText={setDiagnosticSymptoms}
+              multiline
+              numberOfLines={3}
+              style={styles.modelInput}
+            />
+            <Button
+              mode="contained-tonal"
+              onPress={runDiagnosticWorkflow}
+              disabled={
+                isAsking || !diagnosticAquariumId || !diagnosticSymptoms.trim()
+              }
+              style={styles.askButton}
+            >
+              Run diagnostic analysis
+            </Button>
+            {diagnosticError ? (
+              <Text variant="bodySmall" style={styles.errorText}>
+                {diagnosticError}
+              </Text>
+            ) : null}
+            {diagnosticAnswer ? (
+              <Text variant="bodyMedium" style={styles.answerSpacing}>
+                {diagnosticAnswer}
+              </Text>
+            ) : null}
+          </Card.Content>
+        </Card>
+
+        <Card mode="outlined" style={styles.noteCard}>
+          <Card.Title
+            title="Compatibility workflow"
+            subtitle="Evaluate additions against your tank context"
+          />
+          <Card.Content>
+            <ScrollableSegmentedButtons
+              value={compatibilityAquariumId}
+              onValueChange={setCompatibilityAquariumId}
+              buttons={aquariums.map((aq) => ({
+                label: aq.name,
+                value: aq.id,
+              }))}
+              density="small"
+            />
+            <View style={styles.filterRow}>
+              <TextInput
+                mode="outlined"
+                label="Species"
+                value={compatibilitySpecies}
+                onChangeText={setCompatibilitySpecies}
+                style={styles.filterInput}
+              />
+              <TextInput
+                mode="outlined"
+                label="Qty"
+                value={compatibilityQuantity}
+                onChangeText={setCompatibilityQuantity}
+                keyboardType="number-pad"
+                style={styles.quantityInput}
+              />
+            </View>
+            <ScrollableSegmentedButtons
+              value={compatibilityKind}
+              onValueChange={setCompatibilityKind}
+              buttons={[
+                { label: "Fish", value: "fish" },
+                { label: "Shrimp", value: "shrimp" },
+                { label: "Snail", value: "snail" },
+                { label: "Coral", value: "coral" },
+                { label: "Plant", value: "plant" },
+                { label: "Other", value: "other" },
+              ]}
+              style={styles.modelInput}
+              density="small"
+            />
+            <TextInput
+              mode="outlined"
+              label="Notes (optional)"
+              value={compatibilityNotes}
+              onChangeText={setCompatibilityNotes}
+              multiline
+              numberOfLines={2}
+              style={styles.modelInput}
+            />
+            <Button
+              mode="contained-tonal"
+              onPress={runCompatibilityWorkflow}
+              disabled={
+                isAsking ||
+                !compatibilityAquariumId ||
+                !compatibilitySpecies.trim()
+              }
+              style={styles.askButton}
+            >
+              Run compatibility check
+            </Button>
+            {compatibilityError ? (
+              <Text variant="bodySmall" style={styles.errorText}>
+                {compatibilityError}
+              </Text>
+            ) : null}
+            {compatibilityAnswer ? (
+              <Text variant="bodyMedium" style={styles.answerSpacing}>
+                {compatibilityAnswer}
+              </Text>
+            ) : null}
+          </Card.Content>
+        </Card>
+      </ScrollView>
+
+      <BottomSheet
+        visible={isModelSheetVisible}
+        onDismiss={() => setModelSheetVisible(false)}
+        title="OpenRouter models"
+        actions={
+          <>
+            <Button onPress={() => setModelSheetVisible(false)}>Close</Button>
+          </>
+        }
+      >
+        <View style={styles.modeRow}>
           <Button
             mode="contained-tonal"
-            onPress={askAssistant}
-            style={styles.askButton}
+            onPress={() => {
+              void loadOpenRouterModels();
+            }}
+            disabled={isLoadingModels}
           >
-            Ask assistant
+            Refresh list
           </Button>
-          {isAsking ? <ActivityIndicator style={styles.answerSpacing} /> : null}
-          {assistantError ? (
-            <Text variant="bodySmall" style={styles.errorText}>
-              {assistantError}
-            </Text>
-          ) : null}
-          {answer ? (
-            <Text variant="bodyMedium" style={styles.answerSpacing}>
-              {answer}
-            </Text>
-          ) : null}
-        </Card.Content>
-      </Card>
-    </ScrollView>
+          {isLoadingModels ? <ActivityIndicator /> : null}
+        </View>
+
+        <TextInput
+          mode="outlined"
+          label="Filter by model name or ID"
+          value={modelQuery}
+          onChangeText={setModelQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <View style={styles.filterRow}>
+          <TextInput
+            mode="outlined"
+            label="Created after (YYYY-MM-DD)"
+            value={createdAfter}
+            onChangeText={setCreatedAfter}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={styles.filterInput}
+          />
+          <TextInput
+            mode="outlined"
+            label="Min context"
+            value={minContext}
+            onChangeText={setMinContext}
+            keyboardType="number-pad"
+            style={styles.filterInput}
+          />
+        </View>
+
+        <View style={styles.modeRow}>
+          {[
+            { label: "All", value: "all" as const },
+            { label: "Free", value: "free" as const },
+            { label: "Paid", value: "paid" as const },
+          ].map((option) => (
+            <Chip
+              key={option.value}
+              selected={showPricing === option.value}
+              onPress={() => setShowPricing(option.value)}
+            >
+              {option.label}
+            </Chip>
+          ))}
+        </View>
+
+        <View style={styles.modeRow}>
+          {[
+            { label: "Sort: Name", value: "name" as const },
+            { label: "Sort: Created", value: "created" as const },
+            { label: "Sort: Context", value: "context" as const },
+          ].map((option) => (
+            <Chip
+              key={option.value}
+              selected={sortBy === option.value}
+              onPress={() => setSortBy(option.value)}
+            >
+              {option.label}
+            </Chip>
+          ))}
+        </View>
+
+        {modelsError ? (
+          <Text variant="bodySmall" style={styles.errorText}>
+            {modelsError}
+          </Text>
+        ) : null}
+
+        <Text variant="bodySmall" style={styles.helperText}>
+          Showing {filteredModels.length} filtered models
+        </Text>
+
+        <Divider style={styles.groupDivider} />
+        <Text variant="titleMedium">Free models ({freeModels.length})</Text>
+        {freeModels.slice(0, 40).map((candidate) => (
+          <Button
+            key={candidate.id}
+            mode="text"
+            onPress={() => {
+              setModel(candidate.id);
+              setModelSheetVisible(false);
+            }}
+            contentStyle={styles.modelRowContent}
+            style={styles.modelRowButton}
+          >
+            {`${candidate.name ?? candidate.id} • ${candidate.context_length ?? "-"} ctx • ${formatCreatedDate(candidate.created)} • ${formatPricingPreview(candidate.pricing)}`}
+          </Button>
+        ))}
+        {freeModels.length > 40 ? (
+          <Text variant="bodySmall" style={styles.helperText}>
+            +{freeModels.length - 40} more free models (refine filters)
+          </Text>
+        ) : null}
+
+        <Divider style={styles.groupDivider} />
+        <Text variant="titleMedium">Paid models ({paidModels.length})</Text>
+        {paidModels.slice(0, 40).map((candidate) => (
+          <Button
+            key={candidate.id}
+            mode="text"
+            onPress={() => {
+              setModel(candidate.id);
+              setModelSheetVisible(false);
+            }}
+            contentStyle={styles.modelRowContent}
+            style={styles.modelRowButton}
+          >
+            {`${candidate.name ?? candidate.id} • ${candidate.context_length ?? "-"} ctx • ${formatCreatedDate(candidate.created)} • ${formatPricingPreview(candidate.pricing)}`}
+          </Button>
+        ))}
+        {paidModels.length > 40 ? (
+          <Text variant="bodySmall" style={styles.helperText}>
+            +{paidModels.length - 40} more paid models (refine filters)
+          </Text>
+        ) : null}
+      </BottomSheet>
+    </>
   );
 }
 
@@ -670,6 +954,10 @@ const styles = StyleSheet.create({
   modelInput: {
     marginTop: 10,
   },
+  modelPickerButton: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+  },
   helperText: {
     marginTop: 8,
     opacity: 0.75,
@@ -681,6 +969,9 @@ const styles = StyleSheet.create({
   },
   filterInput: {
     flex: 1,
+  },
+  quantityInput: {
+    width: 90,
   },
   groupDivider: {
     marginTop: 12,

@@ -30,6 +30,46 @@ const LIVESTOCK_KINDS = [
 ] as const;
 const ASSET_CATEGORIES = ["filter", "heater", "light", "co2", "other"] as const;
 const CONSUMABLE_UNITS = ["pcs", "ml", "g"] as const;
+const ANALYTIC_METRICS = [
+  { label: "NH3", value: "ammonia" },
+  { label: "NO2", value: "nitrite" },
+  { label: "NO3", value: "nitrate" },
+  { label: "pH", value: "ph" },
+  { label: "Temp", value: "temperatureC" },
+  { label: "GH", value: "gh" },
+  { label: "KH", value: "kh" },
+  { label: "Sal", value: "salinity" },
+  { label: "Ca", value: "calcium" },
+  { label: "Alk", value: "alkalinity" },
+] as const;
+type AnalyticMetricKey = (typeof ANALYTIC_METRICS)[number]["value"];
+
+const METRIC_UNITS: Record<AnalyticMetricKey, string> = {
+  ammonia: "ppm",
+  nitrite: "ppm",
+  nitrate: "ppm",
+  ph: "",
+  temperatureC: "°C",
+  gh: "",
+  kh: "",
+  salinity: "",
+  calcium: "ppm",
+  alkalinity: "dKH",
+};
+
+const METRIC_COLORS: Record<AnalyticMetricKey, string> = {
+  ammonia: "#ef4444",
+  nitrite: "#f97316",
+  nitrate: "#22c55e",
+  ph: "#0ea5e9",
+  temperatureC: "#8b5cf6",
+  gh: "#14b8a6",
+  kh: "#06b6d4",
+  salinity: "#0d9488",
+  calcium: "#2563eb",
+  alkalinity: "#9333ea",
+};
+
 const toIsoDate = (date: Date) => date.toISOString().slice(0, 10);
 const parseIsoDate = (value: string) => {
   const parsed = new Date(value);
@@ -121,6 +161,8 @@ export default function HomeScreen() {
   const [isEditAquariumOpen, setEditAquariumOpen] = useState(false);
   const [isNewDatePickerOpen, setNewDatePickerOpen] = useState(false);
   const [isEditDatePickerOpen, setEditDatePickerOpen] = useState(false);
+  const [selectedMetric, setSelectedMetric] =
+    useState<AnalyticMetricKey>("nitrate");
 
   const addAquariumForm = useForm({
     defaultValues: {
@@ -591,24 +633,30 @@ export default function HomeScreen() {
   ).length;
 
   const chartAquariumId = selectedAquariumId || aquariums[0]?.id || "";
-  const nitrateChartData = useMemo(() => {
+  const selectedMetricLabel =
+    ANALYTIC_METRICS.find((metric) => metric.value === selectedMetric)?.label ??
+    selectedMetric;
+  const chartData = useMemo(() => {
     if (!chartAquariumId) {
       return [];
     }
 
     return parameterLogs
-      .filter(
-        (entry) =>
-          entry.aquariumId === chartAquariumId &&
-          entry.values.nitrate !== undefined,
-      )
+      .filter((entry) => {
+        if (entry.aquariumId !== chartAquariumId) {
+          return false;
+        }
+
+        const metricValue = entry.values[selectedMetric];
+        return metricValue !== undefined;
+      })
       .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt))
       .slice(-8)
       .map((entry) => ({
-        value: entry.values.nitrate as number,
+        value: entry.values[selectedMetric] as number,
         label: `${new Date(entry.createdAt).getDate()}`,
       }));
-  }, [chartAquariumId, parameterLogs]);
+  }, [chartAquariumId, parameterLogs, selectedMetric]);
 
   return (
     <>
@@ -782,7 +830,7 @@ export default function HomeScreen() {
         <Card style={styles.tankCard} mode="outlined">
           <Card.Title
             title="Parameter Analytics"
-            subtitle="Nitrate trend (recent logs)"
+            subtitle={`${selectedMetricLabel} trend (recent logs)`}
           />
           <Card.Content>
             <ScrollableSegmentedButtons
@@ -793,28 +841,42 @@ export default function HomeScreen() {
                 value: aq.id,
               }))}
             />
-            {nitrateChartData.length > 1 ? (
+            <ScrollableSegmentedButtons
+              value={selectedMetric}
+              onValueChange={(value) =>
+                setSelectedMetric(value as AnalyticMetricKey)
+              }
+              buttons={ANALYTIC_METRICS.map((metric) => ({
+                label: metric.label,
+                value: metric.value,
+              }))}
+              style={styles.metricSelector}
+            />
+            {chartData.length > 1 ? (
               <View style={styles.chartWrap}>
                 <LineChart
                   areaChart
-                  data={nitrateChartData}
+                  data={chartData}
                   width={Math.max(220, width - 96)}
                   spacing={28}
-                  color="#4caf50"
-                  startFillColor="#4caf50"
-                  endFillColor="#4caf50"
+                  color={METRIC_COLORS[selectedMetric]}
+                  startFillColor={METRIC_COLORS[selectedMetric]}
+                  endFillColor={METRIC_COLORS[selectedMetric]}
                   startOpacity={0.22}
                   endOpacity={0.04}
                   hideDataPoints={false}
-                  dataPointsColor="#2e7d32"
+                  dataPointsColor={METRIC_COLORS[selectedMetric]}
                   yAxisTextStyle={styles.chartAxisLabel}
                   xAxisLabelTextStyle={styles.chartAxisLabel}
                   rulesColor="rgba(120,120,120,0.2)"
                 />
+                <Text variant="bodySmall" style={styles.chartUnitLabel}>
+                  Unit: {METRIC_UNITS[selectedMetric] || "value"}
+                </Text>
               </View>
             ) : (
               <Text variant="bodyMedium" style={styles.chartEmpty}>
-                Need at least 2 nitrate logs for charting.
+                Need at least 2 {selectedMetricLabel} logs for charting.
               </Text>
             )}
           </Card.Content>
@@ -1839,9 +1901,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
     opacity: 0.75,
   },
+  metricSelector: {
+    marginTop: 12,
+  },
   chartAxisLabel: {
     color: "rgba(120,120,120,0.9)",
     fontSize: 10,
+  },
+  chartUnitLabel: {
+    marginTop: 8,
+    opacity: 0.7,
   },
   fab: {
     position: "absolute",
