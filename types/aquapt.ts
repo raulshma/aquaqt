@@ -138,4 +138,5 @@ export interface AppSettings {
   aiModel: string;
   notificationsEnabled?: boolean;
   reminderHour?: number;
+  assistantMemoryEnabled?: boolean;
 }

@@ -33,6 +33,12 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { executeApprovedActions as runApprovedActions } from "@/services/assistant-executor";
+import {
+  forgetManualAssistantSnippet,
+  queryAssistantMemorySnippets,
+  rememberAssistantTurn,
+  rememberManualAssistantSnippet,
+} from "@/services/assistant-memory";
 import { askAssistantWithTaskDetection } from "@/services/assistant-orchestrator";
 import {
   initPersistence,
@@ -467,6 +473,11 @@ export default function AssistantScreen() {
     string | null
   >(null);
   const [isReviewVisible, setReviewVisible] = useState(false);
+  const [rememberedAssistantMessageIds, setRememberedAssistantMessageIds] =
+    useState<Record<string, boolean>>({});
+  const [memoryActionBusyMessageIds, setMemoryActionBusyMessageIds] = useState<
+    Record<string, boolean>
+  >({});
 
   /* ── dictation state ─────────────────────────────────────────── */
   const [dictationPreview, setDictationPreview] = useState("");
@@ -776,12 +787,20 @@ export default function AssistantScreen() {
     scrollToBottom();
 
     try {
+      const memorySnippets = await queryAssistantMemorySnippets({
+        prompt,
+        limit: 4,
+        enabled: settings.assistantMemoryEnabled,
+      });
+
       const result = await askAssistantWithTaskDetection({
         apiKey: settings.openRouterApiKey,
         model: settings.aiModel,
         userPrompt: prompt,
         appContext: assistantContext,
         aquariums,
+        memorySnippets,
+        conversationMessages: activeConversation.messages,
         onAssistantDelta: (snapshot) => {
           updateConversation(activeConversationId, (conversation) => ({
             ...conversation,
@@ -835,6 +854,15 @@ export default function AssistantScreen() {
       if (normalizedActions.length > 0) {
         setReviewVisible(true);
       }
+
+      void rememberAssistantTurn({
+        conversationId: activeConversationId,
+        userMessageId: userMessage.id,
+        userPrompt: prompt,
+        assistantText: result.assistantText,
+        enabled: settings.assistantMemoryEnabled,
+      });
+
       scrollToBottom();
     } catch (error) {
       setAssistantError(
@@ -858,6 +886,7 @@ export default function AssistantScreen() {
     composerText,
     isAsking,
     settings.aiModel,
+    settings.assistantMemoryEnabled,
     settings.openRouterApiKey,
     scrollToBottom,
     updateConversation,
@@ -1055,6 +1084,78 @@ export default function AssistantScreen() {
     addLivestock,
   ]);
 
+  const rememberAssistantMessage = useCallback(
+    async (message: AssistantChatMessage) => {
+      const content = message.content.trim();
+      if (!content) {
+        return;
+      }
+
+      setMemoryActionBusyMessageIds((prev) => ({
+        ...prev,
+        [message.id]: true,
+      }));
+      try {
+        const memoryId = await rememberManualAssistantSnippet({
+          conversationId: activeConversationId,
+          sourceMessageId: message.id,
+          content,
+          enabled: settings.assistantMemoryEnabled,
+        });
+
+        if (memoryId) {
+          setRememberedAssistantMessageIds((prev) => ({
+            ...prev,
+            [message.id]: true,
+          }));
+        }
+      } catch (error) {
+        setAssistantError(
+          error instanceof Error
+            ? error.message
+            : "Could not save message to assistant memory.",
+        );
+      } finally {
+        setMemoryActionBusyMessageIds((prev) => ({
+          ...prev,
+          [message.id]: false,
+        }));
+      }
+    },
+    [activeConversationId, settings.assistantMemoryEnabled],
+  );
+
+  const forgetAssistantMessageMemory = useCallback(
+    async (message: AssistantChatMessage) => {
+      setMemoryActionBusyMessageIds((prev) => ({
+        ...prev,
+        [message.id]: true,
+      }));
+      try {
+        await forgetManualAssistantSnippet({
+          conversationId: activeConversationId,
+          sourceMessageId: message.id,
+        });
+        setRememberedAssistantMessageIds((prev) => ({
+          ...prev,
+          [message.id]: false,
+        }));
+      } catch (error) {
+        setAssistantError(
+          error instanceof Error
+            ? error.message
+            : "Could not forget assistant memory snippet.",
+        );
+      } finally {
+        setMemoryActionBusyMessageIds((prev) => ({
+          ...prev,
+          [message.id]: false,
+        }));
+      }
+    },
+    [activeConversationId],
+  );
+
   /* ── dictation handlers (tap-to-toggle) ───────────────────────── */
   const startDictation = useCallback(() => {
     if (isDictating || isAsking) return;
@@ -1241,6 +1342,39 @@ export default function AssistantScreen() {
 
                   {isAssistant && message.responseTelemetry ? (
                     <AssistantTelemetry telemetry={message.responseTelemetry} />
+                  ) : null}
+
+                  {isAssistant && !isStreaming && message.content.trim() ? (
+                    <View style={styles.memoryActionsRow}>
+                      {!rememberedAssistantMessageIds[message.id] ? (
+                        <Button
+                          compact
+                          mode="text"
+                          loading={!!memoryActionBusyMessageIds[message.id]}
+                          disabled={!!memoryActionBusyMessageIds[message.id]}
+                          onPress={() => {
+                            void rememberAssistantMessage(message);
+                          }}
+                        >
+                          Remember this reply
+                        </Button>
+                      ) : (
+                        <>
+                          <Chip compact>Saved to memory</Chip>
+                          <Button
+                            compact
+                            mode="text"
+                            loading={!!memoryActionBusyMessageIds[message.id]}
+                            disabled={!!memoryActionBusyMessageIds[message.id]}
+                            onPress={() => {
+                              void forgetAssistantMessageMemory(message);
+                            }}
+                          >
+                            Forget
+                          </Button>
+                        </>
+                      )}
+                    </View>
                   ) : null}
 
                   {/* Inline detected actions */}
@@ -2133,6 +2267,13 @@ const styles = StyleSheet.create({
   },
   telemetryText: {
     opacity: 0.75,
+  },
+  memoryActionsRow: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
   },
 
   /* Composer */

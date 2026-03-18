@@ -7,6 +7,8 @@ import { ASSISTANT_SYSTEM_PROMPT } from "@/services/assistant-prompts";
 import { Aquarium } from "@/types/aquapt";
 import {
     AssistantActionExtractionResult,
+    AssistantChatMessage,
+    AssistantMemorySnippet,
     AssistantResponseTelemetry,
 } from "@/types/assistant";
 
@@ -16,6 +18,8 @@ interface AskAssistantWithActionsOptions {
   userPrompt: string;
   appContext: unknown;
   aquariums: Aquarium[];
+  memorySnippets?: AssistantMemorySnippet[];
+  conversationMessages?: AssistantChatMessage[];
   onAssistantDelta?: (snapshot: {
     text: string;
     elapsedMs: number;
@@ -41,15 +45,56 @@ const stringifyContext = (value: unknown) => {
   }
 };
 
+const toOpenRouterRole = (
+  role: AssistantChatMessage["role"],
+): "system" | "user" | "assistant" => {
+  if (role === "user") {
+    return "user";
+  }
+
+  if (role === "assistant") {
+    return "assistant";
+  }
+
+  return "system";
+};
+
+const buildMemorySystemPrompt = (snippets: AssistantMemorySnippet[]) => {
+  if (!snippets.length) {
+    return "";
+  }
+
+  const lines = snippets.map((snippet, index) => {
+    const content = snippet.content.replace(/\s+/g, " ").trim();
+    return `${index + 1}. ${content}`;
+  });
+
+  return [
+    "Long-term memory snippets from previous chats (may be outdated; verify before acting):",
+    ...lines,
+  ].join("\n");
+};
+
 export async function askAssistantWithTaskDetection({
   apiKey,
   model,
   userPrompt,
   appContext,
   aquariums,
+  memorySnippets = [],
+  conversationMessages = [],
   onAssistantDelta,
   signal,
 }: AskAssistantWithActionsOptions): Promise<AskAssistantWithActionsResult> {
+  const memoryPrompt = buildMemorySystemPrompt(memorySnippets);
+  const recentConversationMessages = conversationMessages
+    .slice(-8)
+    .map((message) => ({
+      role: toOpenRouterRole(message.role),
+      content: message.content,
+    }))
+    .filter((message) => message.content.trim().length > 0);
+
   const streamedAssistantResult = await requestOpenRouterStreamingCompletion({
     apiKey,
     model,
@@ -65,6 +110,15 @@ export async function askAssistantWithTaskDetection({
         role: "system",
         content: `App context: ${stringifyContext(appContext)}`,
       },
+      ...(memoryPrompt
+        ? [
+            {
+              role: "system" as const,
+              content: memoryPrompt,
+            },
+          ]
+        : []),
+      ...recentConversationMessages,
       {
         role: "user",
         content: userPrompt,

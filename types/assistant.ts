@@ -136,3 +136,13 @@ export interface AssistantTaskExecutionResult {
   skippedCount: number;
   results: AssistantTaskExecutionItemResult[];
 }
+
+export interface AssistantMemorySnippet {
+  id: string;
+  content: string;
+  similarity?: number;
+  createdAt?: string;
+  category?: string;
+  sourceConversationId?: string;
+  sourceMessageId?: string;
+}

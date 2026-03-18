@@ -130,6 +130,7 @@ interface AquaptContextValue {
   }) => void;
   saveApiKey: (value: string) => void;
   saveAiModel: (value: string) => void;
+  saveAssistantMemoryEnabled: (value: boolean) => void;
 }
 
 const AquaptContext = createContext<AquaptContextValue | null>(null);
@@ -152,6 +153,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
     notificationsEnabled: false,
     reminderHour: 8,
+    assistantMemoryEnabled: true,
   });
   const hasHydratedOnceRef = useRef(false);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -189,6 +191,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           notificationsEnabled:
             persisted.settings?.notificationsEnabled ?? false,
           reminderHour: persisted.settings?.reminderHour ?? 8,
+          assistantMemoryEnabled:
+            persisted.settings?.assistantMemoryEnabled ?? true,
         });
       } catch (error) {
         console.warn("Persistence bootstrap failed", error);
@@ -555,6 +559,10 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const saveAssistantMemoryEnabled = useCallback((value: boolean) => {
+    setSettings((prev) => ({ ...prev, assistantMemoryEnabled: value }));
+  }, []);
+
   const addLivestock = useCallback((input: Omit<Livestock, "id">) => {
     const livestockItem: Livestock = {
       ...input,
@@ -869,12 +877,16 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
                   false,
                 reminderHour:
                   (parsed.settings as AppSettings).reminderHour ?? 8,
+                assistantMemoryEnabled:
+                  (parsed.settings as AppSettings).assistantMemoryEnabled ??
+                  true,
               }
             : {
                 openRouterApiKey: "",
                 aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
                 notificationsEnabled: false,
                 reminderHour: 8,
+                assistantMemoryEnabled: true,
               },
       };
 
@@ -943,6 +955,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       saveReminderSettings,
       saveApiKey,
       saveAiModel,
+      saveAssistantMemoryEnabled,
     }),
     [
       isHydrated,
@@ -983,6 +996,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       saveReminderSettings,
       saveApiKey,
       saveAiModel,
+      saveAssistantMemoryEnabled,
     ],
   );
 

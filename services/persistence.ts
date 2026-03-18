@@ -19,6 +19,7 @@ import { AssistantConversation } from "@/types/assistant";
 const DB_NAME = "aquapt.db";
 const STATE_KEY = "app-state-v1";
 const ASSISTANT_CONVERSATIONS_KEY = "assistant-conversations-v1";
+const ASSISTANT_MEMORY_KEY = "assistant-memory-v1";
 
 export interface PersistedAppState {
   aquariums: Aquarium[];
@@ -38,6 +39,11 @@ export interface PersistedAppState {
 export interface PersistedAssistantConversationsState {
   conversations: AssistantConversation[];
   activeConversationId: string;
+  updatedAt: string;
+}
+
+export interface PersistedAssistantMemoryState {
+  indexedMessageIds: string[];
   updatedAt: string;
 }
 
@@ -144,5 +150,50 @@ export async function savePersistedAssistantState(
         updated_at = excluded.updated_at
     `,
     [ASSISTANT_CONVERSATIONS_KEY, payload, nowIso],
+  );
+}
+
+export async function loadPersistedAssistantMemoryState(): Promise<PersistedAssistantMemoryState | null> {
+  const db = await getDb();
+
+  const row = await db.getFirstAsync<{ payload: string }>(
+    "SELECT payload FROM app_state WHERE key = ? LIMIT 1",
+    [ASSISTANT_MEMORY_KEY],
+  );
+
+  if (!row?.payload) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(row.payload) as PersistedAssistantMemoryState;
+    if (!Array.isArray(parsed.indexedMessageIds)) {
+      return null;
+    }
+    if (typeof parsed.updatedAt !== "string") {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function savePersistedAssistantMemoryState(
+  state: PersistedAssistantMemoryState,
+) {
+  const db = await getDb();
+  const payload = JSON.stringify(state);
+  const nowIso = new Date().toISOString();
+
+  await db.runAsync(
+    `
+      INSERT INTO app_state (key, payload, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        payload = excluded.payload,
+        updated_at = excluded.updated_at
+    `,
+    [ASSISTANT_MEMORY_KEY, payload, nowIso],
   );
 }

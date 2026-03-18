@@ -2,13 +2,13 @@ import { useForm } from "@tanstack/react-form";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import {
-  ActivityIndicator,
-  Button,
-  Card,
-  Chip,
-  Divider,
-  Text,
-  TextInput,
+    ActivityIndicator,
+    Button,
+    Card,
+    Chip,
+    Divider,
+    Text,
+    TextInput,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -17,17 +17,23 @@ import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented
 import { useAquapt } from "@/context/aquapt-context";
 import { requestOpenRouterCompletion } from "@/services/assistant-ai";
 import {
-  ASSISTANT_MODE_PROMPTS,
-  ASSISTANT_QUESTION_PRESETS,
-  ASSISTANT_SYSTEM_PROMPT,
-  AssistantMode,
+    clearAssistantMemoryStore,
+    forgetAssistantMemorySnippet,
+    listAssistantMemorySnippets,
+} from "@/services/assistant-memory";
+import {
+    ASSISTANT_MODE_PROMPTS,
+    ASSISTANT_QUESTION_PRESETS,
+    ASSISTANT_SYSTEM_PROMPT,
+    AssistantMode,
 } from "@/services/assistant-prompts";
 import {
-  clearDailyReminderSchedule,
-  ensureReminderPermissions,
-  scheduleDailyReminder,
+    clearDailyReminderSchedule,
+    ensureReminderPermissions,
+    scheduleDailyReminder,
 } from "@/services/notifications";
 import { countDueTasks } from "@/services/scheduling";
+import { AssistantMemorySnippet } from "@/types/assistant";
 
 type OpenRouterModel = {
   id: string;
@@ -96,6 +102,7 @@ export default function SettingsScreen() {
     saveReminderSettings,
     saveApiKey,
     saveAiModel,
+    saveAssistantMemoryEnabled,
   } = useAquapt();
   const settingsForm = useForm({
     defaultValues: {
@@ -139,6 +146,14 @@ export default function SettingsScreen() {
     settings.notificationsEnabled ?? false,
   );
   const [reminderHour, setReminderHour] = useState(settings.reminderHour ?? 8);
+  const [assistantMemoryEnabled, setAssistantMemoryEnabled] = useState(
+    settings.assistantMemoryEnabled ?? true,
+  );
+  const [memorySnippets, setMemorySnippets] = useState<
+    AssistantMemorySnippet[]
+  >([]);
+  const [isLoadingMemory, setIsLoadingMemory] = useState(false);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
   const [reminderStatus, setReminderStatus] = useState<string | null>(null);
   const [diagnosticAnswer, setDiagnosticAnswer] = useState("");
   const [compatibilityAnswer, setCompatibilityAnswer] = useState("");
@@ -194,7 +209,12 @@ export default function SettingsScreen() {
   useEffect(() => {
     setRemindersEnabled(settings.notificationsEnabled ?? false);
     setReminderHour(settings.reminderHour ?? 8);
-  }, [settings.notificationsEnabled, settings.reminderHour]);
+    setAssistantMemoryEnabled(settings.assistantMemoryEnabled ?? true);
+  }, [
+    settings.assistantMemoryEnabled,
+    settings.notificationsEnabled,
+    settings.reminderHour,
+  ]);
 
   useEffect(() => {
     const diagnosticValues = diagnosticForm.state.values;
@@ -579,6 +599,62 @@ export default function SettingsScreen() {
     }
   };
 
+  const refreshAssistantMemory = useCallback(async () => {
+    setIsLoadingMemory(true);
+    setMemoryError(null);
+
+    try {
+      const snippets = await listAssistantMemorySnippets({
+        limit: 20,
+      });
+      setMemorySnippets(snippets);
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error ? error.message : "Failed to load memory",
+      );
+    } finally {
+      setIsLoadingMemory(false);
+    }
+  }, []);
+
+  const clearAssistantMemory = useCallback(async () => {
+    setIsLoadingMemory(true);
+    setMemoryError(null);
+
+    try {
+      await clearAssistantMemoryStore();
+      setMemorySnippets([]);
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error ? error.message : "Failed to clear memory",
+      );
+    } finally {
+      setIsLoadingMemory(false);
+    }
+  }, []);
+
+  const forgetSnippet = useCallback(async (id: string) => {
+    setMemoryError(null);
+
+    try {
+      await forgetAssistantMemorySnippet(id);
+      setMemorySnippets((prev) => prev.filter((snippet) => snippet.id !== id));
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error ? error.message : "Failed to remove snippet",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!assistantMemoryEnabled) {
+      setMemorySnippets([]);
+      return;
+    }
+
+    void refreshAssistantMemory();
+  }, [assistantMemoryEnabled, refreshAssistantMemory]);
+
   return (
     <>
       <ScrollView
@@ -643,6 +719,30 @@ export default function SettingsScreen() {
             >
               Save key
             </Button>
+            <View style={styles.modeRow}>
+              <Chip
+                selected={assistantMemoryEnabled}
+                onPress={() => {
+                  setAssistantMemoryEnabled(true);
+                  saveAssistantMemoryEnabled(true);
+                }}
+              >
+                Assistant memory ON
+              </Chip>
+              <Chip
+                selected={!assistantMemoryEnabled}
+                onPress={() => {
+                  setAssistantMemoryEnabled(false);
+                  saveAssistantMemoryEnabled(false);
+                }}
+              >
+                Assistant memory OFF
+              </Chip>
+            </View>
+            <Text variant="bodySmall" style={styles.helperText}>
+              When enabled, the assistant stores and retrieves relevant prior
+              chat snippets locally to improve future responses.
+            </Text>
             {savedAt ? (
               <Text variant="bodySmall" style={styles.savedAt}>
                 Saved: {savedAt}
@@ -747,6 +847,99 @@ export default function SettingsScreen() {
                 {backupStatus}
               </Text>
             ) : null}
+          </Card.Content>
+        </Card>
+
+        <Card mode="outlined" style={styles.noteCard}>
+          <Card.Title
+            title="Assistant memory"
+            subtitle="Inspect and manage semantic memory snippets"
+          />
+          <Card.Content>
+            <View style={styles.modeRow}>
+              <Button
+                mode="contained-tonal"
+                onPress={() => {
+                  void refreshAssistantMemory();
+                }}
+                disabled={!assistantMemoryEnabled || isLoadingMemory}
+              >
+                Refresh memory
+              </Button>
+              <Button
+                mode="outlined"
+                onPress={() => {
+                  void clearAssistantMemory();
+                }}
+                disabled={!assistantMemoryEnabled || isLoadingMemory}
+              >
+                Clear all
+              </Button>
+              {isLoadingMemory ? <ActivityIndicator /> : null}
+            </View>
+
+            {!assistantMemoryEnabled ? (
+              <Text variant="bodySmall" style={styles.helperText}>
+                Turn assistant memory ON above to store and review snippets.
+              </Text>
+            ) : null}
+
+            {memoryError ? (
+              <Text variant="bodySmall" style={styles.errorText}>
+                {memoryError}
+              </Text>
+            ) : null}
+
+            {assistantMemoryEnabled &&
+            memorySnippets.length === 0 &&
+            !isLoadingMemory ? (
+              <Text variant="bodySmall" style={styles.helperText}>
+                No memory snippets saved yet.
+              </Text>
+            ) : null}
+
+            {memorySnippets.map((snippet) => (
+              <Card
+                key={snippet.id}
+                mode="outlined"
+                style={styles.actionCardCompact}
+              >
+                <Card.Content>
+                  <Text variant="bodySmall">{snippet.content}</Text>
+                  <View style={styles.modeRow}>
+                    {snippet.category ? (
+                      <Chip compact>{snippet.category}</Chip>
+                    ) : null}
+                    {typeof snippet.similarity === "number" ? (
+                      <Chip
+                        compact
+                      >{`sim ${(snippet.similarity * 100).toFixed(0)}%`}</Chip>
+                    ) : null}
+                    {snippet.sourceConversationId ? (
+                      <Chip
+                        compact
+                      >{`conv ${snippet.sourceConversationId.slice(0, 10)}…`}</Chip>
+                    ) : null}
+                  </View>
+                  <View style={styles.modeRow}>
+                    <Text variant="labelSmall" style={styles.helperText}>
+                      {snippet.createdAt
+                        ? `Saved: ${new Date(snippet.createdAt).toLocaleString()}`
+                        : "Saved: -"}
+                    </Text>
+                    <Button
+                      compact
+                      mode="text"
+                      onPress={() => {
+                        void forgetSnippet(snippet.id);
+                      }}
+                    >
+                      Forget
+                    </Button>
+                  </View>
+                </Card.Content>
+              </Card>
+            ))}
           </Card.Content>
         </Card>
 
@@ -1233,5 +1426,9 @@ const styles = StyleSheet.create({
   errorText: {
     marginTop: 12,
     color: "#b00020",
+  },
+  actionCardCompact: {
+    marginTop: 8,
+    borderRadius: 12,
   },
 });
