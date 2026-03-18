@@ -117,10 +117,13 @@ async function startNativeDictation(
     }) => {
       const text = event.results[0]?.transcript ?? "";
       if (event.isFinal) {
-        finalTranscript = text;
-        latestTranscript = text;
+        // Accumulate finalized segments (each pause produces a new final result)
+        finalTranscript += (finalTranscript ? " " : "") + text;
+        latestTranscript = finalTranscript;
       } else {
-        latestTranscript = text;
+        // Show accumulated finals + current interim text
+        latestTranscript =
+          finalTranscript + (finalTranscript ? " " : "") + text;
       }
       onPartialTranscript?.(latestTranscript);
     },
