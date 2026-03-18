@@ -737,104 +737,140 @@ export default function AssistantScreen() {
   );
 
   /* ── ask assistant ───────────────────────────────────────────── */
-  const askAssistant = useCallback(async () => {
-    const prompt = composerText.trim();
-    if (!prompt || isAsking) return;
-    if (!settings.openRouterApiKey.trim()) {
-      setAssistantError(
-        "Missing API key. Add your OpenRouter key in Settings.",
-      );
-      return;
-    }
+  const askAssistantForPrompt = useCallback(
+    async ({
+      prompt,
+      retryMessageId,
+    }: {
+      prompt: string;
+      retryMessageId?: string;
+    }) => {
+      const normalizedPrompt = prompt.trim();
+      if (!normalizedPrompt || isAsking) return;
+      if (!settings.openRouterApiKey.trim()) {
+        setAssistantError(
+          "Missing API key. Add your OpenRouter key in Settings.",
+        );
+        return;
+      }
 
-    setAsking(true);
-    setAssistantError(null);
+      const isRetry = !!retryMessageId;
+      const userMessageId = retryMessageId ?? nowId("msg");
 
-    const userMessage: AssistantChatMessage = {
-      id: nowId("msg"),
-      role: "user",
-      content: prompt,
-      createdAt: new Date().toISOString(),
-    };
-    const assistantDraftId = nowId("msg");
-    const assistantDraftMessage: AssistantChatMessage = {
-      id: assistantDraftId,
-      role: "assistant",
-      content: "",
-      createdAt: new Date().toISOString(),
-      responseTelemetry: {
-        streamed: true,
-        model: settings.aiModel,
-      },
-    };
+      setAsking(true);
+      setAssistantError(null);
 
-    // Auto-title the conversation from first user message
-    const isFirstUserMsg =
-      activeConversation.title === "New Chat" &&
-      !activeConversation.messages.some((m) => m.role === "user");
-
-    updateConversation(activeConversationId, (c) => ({
-      ...c,
-      title: isFirstUserMsg
-        ? prompt.slice(0, 40) + (prompt.length > 40 ? "…" : "")
-        : c.title,
-      messages: [...c.messages, userMessage, assistantDraftMessage],
-      updatedAt: new Date().toISOString(),
-    }));
-
-    setActiveStreamingMessageId(assistantDraftId);
-    setComposerText("");
-    scrollToBottom();
-
-    try {
-      const memorySnippets = await queryAssistantMemorySnippets({
-        prompt,
-        limit: 4,
-        enabled: settings.assistantMemoryEnabled,
-      });
-
-      const result = await askAssistantWithTaskDetection({
-        apiKey: settings.openRouterApiKey,
-        model: settings.aiModel,
-        userPrompt: prompt,
-        appContext: assistantContext,
-        aquariums,
-        memorySnippets,
-        conversationMessages: activeConversation.messages,
-        onAssistantDelta: (snapshot) => {
-          updateConversation(activeConversationId, (conversation) => ({
-            ...conversation,
-            messages: conversation.messages.map((message) =>
-              message.id === assistantDraftId
-                ? {
-                    ...message,
-                    content: snapshot.text,
-                    responseTelemetry: {
-                      ...(message.responseTelemetry ?? {}),
-                      streamed: true,
-                      generationId:
-                        snapshot.generationId ??
-                        message.responseTelemetry?.generationId,
-                      model: snapshot.model ?? message.responseTelemetry?.model,
-                      elapsedMs: snapshot.elapsedMs,
-                      throughputCharsPerSecond: snapshot.charsPerSecond,
-                    },
-                  }
-                : message,
-            ),
-            updatedAt: new Date().toISOString(),
-          }));
-          scrollToBottom();
+      const userMessage: AssistantChatMessage = {
+        id: userMessageId,
+        role: "user",
+        content: normalizedPrompt,
+        createdAt: new Date().toISOString(),
+      };
+      const assistantDraftId = nowId("msg");
+      const assistantDraftMessage: AssistantChatMessage = {
+        id: assistantDraftId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date().toISOString(),
+        responseTelemetry: {
+          streamed: true,
+          model: settings.aiModel,
         },
-      });
+      };
 
-      const normalizedActions = withValidation(result.extractedActions.actions);
+      const conversationMessagesForModel = isRetry
+        ? activeConversation.messages.filter(
+            (message) => message.id !== userMessageId,
+          )
+        : activeConversation.messages;
+
+      // Auto-title the conversation from first user message
+      const isFirstUserMsg =
+        !isRetry &&
+        activeConversation.title === "New Chat" &&
+        !activeConversation.messages.some((m) => m.role === "user");
 
       updateConversation(activeConversationId, (c) => ({
         ...c,
-        messages: c.messages.map((message) =>
-          message.id === assistantDraftId
-            ? {
+        title: isFirstUserMsg
+          ? normalizedPrompt.slice(0, 40) +
+            (normalizedPrompt.length > 40 ? "…" : "")
+          : c.title,
+        messages: isRetry
+          ? [
+              ...c.messages.map((message) =>
+                message.id === userMessageId
+                  ? {
+                      ...message,
+                      requestFailed: false,
+                      requestError: undefined,
+                    }
+                  : message,
+              ),
+              assistantDraftMessage,
+            ]
+          : [...c.messages, userMessage, assistantDraftMessage],
+        updatedAt: new Date().toISOString(),
+      }));
+
+      setActiveStreamingMessageId(assistantDraftId);
+      if (!isRetry) {
+        setComposerText("");
+      }
+      scrollToBottom();
+
+      try {
+        const memorySnippets = await queryAssistantMemorySnippets({
+          prompt: normalizedPrompt,
+          limit: 4,
+          enabled: settings.assistantMemoryEnabled,
+        });
+
+        const result = await askAssistantWithTaskDetection({
+          apiKey: settings.openRouterApiKey,
+          model: settings.aiModel,
+          userPrompt: normalizedPrompt,
+          appContext: assistantContext,
+          aquariums,
+          memorySnippets,
+          conversationMessages: conversationMessagesForModel,
+          onAssistantDelta: (snapshot) => {
+            updateConversation(activeConversationId, (conversation) => ({
+              ...conversation,
+              messages: conversation.messages.map((message) =>
+                message.id === assistantDraftId
+                  ? {
+                      ...message,
+                      content: snapshot.text,
+                      responseTelemetry: {
+                        ...(message.responseTelemetry ?? {}),
+                        streamed: true,
+                        generationId:
+                          snapshot.generationId ??
+                          message.responseTelemetry?.generationId,
+                        model:
+                          snapshot.model ?? message.responseTelemetry?.model,
+                        elapsedMs: snapshot.elapsedMs,
+                        throughputCharsPerSecond: snapshot.charsPerSecond,
+                      },
+                    }
+                  : message,
+              ),
+              updatedAt: new Date().toISOString(),
+            }));
+            scrollToBottom();
+          },
+        });
+
+        const normalizedActions = withValidation(
+          result.extractedActions.actions,
+        );
+
+        updateConversation(activeConversationId, (c) => ({
+          ...c,
+          messages: c.messages.map((message) => {
+            if (message.id === assistantDraftId) {
+              return {
                 ...message,
                 content:
                   result.assistantText || "I could not generate a response.",
@@ -843,55 +879,94 @@ export default function AssistantScreen() {
                   ...(message.responseTelemetry ?? {}),
                   ...(result.telemetry ?? {}),
                 },
-              }
-            : message,
-        ),
-        detectedActions: [...c.detectedActions, ...normalizedActions],
-        warnings: result.extractedActions.warnings,
-        updatedAt: new Date().toISOString(),
-      }));
+              };
+            }
 
-      if (normalizedActions.length > 0) {
-        setReviewVisible(true);
+            if (message.id === userMessageId && message.role === "user") {
+              return {
+                ...message,
+                requestFailed: false,
+                requestError: undefined,
+              };
+            }
+
+            return message;
+          }),
+          detectedActions: [...c.detectedActions, ...normalizedActions],
+          warnings: result.extractedActions.warnings,
+          updatedAt: new Date().toISOString(),
+        }));
+
+        if (normalizedActions.length > 0) {
+          setReviewVisible(true);
+        }
+
+        void rememberAssistantTurn({
+          conversationId: activeConversationId,
+          userMessageId,
+          userPrompt: normalizedPrompt,
+          assistantText: result.assistantText,
+          enabled: settings.assistantMemoryEnabled,
+        });
+
+        scrollToBottom();
+      } catch (error) {
+        const requestErrorMessage =
+          error instanceof Error ? error.message : "Assistant request failed.";
+
+        setAssistantError(requestErrorMessage);
+        updateConversation(activeConversationId, (conversation) => ({
+          ...conversation,
+          messages: conversation.messages
+            .filter((message) => message.id !== assistantDraftId)
+            .map((message) =>
+              message.id === userMessageId && message.role === "user"
+                ? {
+                    ...message,
+                    requestFailed: true,
+                    requestError: requestErrorMessage,
+                  }
+                : message,
+            ),
+          updatedAt: new Date().toISOString(),
+        }));
+      } finally {
+        setActiveStreamingMessageId(null);
+        setAsking(false);
+      }
+    },
+    [
+      activeConversation,
+      activeConversationId,
+      aquariums,
+      assistantContext,
+      isAsking,
+      settings.aiModel,
+      settings.assistantMemoryEnabled,
+      settings.openRouterApiKey,
+      scrollToBottom,
+      updateConversation,
+      withValidation,
+    ],
+  );
+
+  const askAssistant = useCallback(async () => {
+    await askAssistantForPrompt({ prompt: composerText });
+  }, [askAssistantForPrompt, composerText]);
+
+  const retryFailedMessage = useCallback(
+    (message: AssistantChatMessage) => {
+      if (message.role !== "user") {
+        return;
       }
 
-      void rememberAssistantTurn({
-        conversationId: activeConversationId,
-        userMessageId: userMessage.id,
-        userPrompt: prompt,
-        assistantText: result.assistantText,
-        enabled: settings.assistantMemoryEnabled,
+      void askAssistantForPrompt({
+        prompt: message.content,
+        retryMessageId: message.id,
       });
-
-      scrollToBottom();
-    } catch (error) {
-      setAssistantError(
-        error instanceof Error ? error.message : "Assistant request failed.",
-      );
-      updateConversation(activeConversationId, (conversation) => ({
-        ...conversation,
-        messages: conversation.messages.filter(
-          (message) => message.id !== assistantDraftId,
-        ),
-      }));
-    } finally {
-      setActiveStreamingMessageId(null);
-      setAsking(false);
-    }
-  }, [
-    activeConversation,
-    activeConversationId,
-    aquariums,
-    assistantContext,
-    composerText,
-    isAsking,
-    settings.aiModel,
-    settings.assistantMemoryEnabled,
-    settings.openRouterApiKey,
-    scrollToBottom,
-    updateConversation,
-    withValidation,
-  ]);
+    },
+    [askAssistantForPrompt],
+  );
 
   /* ── action updates ──────────────────────────────────────────── */
   const updateAction = useCallback(
@@ -1258,6 +1333,8 @@ export default function AssistantScreen() {
             const isSystem = message.role === "system";
             const isAssistant = message.role === "assistant";
             const isStreaming = activeStreamingMessageId === message.id;
+            const isRetryableFailedUserMessage =
+              isUser && message.requestFailed === true;
 
             // Find linked actions for this message
             const linkedActions = (message.detectedActionIds ?? [])
@@ -1337,6 +1414,33 @@ export default function AssistantScreen() {
                   {isStreaming ? (
                     <Text variant="labelSmall" style={styles.streamingLabel}>
                       Streaming…
+                    </Text>
+                  ) : null}
+
+                  {isRetryableFailedUserMessage ? (
+                    <View style={styles.failedMessageActionsRow}>
+                      <Chip compact icon="alert-circle-outline">
+                        Failed to send
+                      </Chip>
+                      <Button
+                        compact
+                        mode="text"
+                        disabled={isAsking}
+                        onPress={() => {
+                          retryFailedMessage(message);
+                        }}
+                      >
+                        Retry
+                      </Button>
+                    </View>
+                  ) : null}
+
+                  {isRetryableFailedUserMessage && message.requestError ? (
+                    <Text
+                      variant="labelSmall"
+                      style={styles.failedMessageError}
+                    >
+                      {message.requestError}
                     </Text>
                   ) : null}
 
@@ -2274,6 +2378,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     flexWrap: "wrap",
+  },
+  failedMessageActionsRow: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  failedMessageError: {
+    marginTop: 4,
+    opacity: 0.75,
   },
 
   /* Composer */

@@ -12,6 +12,10 @@ export interface AssistantChatMessage {
   role: AssistantMessageRole;
   content: string;
   createdAt: string;
+  /** True when the user message failed to receive an assistant response. */
+  requestFailed?: boolean;
+  /** Optional error detail from a failed assistant request. */
+  requestError?: string;
   /** IDs of detected actions linked to this assistant message */
   detectedActionIds?: string[];
   /** Runtime metadata for AI responses (usage/provider/perf). */
