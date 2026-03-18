@@ -1,3 +1,4 @@
+import { useForm } from "@tanstack/react-form";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
@@ -119,14 +120,40 @@ export default function SettingsScreen() {
     saveApiKey,
     saveAiModel,
   } = useAquapt();
-  const [apiKey, setApiKey] = useState(settings.openRouterApiKey);
-  const [model, setModel] = useState(settings.aiModel);
+  const settingsForm = useForm({
+    defaultValues: {
+      apiKey: settings.openRouterApiKey,
+      model: settings.aiModel,
+    },
+  });
+  const assistantForm = useForm({
+    defaultValues: {
+      mode: "general" as
+        | "general"
+        | "diagnostic"
+        | "compatibility"
+        | "task-suggestion",
+      question: "",
+    },
+  });
+  const diagnosticForm = useForm({
+    defaultValues: {
+      aquariumId: "",
+      symptoms: "",
+      windowDays: "14",
+    },
+  });
+  const compatibilityForm = useForm({
+    defaultValues: {
+      aquariumId: "",
+      species: "",
+      kind: "shrimp",
+      quantity: "1",
+      notes: "",
+    },
+  });
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
-  const [assistantMode, setAssistantMode] = useState<
-    "general" | "diagnostic" | "compatibility" | "task-suggestion"
-  >("general");
   const [isAsking, setAsking] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
@@ -146,14 +173,6 @@ export default function SettingsScreen() {
   );
   const [sortBy, setSortBy] = useState<"name" | "created" | "context">("name");
   const [isModelSheetVisible, setModelSheetVisible] = useState(false);
-  const [diagnosticAquariumId, setDiagnosticAquariumId] = useState("");
-  const [diagnosticSymptoms, setDiagnosticSymptoms] = useState("");
-  const [diagnosticWindowDays, setDiagnosticWindowDays] = useState("14");
-  const [compatibilityAquariumId, setCompatibilityAquariumId] = useState("");
-  const [compatibilitySpecies, setCompatibilitySpecies] = useState("");
-  const [compatibilityKind, setCompatibilityKind] = useState("shrimp");
-  const [compatibilityQuantity, setCompatibilityQuantity] = useState("1");
-  const [compatibilityNotes, setCompatibilityNotes] = useState("");
   const askRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
 
@@ -188,25 +207,28 @@ export default function SettingsScreen() {
   }, []);
 
   useEffect(() => {
-    setApiKey(settings.openRouterApiKey);
-    setModel(settings.aiModel);
-  }, [settings.aiModel, settings.openRouterApiKey]);
+    settingsForm.setFieldValue("apiKey", settings.openRouterApiKey);
+    settingsForm.setFieldValue("model", settings.aiModel);
+  }, [settings.aiModel, settings.openRouterApiKey, settingsForm]);
 
   useEffect(() => {
+    const diagnosticValues = diagnosticForm.state.values;
+    const compatibilityValues = compatibilityForm.state.values;
+
     if (aquariums.length === 0) {
-      setDiagnosticAquariumId("");
-      setCompatibilityAquariumId("");
+      diagnosticForm.setFieldValue("aquariumId", "");
+      compatibilityForm.setFieldValue("aquariumId", "");
       return;
     }
 
-    if (!aquariums.some((aq) => aq.id === diagnosticAquariumId)) {
-      setDiagnosticAquariumId(aquariums[0].id);
+    if (!aquariums.some((aq) => aq.id === diagnosticValues.aquariumId)) {
+      diagnosticForm.setFieldValue("aquariumId", aquariums[0].id);
     }
 
-    if (!aquariums.some((aq) => aq.id === compatibilityAquariumId)) {
-      setCompatibilityAquariumId(aquariums[0].id);
+    if (!aquariums.some((aq) => aq.id === compatibilityValues.aquariumId)) {
+      compatibilityForm.setFieldValue("aquariumId", aquariums[0].id);
     }
-  }, [aquariums, compatibilityAquariumId, diagnosticAquariumId]);
+  }, [aquariums, compatibilityForm, diagnosticForm]);
 
   useEffect(() => {
     void loadOpenRouterModels();
@@ -337,8 +359,9 @@ export default function SettingsScreen() {
   );
 
   const handleSave = () => {
-    saveApiKey(apiKey);
-    saveAiModel(model);
+    const values = settingsForm.state.values;
+    saveApiKey(values.apiKey);
+    saveAiModel(values.model);
     setSavedAt(new Date().toLocaleString());
   };
 
@@ -347,16 +370,18 @@ export default function SettingsScreen() {
       mode: "general" | "diagnostic" | "compatibility" | "task-suggestion",
       userQuestion: string,
     ) => {
+      const values = settingsForm.state.values;
+
       const response = await fetch(
         "https://openrouter.ai/api/v1/chat/completions",
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${apiKey.trim()}`,
+            Authorization: `Bearer ${values.apiKey.trim()}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: model.trim() || settings.aiModel,
+            model: values.model.trim() || settings.aiModel,
             messages: [
               {
                 role: "system",
@@ -395,11 +420,14 @@ export default function SettingsScreen() {
 
       return data.choices?.[0]?.message?.content?.trim() ?? "No response.";
     },
-    [apiKey, assistantContext, model, settings.aiModel],
+    [assistantContext, settings.aiModel, settingsForm],
   );
 
   const askAssistant = async () => {
-    if (!apiKey.trim() || !question.trim()) {
+    const settingsValues = settingsForm.state.values;
+    const assistantValues = assistantForm.state.values;
+
+    if (!settingsValues.apiKey.trim() || !assistantValues.question.trim()) {
       return;
     }
 
@@ -411,8 +439,8 @@ export default function SettingsScreen() {
 
     try {
       const result = await requestAssistantCompletion(
-        assistantMode,
-        question.trim(),
+        assistantValues.mode,
+        assistantValues.question.trim(),
       );
 
       if (!mountedRef.current || askRequestIdRef.current !== requestId) {
@@ -436,12 +464,21 @@ export default function SettingsScreen() {
   };
 
   const runDiagnosticWorkflow = async () => {
-    if (!apiKey.trim() || !diagnosticSymptoms.trim() || !diagnosticAquariumId) {
+    const settingsValues = settingsForm.state.values;
+    const diagnosticValues = diagnosticForm.state.values;
+
+    if (
+      !settingsValues.apiKey.trim() ||
+      !diagnosticValues.symptoms.trim() ||
+      !diagnosticValues.aquariumId
+    ) {
       return;
     }
 
-    const aquarium = aquariums.find((aq) => aq.id === diagnosticAquariumId);
-    const days = Number.parseInt(diagnosticWindowDays.trim(), 10);
+    const aquarium = aquariums.find(
+      (aq) => aq.id === diagnosticValues.aquariumId,
+    );
+    const days = Number.parseInt(diagnosticValues.windowDays.trim(), 10);
     const windowDays = Number.isFinite(days) && days > 0 ? days : 14;
 
     setAsking(true);
@@ -453,7 +490,7 @@ export default function SettingsScreen() {
         "diagnostic",
         [
           `Perform a focused diagnostic review for aquarium "${aquarium?.name ?? "Unknown"}" over the last ${windowDays} days.`,
-          `Observed symptoms: ${diagnosticSymptoms.trim()}`,
+          `Observed symptoms: ${diagnosticValues.symptoms.trim()}`,
           "Please output:\n1) Most likely root causes ranked\n2) Immediate safe actions (today)\n3) Monitoring checklist for next 7 days\n4) Red flags that require urgent intervention",
         ].join("\n\n"),
       );
@@ -475,16 +512,24 @@ export default function SettingsScreen() {
   };
 
   const runCompatibilityWorkflow = async () => {
+    const settingsValues = settingsForm.state.values;
+    const compatibilityValues = compatibilityForm.state.values;
+
     if (
-      !apiKey.trim() ||
-      !compatibilityAquariumId ||
-      !compatibilitySpecies.trim()
+      !settingsValues.apiKey.trim() ||
+      !compatibilityValues.aquariumId ||
+      !compatibilityValues.species.trim()
     ) {
       return;
     }
 
-    const aquarium = aquariums.find((aq) => aq.id === compatibilityAquariumId);
-    const quantityValue = Number.parseInt(compatibilityQuantity.trim(), 10);
+    const aquarium = aquariums.find(
+      (aq) => aq.id === compatibilityValues.aquariumId,
+    );
+    const quantityValue = Number.parseInt(
+      compatibilityValues.quantity.trim(),
+      10,
+    );
     const quantity =
       Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1;
 
@@ -497,9 +542,9 @@ export default function SettingsScreen() {
         "compatibility",
         [
           `Compatibility check for aquarium "${aquarium?.name ?? "Unknown"}" (${aquarium?.waterType ?? "unknown"}).`,
-          `Candidate addition: ${quantity} x ${compatibilitySpecies.trim()} (${compatibilityKind}).`,
-          compatibilityNotes.trim()
-            ? `Extra notes: ${compatibilityNotes.trim()}`
+          `Candidate addition: ${quantity} x ${compatibilityValues.species.trim()} (${compatibilityValues.kind}).`,
+          compatibilityValues.notes.trim()
+            ? `Extra notes: ${compatibilityValues.notes.trim()}`
             : "",
           "Please output:\n1) Compatibility verdict (Safe / Caution / Not recommended)\n2) Main conflict risks\n3) Parameter gaps to fix before adding\n4) Safer alternatives if needed",
         ]
@@ -542,33 +587,43 @@ export default function SettingsScreen() {
             subtitle="Stored in local encrypted-ish app storage context"
           />
           <Card.Content>
-            <TextInput
-              mode="outlined"
-              label="sk-or-v1-..."
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={apiKey}
-              onChangeText={setApiKey}
-            />
-            <TextInput
-              mode="outlined"
-              label="Assistant model"
-              value={model}
-              onChangeText={setModel}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.modelInput}
-            />
-            <Button
-              mode="outlined"
-              onPress={() => setModelSheetVisible(true)}
-              style={styles.modelPickerButton}
-            >
-              Select from OpenRouter models
-            </Button>
+            <settingsForm.Field name="apiKey">
+              {(field) => (
+                <TextInput
+                  mode="outlined"
+                  label="sk-or-v1-..."
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={field.state.value}
+                  onChangeText={field.handleChange}
+                />
+              )}
+            </settingsForm.Field>
+            <settingsForm.Field name="model">
+              {(field) => (
+                <TextInput
+                  mode="outlined"
+                  label="Assistant model"
+                  value={field.state.value}
+                  onChangeText={field.handleChange}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.modelInput}
+                />
+              )}
+            </settingsForm.Field>
+            <View style={styles.modelPickerRow}>
+              <Button
+                mode="contained-tonal"
+                onPress={() => setModelSheetVisible(true)}
+              >
+                Browse OpenRouter models
+              </Button>
+            </View>
             <Text variant="bodySmall" style={styles.helperText}>
-              Browse models in a bottom sheet, or type a custom model ID.
+              Pick a model from the OpenRouter list in the bottom sheet, or type
+              your own ID.
             </Text>
             <Button
               mode="contained"
@@ -591,58 +646,78 @@ export default function SettingsScreen() {
             subtitle="Uses your BYOK and current app data context"
           />
           <Card.Content>
-            <View style={styles.modeRow}>
-              {[
-                { label: "General", value: "general" },
-                { label: "Diagnostic", value: "diagnostic" },
-                { label: "Compatibility", value: "compatibility" },
-                { label: "Task Suggest", value: "task-suggestion" },
-              ].map((mode) => (
-                <Chip
-                  key={mode.value}
-                  selected={assistantMode === mode.value}
-                  onPress={() =>
-                    setAssistantMode(
-                      mode.value as
-                        | "general"
-                        | "diagnostic"
-                        | "compatibility"
-                        | "task-suggestion",
-                    )
-                  }
-                >
-                  {mode.label}
-                </Chip>
-              ))}
-            </View>
+            <assistantForm.Subscribe selector={(state) => state.values.mode}>
+              {(assistantMode) => (
+                <View style={styles.modeRow}>
+                  {[
+                    { label: "General", value: "general" },
+                    { label: "Diagnostic", value: "diagnostic" },
+                    { label: "Compatibility", value: "compatibility" },
+                    { label: "Task Suggest", value: "task-suggestion" },
+                  ].map((mode) => (
+                    <Chip
+                      key={mode.value}
+                      selected={assistantMode === mode.value}
+                      onPress={() =>
+                        assistantForm.setFieldValue(
+                          "mode",
+                          mode.value as
+                            | "general"
+                            | "diagnostic"
+                            | "compatibility"
+                            | "task-suggestion",
+                        )
+                      }
+                    >
+                      {mode.label}
+                    </Chip>
+                  ))}
+                </View>
+              )}
+            </assistantForm.Subscribe>
             <View style={styles.modeRow}>
               {QUESTION_PRESETS.map((preset) => (
                 <Chip
                   key={preset.label}
                   onPress={() => {
-                    setAssistantMode(preset.mode);
-                    setQuestion(preset.question);
+                    assistantForm.setFieldValue("mode", preset.mode);
+                    assistantForm.setFieldValue("question", preset.question);
                   }}
                 >
                   {preset.label}
                 </Chip>
               ))}
             </View>
-            <TextInput
-              mode="outlined"
-              label="Ask Aquapt AI"
-              value={question}
-              onChangeText={setQuestion}
-              multiline
-              numberOfLines={3}
-            />
-            <Button
-              mode="contained-tonal"
-              onPress={askAssistant}
-              style={styles.askButton}
+            <assistantForm.Field name="question">
+              {(field) => (
+                <TextInput
+                  mode="outlined"
+                  label="Ask Aquapt AI"
+                  value={field.state.value}
+                  onChangeText={field.handleChange}
+                  multiline
+                  numberOfLines={3}
+                />
+              )}
+            </assistantForm.Field>
+            <assistantForm.Subscribe
+              selector={(state) => state.values.question}
             >
-              Ask assistant
-            </Button>
+              {(question) => (
+                <Button
+                  mode="contained-tonal"
+                  onPress={askAssistant}
+                  disabled={
+                    isAsking ||
+                    !settingsForm.state.values.apiKey.trim() ||
+                    !question.trim()
+                  }
+                  style={styles.askButton}
+                >
+                  Ask assistant
+                </Button>
+              )}
+            </assistantForm.Subscribe>
             {isAsking ? (
               <ActivityIndicator style={styles.answerSpacing} />
             ) : null}
@@ -665,44 +740,65 @@ export default function SettingsScreen() {
             subtitle="Guided root-cause analysis for tank problems"
           />
           <Card.Content>
-            <ScrollableSegmentedButtons
-              value={diagnosticAquariumId}
-              onValueChange={setDiagnosticAquariumId}
-              buttons={aquariums.map((aq) => ({
-                label: aq.name,
-                value: aq.id,
-              }))}
-              density="small"
-            />
+            <diagnosticForm.Field name="aquariumId">
+              {(field) => (
+                <ScrollableSegmentedButtons
+                  value={field.state.value}
+                  onValueChange={field.handleChange}
+                  buttons={aquariums.map((aq) => ({
+                    label: aq.name,
+                    value: aq.id,
+                  }))}
+                  density="small"
+                />
+              )}
+            </diagnosticForm.Field>
             <View style={styles.filterRow}>
-              <TextInput
-                mode="outlined"
-                label="Review window (days)"
-                value={diagnosticWindowDays}
-                onChangeText={setDiagnosticWindowDays}
-                keyboardType="number-pad"
-                style={styles.filterInput}
-              />
+              <diagnosticForm.Field name="windowDays">
+                {(field) => (
+                  <TextInput
+                    mode="outlined"
+                    label="Review window (days)"
+                    value={field.state.value}
+                    onChangeText={field.handleChange}
+                    keyboardType="number-pad"
+                    style={styles.filterInput}
+                  />
+                )}
+              </diagnosticForm.Field>
             </View>
-            <TextInput
-              mode="outlined"
-              label="Symptoms observed"
-              value={diagnosticSymptoms}
-              onChangeText={setDiagnosticSymptoms}
-              multiline
-              numberOfLines={3}
-              style={styles.modelInput}
-            />
-            <Button
-              mode="contained-tonal"
-              onPress={runDiagnosticWorkflow}
-              disabled={
-                isAsking || !diagnosticAquariumId || !diagnosticSymptoms.trim()
-              }
-              style={styles.askButton}
+            <diagnosticForm.Field name="symptoms">
+              {(field) => (
+                <TextInput
+                  mode="outlined"
+                  label="Symptoms observed"
+                  value={field.state.value}
+                  onChangeText={field.handleChange}
+                  multiline
+                  numberOfLines={3}
+                  style={styles.modelInput}
+                />
+              )}
+            </diagnosticForm.Field>
+            <diagnosticForm.Subscribe
+              selector={(state) => ({
+                aquariumId: state.values.aquariumId,
+                symptoms: state.values.symptoms,
+              })}
             >
-              Run diagnostic analysis
-            </Button>
+              {(values) => (
+                <Button
+                  mode="contained-tonal"
+                  onPress={runDiagnosticWorkflow}
+                  disabled={
+                    isAsking || !values.aquariumId || !values.symptoms.trim()
+                  }
+                  style={styles.askButton}
+                >
+                  Run diagnostic analysis
+                </Button>
+              )}
+            </diagnosticForm.Subscribe>
             {diagnosticError ? (
               <Text variant="bodySmall" style={styles.errorText}>
                 {diagnosticError}
@@ -722,67 +818,94 @@ export default function SettingsScreen() {
             subtitle="Evaluate additions against your tank context"
           />
           <Card.Content>
-            <ScrollableSegmentedButtons
-              value={compatibilityAquariumId}
-              onValueChange={setCompatibilityAquariumId}
-              buttons={aquariums.map((aq) => ({
-                label: aq.name,
-                value: aq.id,
-              }))}
-              density="small"
-            />
+            <compatibilityForm.Field name="aquariumId">
+              {(field) => (
+                <ScrollableSegmentedButtons
+                  value={field.state.value}
+                  onValueChange={field.handleChange}
+                  buttons={aquariums.map((aq) => ({
+                    label: aq.name,
+                    value: aq.id,
+                  }))}
+                  density="small"
+                />
+              )}
+            </compatibilityForm.Field>
             <View style={styles.filterRow}>
-              <TextInput
-                mode="outlined"
-                label="Species"
-                value={compatibilitySpecies}
-                onChangeText={setCompatibilitySpecies}
-                style={styles.filterInput}
-              />
-              <TextInput
-                mode="outlined"
-                label="Qty"
-                value={compatibilityQuantity}
-                onChangeText={setCompatibilityQuantity}
-                keyboardType="number-pad"
-                style={styles.quantityInput}
-              />
+              <compatibilityForm.Field name="species">
+                {(field) => (
+                  <TextInput
+                    mode="outlined"
+                    label="Species"
+                    value={field.state.value}
+                    onChangeText={field.handleChange}
+                    style={styles.filterInput}
+                  />
+                )}
+              </compatibilityForm.Field>
+              <compatibilityForm.Field name="quantity">
+                {(field) => (
+                  <TextInput
+                    mode="outlined"
+                    label="Qty"
+                    value={field.state.value}
+                    onChangeText={field.handleChange}
+                    keyboardType="number-pad"
+                    style={styles.quantityInput}
+                  />
+                )}
+              </compatibilityForm.Field>
             </View>
-            <ScrollableSegmentedButtons
-              value={compatibilityKind}
-              onValueChange={setCompatibilityKind}
-              buttons={[
-                { label: "Fish", value: "fish" },
-                { label: "Shrimp", value: "shrimp" },
-                { label: "Snail", value: "snail" },
-                { label: "Coral", value: "coral" },
-                { label: "Plant", value: "plant" },
-                { label: "Other", value: "other" },
-              ]}
-              style={styles.modelInput}
-              density="small"
-            />
-            <TextInput
-              mode="outlined"
-              label="Notes (optional)"
-              value={compatibilityNotes}
-              onChangeText={setCompatibilityNotes}
-              multiline
-              numberOfLines={2}
-              style={styles.modelInput}
-            />
-            <Button
-              mode="contained-tonal"
-              onPress={runCompatibilityWorkflow}
-              disabled={
-                isAsking ||
-                !compatibilityAquariumId ||
-                !compatibilitySpecies.trim()
-              }
-              style={styles.askButton}
+            <compatibilityForm.Field name="kind">
+              {(field) => (
+                <ScrollableSegmentedButtons
+                  value={field.state.value}
+                  onValueChange={field.handleChange}
+                  buttons={[
+                    { label: "Fish", value: "fish" },
+                    { label: "Shrimp", value: "shrimp" },
+                    { label: "Snail", value: "snail" },
+                    { label: "Coral", value: "coral" },
+                    { label: "Plant", value: "plant" },
+                    { label: "Other", value: "other" },
+                  ]}
+                  style={styles.modelInput}
+                  density="small"
+                />
+              )}
+            </compatibilityForm.Field>
+            <compatibilityForm.Field name="notes">
+              {(field) => (
+                <TextInput
+                  mode="outlined"
+                  label="Notes (optional)"
+                  value={field.state.value}
+                  onChangeText={field.handleChange}
+                  multiline
+                  numberOfLines={2}
+                  style={styles.modelInput}
+                />
+              )}
+            </compatibilityForm.Field>
+            <compatibilityForm.Subscribe
+              selector={(state) => ({
+                aquariumId: state.values.aquariumId,
+                species: state.values.species,
+              })}
             >
-              Run compatibility check
-            </Button>
+              {(values) => (
+                <Button
+                  mode="contained-tonal"
+                  onPress={runCompatibilityWorkflow}
+                  disabled={
+                    isAsking || !values.aquariumId || !values.species.trim()
+                  }
+                  style={styles.askButton}
+                >
+                  Run compatibility check
+                </Button>
+              )}
+            </compatibilityForm.Subscribe>
             {compatibilityError ? (
               <Text variant="bodySmall" style={styles.errorText}>
                 {compatibilityError}
@@ -800,12 +923,7 @@ export default function SettingsScreen() {
       <BottomSheet
         visible={isModelSheetVisible}
         onDismiss={() => setModelSheetVisible(false)}
-        title="OpenRouter models"
-        actions={
-          <>
-            <Button onPress={() => setModelSheetVisible(false)}>Close</Button>
-          </>
-        }
+        title="Select OpenRouter model"
       >
         <View style={styles.modeRow}>
           <Button
@@ -897,7 +1015,7 @@ export default function SettingsScreen() {
             key={candidate.id}
             mode="text"
             onPress={() => {
-              setModel(candidate.id);
+              settingsForm.setFieldValue("model", candidate.id);
               setModelSheetVisible(false);
             }}
             contentStyle={styles.modelRowContent}
@@ -919,7 +1037,7 @@ export default function SettingsScreen() {
             key={candidate.id}
             mode="text"
             onPress={() => {
-              setModel(candidate.id);
+              settingsForm.setFieldValue("model", candidate.id);
               setModelSheetVisible(false);
             }}
             contentStyle={styles.modelRowContent}
@@ -954,7 +1072,7 @@ const styles = StyleSheet.create({
   modelInput: {
     marginTop: 10,
   },
-  modelPickerButton: {
+  modelPickerRow: {
     marginTop: 10,
     alignSelf: "flex-start",
   },

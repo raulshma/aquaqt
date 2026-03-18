@@ -3,6 +3,7 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   ScrollView,
   StyleSheet,
   useWindowDimensions,
@@ -506,51 +507,111 @@ export default function HomeScreen() {
   };
 
   const pickLivestockPhoto = async () => {
-    setPickingPhoto(true);
-    try {
-      const permission =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const pickFromSource = async (source: "camera" | "library") => {
+      setPickingPhoto(true);
+      try {
+        const permission =
+          source === "camera"
+            ? await ImagePicker.requestCameraPermissionsAsync()
+            : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      if (!permission.granted) {
-        return;
+        if (!permission.granted) {
+          return;
+        }
+
+        const result =
+          source === "camera"
+            ? await ImagePicker.launchCameraAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                quality: 0.7,
+              })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                quality: 0.7,
+              });
+
+        if (!result.canceled && result.assets?.[0]?.uri) {
+          setNewLivestockPhotoUri(result.assets[0].uri);
+        }
+      } finally {
+        setPickingPhoto(false);
       }
+    };
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        quality: 0.7,
-      });
-
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        setNewLivestockPhotoUri(result.assets[0].uri);
-      }
-    } finally {
-      setPickingPhoto(false);
-    }
+    Alert.alert("Add livestock photo", "Choose photo source", [
+      {
+        text: "Take photo",
+        onPress: () => {
+          void pickFromSource("camera");
+        },
+      },
+      {
+        text: "Choose from library",
+        onPress: () => {
+          void pickFromSource("library");
+        },
+      },
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+    ]);
   };
 
   const pickMemoPhoto = async () => {
-    setPickingMemoPhoto(true);
-    try {
-      const permission =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const pickFromSource = async (source: "camera" | "library") => {
+      setPickingMemoPhoto(true);
+      try {
+        const permission =
+          source === "camera"
+            ? await ImagePicker.requestCameraPermissionsAsync()
+            : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      if (!permission.granted) {
-        return;
+        if (!permission.granted) {
+          return;
+        }
+
+        const result =
+          source === "camera"
+            ? await ImagePicker.launchCameraAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                quality: 0.7,
+              })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                quality: 0.7,
+              });
+
+        if (!result.canceled && result.assets?.[0]?.uri) {
+          quickLogForm.setFieldValue("memo.photoUri", result.assets[0].uri);
+        }
+      } finally {
+        setPickingMemoPhoto(false);
       }
+    };
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        quality: 0.7,
-      });
-
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        quickLogForm.setFieldValue("memo.photoUri", result.assets[0].uri);
-      }
-    } finally {
-      setPickingMemoPhoto(false);
-    }
+    Alert.alert("Add memo photo", "Choose photo source", [
+      {
+        text: "Take photo",
+        onPress: () => {
+          void pickFromSource("camera");
+        },
+      },
+      {
+        text: "Choose from library",
+        onPress: () => {
+          void pickFromSource("library");
+        },
+      },
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+    ]);
   };
 
   const createAsset = () => {

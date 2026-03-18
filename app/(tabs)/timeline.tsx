@@ -2,7 +2,7 @@ import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import { Button, Card, Chip, FAB, Text, TextInput } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -215,27 +215,57 @@ export default function TimelineScreen() {
   }, [aquariums, taskExecutions, taskTemplates]);
 
   const pickMemoPhoto = async () => {
-    setPickingMemoPhoto(true);
-    try {
-      const permission =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const pickFromSource = async (source: "camera" | "library") => {
+      setPickingMemoPhoto(true);
+      try {
+        const permission =
+          source === "camera"
+            ? await ImagePicker.requestCameraPermissionsAsync()
+            : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      if (!permission.granted) {
-        return;
+        if (!permission.granted) {
+          return;
+        }
+
+        const result =
+          source === "camera"
+            ? await ImagePicker.launchCameraAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                quality: 0.7,
+              })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                quality: 0.7,
+              });
+
+        if (!result.canceled && result.assets?.[0]?.uri) {
+          form.setFieldValue("memo.photoUri", result.assets[0].uri);
+        }
+      } finally {
+        setPickingMemoPhoto(false);
       }
+    };
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        quality: 0.7,
-      });
-
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        form.setFieldValue("memo.photoUri", result.assets[0].uri);
-      }
-    } finally {
-      setPickingMemoPhoto(false);
-    }
+    Alert.alert("Add memo photo", "Choose photo source", [
+      {
+        text: "Take photo",
+        onPress: () => {
+          void pickFromSource("camera");
+        },
+      },
+      {
+        text: "Choose from library",
+        onPress: () => {
+          void pickFromSource("library");
+        },
+      },
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+    ]);
   };
 
   const saveQuickLog = () => {
