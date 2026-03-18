@@ -56,3 +56,17 @@ export function isTaskDue(
 
   return elapsedMs >= days * 24 * 60 * 60 * 1000;
 }
+
+export function countDueTasks(
+  taskTemplates: TaskTemplate[],
+  taskExecutions: TaskExecution[],
+  now = new Date(),
+) {
+  return taskTemplates.reduce((count, task) => {
+    const dueForTask = task.aquariumIds.filter((aquariumId) =>
+      isTaskDue(task, aquariumId, taskExecutions, now),
+    ).length;
+
+    return count + dueForTask;
+  }, 0);
+}

@@ -622,7 +622,7 @@ export default function TimelineScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 24,
+    paddingBottom: 132,
   },
   subtitle: {
     opacity: 0.75,
@@ -650,11 +650,12 @@ const styles = StyleSheet.create({
   },
   eventCard: {
     marginBottom: 10,
+    borderRadius: 24,
   },
   eventPhoto: {
     width: "100%",
     height: 170,
-    borderRadius: 12,
+    borderRadius: 18,
     marginTop: 10,
   },
   eventHeader: {
@@ -673,6 +674,6 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 16,
-    bottom: 16,
+    bottom: 88,
   },
 });

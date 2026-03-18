@@ -136,4 +136,6 @@ export interface TimelineEvent {
 export interface AppSettings {
   openRouterApiKey: string;
   aiModel: string;
+  notificationsEnabled?: boolean;
+  reminderHour?: number;
 }

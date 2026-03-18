@@ -2,13 +2,13 @@ import { useForm } from "@tanstack/react-form";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
-  Button,
-  Card,
-  Chip,
-  Divider,
-  FAB,
-  Text,
-  TextInput,
+    Button,
+    Card,
+    Chip,
+    Divider,
+    FAB,
+    Text,
+    TextInput,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -552,7 +552,7 @@ export default function TasksScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 24,
+    paddingBottom: 132,
     gap: 10,
   },
   subtitle: {
@@ -565,6 +565,7 @@ const styles = StyleSheet.create({
   },
   card: {
     marginBottom: 8,
+    borderRadius: 24,
   },
   titleRow: {
     flexDirection: "row",
@@ -607,6 +608,6 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 16,
-    bottom: 16,
+    bottom: 88,
   },
 });

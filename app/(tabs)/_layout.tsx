@@ -15,6 +15,25 @@ export default function TabLayout() {
         tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
         headerShown: false,
         tabBarButton: HapticTab,
+        sceneStyle: {
+          backgroundColor: theme.colors.background,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: "600",
+          marginBottom: 4,
+        },
+        tabBarStyle: {
+          position: "absolute",
+          left: 12,
+          right: 12,
+          bottom: 10,
+          height: 68,
+          borderRadius: 24,
+          borderTopWidth: 0,
+          elevation: 6,
+          backgroundColor: theme.colors.surface,
+        },
       }}
     >
       <Tabs.Screen

@@ -18,6 +18,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
+import { evaluateParameterAlerts } from "@/services/water-alerts";
 import { IssueStatus, Livestock, TaskFrequency } from "@/types/aquapt";
 
 const WATER_TYPES = ["freshwater", "marine", "brackish"] as const;
@@ -458,6 +459,33 @@ export default function HomeScreen() {
     );
   }, [selectedAquariumId, taskTemplates]);
 
+  const parameterAlertsByAquarium = useMemo(() => {
+    return aquariums.reduce<
+      Record<string, ReturnType<typeof evaluateParameterAlerts>>
+    >((acc, aquarium) => {
+      const latest = parameterLogs
+        .filter((entry) => entry.aquariumId === aquarium.id)
+        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0];
+
+      if (!latest) {
+        acc[aquarium.id] = [];
+        return acc;
+      }
+
+      acc[aquarium.id] = evaluateParameterAlerts(aquarium, latest.values);
+      return acc;
+    }, {});
+  }, [aquariums, parameterLogs]);
+
+  const totalParameterAlerts = useMemo(
+    () =>
+      Object.values(parameterAlertsByAquarium).reduce(
+        (sum, alerts) => sum + alerts.length,
+        0,
+      ),
+    [parameterAlertsByAquarium],
+  );
+
   const dueTasksByAquarium = useMemo(() => {
     const now = new Date();
     return aquariums.reduce<Record<string, typeof taskTemplates>>(
@@ -748,6 +776,9 @@ export default function HomeScreen() {
               <Chip compact icon="test-tube">
                 {dosingLogs.length} Dosing logs
               </Chip>
+              <Chip compact icon="shield-alert">
+                {totalParameterAlerts} Safety alerts
+              </Chip>
             </View>
           </Card.Content>
         </Card>
@@ -762,6 +793,31 @@ export default function HomeScreen() {
                     {entry.taskTitle}
                   </Chip>
                 ))}
+              </View>
+            </Card.Content>
+          </Card>
+        ) : null}
+
+        {totalParameterAlerts > 0 ? (
+          <Card style={styles.summaryCard} mode="outlined">
+            <Card.Title title="Water safety alerts" />
+            <Card.Content>
+              <View style={styles.summaryRow}>
+                {aquariums.flatMap((aquarium) =>
+                  (parameterAlertsByAquarium[aquarium.id] ?? []).map(
+                    (alert) => (
+                      <Chip
+                        key={`${aquarium.id}-${alert.key}-${alert.status}`}
+                        icon={
+                          alert.status === "high" ? "arrow-up" : "arrow-down"
+                        }
+                      >
+                        {aquarium.name}: {alert.label} {alert.value}
+                        {alert.unit ? ` ${alert.unit}` : ""}
+                      </Chip>
+                    ),
+                  ),
+                )}
               </View>
             </Card.Content>
           </Card>
@@ -1888,7 +1944,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 96,
+    paddingBottom: 132,
     gap: 12,
   },
   subtitle: {
@@ -1897,9 +1953,11 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     marginVertical: 4,
+    borderRadius: 24,
   },
   tankCard: {
     marginTop: 8,
+    borderRadius: 24,
   },
   summaryRow: {
     flexDirection: "row",
@@ -1915,6 +1973,7 @@ const styles = StyleSheet.create({
   },
   issueCard: {
     marginTop: 8,
+    borderRadius: 24,
   },
   issueMeta: {
     marginTop: 4,
@@ -1946,12 +2005,12 @@ const styles = StyleSheet.create({
   photoPreview: {
     width: "100%",
     height: 160,
-    borderRadius: 12,
+    borderRadius: 18,
   },
   livestockPhoto: {
     width: "100%",
     height: 150,
-    borderRadius: 12,
+    borderRadius: 18,
     marginTop: 10,
   },
   chartWrap: {
@@ -1976,6 +2035,6 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 16,
-    bottom: 16,
+    bottom: 88,
   },
 });

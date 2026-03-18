@@ -1,6 +1,6 @@
 import { useForm } from "@tanstack/react-form";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import {
   ActivityIndicator,
   Button,
@@ -15,6 +15,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
+import {
+  clearDailyReminderSchedule,
+  ensureReminderPermissions,
+  scheduleDailyReminder,
+} from "@/services/notifications";
+import { countDueTasks } from "@/services/scheduling";
 
 const MODE_PROMPTS: Record<
   "general" | "diagnostic" | "compatibility" | "task-suggestion",
@@ -117,6 +123,9 @@ export default function SettingsScreen() {
     taskExecutions,
     issues,
     parameterLogs,
+    exportAppState,
+    importAppStateFromJson,
+    saveReminderSettings,
     saveApiKey,
     saveAiModel,
   } = useAquapt();
@@ -160,6 +169,13 @@ export default function SettingsScreen() {
   const [compatibilityError, setCompatibilityError] = useState<string | null>(
     null,
   );
+  const [backupPayload, setBackupPayload] = useState("");
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [remindersEnabled, setRemindersEnabled] = useState(
+    settings.notificationsEnabled ?? false,
+  );
+  const [reminderHour, setReminderHour] = useState(settings.reminderHour ?? 8);
+  const [reminderStatus, setReminderStatus] = useState<string | null>(null);
   const [diagnosticAnswer, setDiagnosticAnswer] = useState("");
   const [compatibilityAnswer, setCompatibilityAnswer] = useState("");
   const [models, setModels] = useState<OpenRouterModel[]>([]);
@@ -210,6 +226,11 @@ export default function SettingsScreen() {
     settingsForm.setFieldValue("apiKey", settings.openRouterApiKey);
     settingsForm.setFieldValue("model", settings.aiModel);
   }, [settings.aiModel, settings.openRouterApiKey, settingsForm]);
+
+  useEffect(() => {
+    setRemindersEnabled(settings.notificationsEnabled ?? false);
+    setReminderHour(settings.reminderHour ?? 8);
+  }, [settings.notificationsEnabled, settings.reminderHour]);
 
   useEffect(() => {
     const diagnosticValues = diagnosticForm.state.values;
@@ -363,6 +384,54 @@ export default function SettingsScreen() {
     saveApiKey(values.apiKey);
     saveAiModel(values.model);
     setSavedAt(new Date().toLocaleString());
+  };
+
+  const generateBackupPayload = () => {
+    const payload = exportAppState();
+    setBackupPayload(payload);
+    setBackupStatus(
+      `Backup snapshot generated (${new Date().toLocaleString()}).`,
+    );
+  };
+
+  const restoreFromBackupPayload = () => {
+    const result = importAppStateFromJson(backupPayload);
+    setBackupStatus(result.message);
+
+    if (!result.ok) {
+      return;
+    }
+
+    setSavedAt(new Date().toLocaleString());
+    Alert.alert("Backup imported", result.message);
+  };
+
+  const saveReminderPreferences = async () => {
+    const normalizedHour = Math.min(23, Math.max(0, reminderHour));
+
+    if (remindersEnabled) {
+      const granted = await ensureReminderPermissions();
+      if (!granted) {
+        setReminderStatus(
+          "Notifications permission was not granted. Enable permission in system settings.",
+        );
+        return;
+      }
+
+      const dueCount = countDueTasks(taskTemplates, taskExecutions, new Date());
+      await scheduleDailyReminder(normalizedHour, dueCount);
+      setReminderStatus(
+        `Daily reminder scheduled for ${String(normalizedHour).padStart(2, "0")}:00.`,
+      );
+    } else {
+      await clearDailyReminderSchedule();
+      setReminderStatus("Daily reminders disabled.");
+    }
+
+    saveReminderSettings({
+      notificationsEnabled: remindersEnabled,
+      reminderHour: normalizedHour,
+    });
   };
 
   const requestAssistantCompletion = useCallback(
@@ -635,6 +704,105 @@ export default function SettingsScreen() {
             {savedAt ? (
               <Text variant="bodySmall" style={styles.savedAt}>
                 Saved: {savedAt}
+              </Text>
+            ) : null}
+          </Card.Content>
+        </Card>
+
+        <Card mode="outlined" style={styles.noteCard}>
+          <Card.Title
+            title="Task reminders"
+            subtitle="Daily notification with deep link to due tasks"
+          />
+          <Card.Content>
+            <View style={styles.modeRow}>
+              <Chip
+                selected={remindersEnabled}
+                onPress={() => setRemindersEnabled(true)}
+              >
+                Enabled
+              </Chip>
+              <Chip
+                selected={!remindersEnabled}
+                onPress={() => setRemindersEnabled(false)}
+              >
+                Disabled
+              </Chip>
+            </View>
+
+            <ScrollableSegmentedButtons
+              value={String(reminderHour)}
+              onValueChange={(value) => setReminderHour(Number(value))}
+              buttons={[6, 7, 8, 9, 10, 12, 14, 18, 20, 22].map((hour) => ({
+                label: `${String(hour).padStart(2, "0")}:00`,
+                value: String(hour),
+              }))}
+            />
+
+            <Button
+              mode="contained-tonal"
+              onPress={() => {
+                void saveReminderPreferences();
+              }}
+              style={styles.saveButton}
+            >
+              Save reminder settings
+            </Button>
+
+            <Text variant="bodySmall" style={styles.helperText}>
+              Current due tasks snapshot:{" "}
+              {countDueTasks(taskTemplates, taskExecutions)}
+            </Text>
+
+            {reminderStatus ? (
+              <Text variant="bodySmall" style={styles.savedAt}>
+                {reminderStatus}
+              </Text>
+            ) : null}
+          </Card.Content>
+        </Card>
+
+        <Card mode="outlined" style={styles.noteCard}>
+          <Card.Title
+            title="Data backup & restore"
+            subtitle="Export full app JSON snapshot, or import one to restore"
+          />
+          <Card.Content>
+            <View style={styles.modeRow}>
+              <Button mode="contained-tonal" onPress={generateBackupPayload}>
+                Generate backup JSON
+              </Button>
+              <Button mode="outlined" onPress={() => setBackupPayload("")}>
+                Clear payload
+              </Button>
+            </View>
+
+            <TextInput
+              mode="outlined"
+              label="Backup payload (JSON)"
+              value={backupPayload}
+              onChangeText={setBackupPayload}
+              multiline
+              numberOfLines={10}
+            />
+
+            <Button
+              mode="contained"
+              onPress={restoreFromBackupPayload}
+              disabled={!backupPayload.trim()}
+              style={styles.saveButton}
+            >
+              Import and restore
+            </Button>
+
+            <Text variant="bodySmall" style={styles.helperText}>
+              Tip: keep this JSON in a secure notes app or cloud drive as your
+              manual backup.
+            </Text>
+
+            {backupStatus ? (
+              <Text variant="bodySmall" style={styles.savedAt}>
+                {backupStatus}
               </Text>
             ) : null}
           </Card.Content>
@@ -1059,6 +1227,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
+    paddingBottom: 132,
     gap: 12,
   },
   subtitle: {
@@ -1108,6 +1277,7 @@ const styles = StyleSheet.create({
   },
   noteCard: {
     marginTop: 2,
+    borderRadius: 24,
   },
   askButton: {
     marginTop: 12,

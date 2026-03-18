@@ -1,34 +1,35 @@
 import {
-  createContext,
-  ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    createContext,
+    ReactNode,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 
 import {
-  initPersistence,
-  loadPersistedState,
-  savePersistedState,
+    initPersistence,
+    loadPersistedState,
+    PersistedAppState,
+    savePersistedState,
 } from "@/services/persistence";
 import {
-  AppSettings,
-  Aquarium,
-  Asset,
-  Consumable,
-  DosingLog,
-  Issue,
-  Livestock,
-  Memo,
-  TaskExecution,
-  TaskFrequency,
-  TaskTemplate,
-  TimelineEvent,
-  WaterParameterLog,
-  WaterParameters,
+    AppSettings,
+    Aquarium,
+    Asset,
+    Consumable,
+    DosingLog,
+    Issue,
+    Livestock,
+    Memo,
+    TaskExecution,
+    TaskFrequency,
+    TaskTemplate,
+    TimelineEvent,
+    WaterParameterLog,
+    WaterParameters,
 } from "@/types/aquapt";
 
 const nowId = (prefix: string) =>
@@ -118,6 +119,15 @@ interface AquaptContextValue {
     amountUsed: number,
     note?: string,
   ) => void;
+  exportAppState: () => string;
+  importAppStateFromJson: (payload: string) => {
+    ok: boolean;
+    message: string;
+  };
+  saveReminderSettings: (input: {
+    notificationsEnabled: boolean;
+    reminderHour: number;
+  }) => void;
   saveApiKey: (value: string) => void;
   saveAiModel: (value: string) => void;
 }
@@ -140,6 +150,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>({
     openRouterApiKey: "",
     aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
+    notificationsEnabled: false,
+    reminderHour: 8,
   });
   const hasHydratedOnceRef = useRef(false);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -171,12 +183,13 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         setIssues(persisted.issues ?? []);
         setMemos(persisted.memos ?? []);
         setTimeline(persisted.timeline ?? []);
-        setSettings(
-          persisted.settings ?? {
-            openRouterApiKey: "",
-            aiModel: "openai/gpt-4o-mini",
-          },
-        );
+        setSettings({
+          openRouterApiKey: persisted.settings?.openRouterApiKey ?? "",
+          aiModel: persisted.settings?.aiModel ?? "openai/gpt-4o-mini",
+          notificationsEnabled:
+            persisted.settings?.notificationsEnabled ?? false,
+          reminderHour: persisted.settings?.reminderHour ?? 8,
+        });
       } catch (error) {
         console.warn("Persistence bootstrap failed", error);
       } finally {
@@ -529,6 +542,19 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     setSettings((prev) => ({ ...prev, aiModel: value.trim() || prev.aiModel }));
   }, []);
 
+  const saveReminderSettings = useCallback(
+    (input: { notificationsEnabled: boolean; reminderHour: number }) => {
+      const normalizedHour = Math.min(23, Math.max(0, input.reminderHour));
+
+      setSettings((prev) => ({
+        ...prev,
+        notificationsEnabled: input.notificationsEnabled,
+        reminderHour: normalizedHour,
+      }));
+    },
+    [],
+  );
+
   const addLivestock = useCallback((input: Omit<Livestock, "id">) => {
     const livestockItem: Livestock = {
       ...input,
@@ -769,6 +795,114 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const exportAppState = useCallback(() => {
+    const snapshot: PersistedAppState = {
+      aquariums,
+      livestock,
+      taskTemplates,
+      taskExecutions,
+      dosingLogs,
+      assets,
+      consumables,
+      parameterLogs,
+      issues,
+      memos,
+      timeline,
+      settings,
+    };
+
+    return JSON.stringify(snapshot, null, 2);
+  }, [
+    aquariums,
+    livestock,
+    taskTemplates,
+    taskExecutions,
+    dosingLogs,
+    assets,
+    consumables,
+    parameterLogs,
+    issues,
+    memos,
+    timeline,
+    settings,
+  ]);
+
+  const importAppStateFromJson = useCallback((payload: string) => {
+    const trimmed = payload.trim();
+    if (!trimmed) {
+      return { ok: false, message: "Backup payload is empty." };
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed) as Partial<PersistedAppState>;
+
+      const nextState: PersistedAppState = {
+        aquariums: Array.isArray(parsed.aquariums) ? parsed.aquariums : [],
+        livestock: Array.isArray(parsed.livestock) ? parsed.livestock : [],
+        taskTemplates: Array.isArray(parsed.taskTemplates)
+          ? parsed.taskTemplates
+          : [],
+        taskExecutions: Array.isArray(parsed.taskExecutions)
+          ? parsed.taskExecutions
+          : [],
+        dosingLogs: Array.isArray(parsed.dosingLogs) ? parsed.dosingLogs : [],
+        assets: Array.isArray(parsed.assets) ? parsed.assets : [],
+        consumables: Array.isArray(parsed.consumables)
+          ? parsed.consumables
+          : [],
+        parameterLogs: Array.isArray(parsed.parameterLogs)
+          ? parsed.parameterLogs
+          : [],
+        issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+        memos: Array.isArray(parsed.memos) ? parsed.memos : [],
+        timeline: Array.isArray(parsed.timeline) ? parsed.timeline : [],
+        settings:
+          parsed.settings && typeof parsed.settings === "object"
+            ? {
+                openRouterApiKey:
+                  (parsed.settings as AppSettings).openRouterApiKey ?? "",
+                aiModel:
+                  (parsed.settings as AppSettings).aiModel ??
+                  "nvidia/nemotron-3-super-120b-a12b:free",
+                notificationsEnabled:
+                  (parsed.settings as AppSettings).notificationsEnabled ??
+                  false,
+                reminderHour:
+                  (parsed.settings as AppSettings).reminderHour ?? 8,
+              }
+            : {
+                openRouterApiKey: "",
+                aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
+                notificationsEnabled: false,
+                reminderHour: 8,
+              },
+      };
+
+      setAquariums(nextState.aquariums);
+      setLivestock(nextState.livestock);
+      setTaskTemplates(nextState.taskTemplates);
+      setTaskExecutions(nextState.taskExecutions);
+      setDosingLogs(nextState.dosingLogs);
+      setAssets(nextState.assets);
+      setConsumables(nextState.consumables);
+      setParameterLogs(nextState.parameterLogs);
+      setIssues(nextState.issues);
+      setMemos(nextState.memos);
+      setTimeline(nextState.timeline);
+      setSettings(nextState.settings);
+
+      return {
+        ok: true,
+        message: "Backup imported successfully. App state has been restored.",
+      };
+    } catch {
+      return {
+        ok: false,
+        message: "Invalid JSON backup payload. Please check and try again.",
+      };
+    }
+  }, []);
+
   const value = useMemo<AquaptContextValue>(
     () => ({
       isHydrated,
@@ -804,6 +938,9 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       addAsset,
       addConsumable,
       consumeConsumable,
+      exportAppState,
+      importAppStateFromJson,
+      saveReminderSettings,
       saveApiKey,
       saveAiModel,
     }),
@@ -841,6 +978,9 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       addAsset,
       addConsumable,
       consumeConsumable,
+      exportAppState,
+      importAppStateFromJson,
+      saveReminderSettings,
       saveApiKey,
       saveAiModel,
     ],
