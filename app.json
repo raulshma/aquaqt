@@ -49,6 +49,13 @@
         {
           "defaultChannel": "reminders"
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "AquaPT needs access to your microphone for voice dictation.",
+          "speechRecognitionPermission": "AquaPT needs speech recognition to convert your voice to text."
+        }
       ]
     ],
     "experiments": {

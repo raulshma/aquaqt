@@ -15,51 +15,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
+import { requestOpenRouterCompletion } from "@/services/assistant-ai";
+import {
+  ASSISTANT_MODE_PROMPTS,
+  ASSISTANT_QUESTION_PRESETS,
+  ASSISTANT_SYSTEM_PROMPT,
+  AssistantMode,
+} from "@/services/assistant-prompts";
 import {
   clearDailyReminderSchedule,
   ensureReminderPermissions,
   scheduleDailyReminder,
 } from "@/services/notifications";
 import { countDueTasks } from "@/services/scheduling";
-
-const MODE_PROMPTS: Record<
-  "general" | "diagnostic" | "compatibility" | "task-suggestion",
-  string
-> = {
-  general:
-    "Answer clearly and concisely. Provide practical aquarium-safe recommendations and include brief rationale.",
-  diagnostic:
-    "Prioritize diagnosis from trends. List likely causes ranked by confidence, then immediate safe actions, then monitoring checks for the next 7 days.",
-  compatibility:
-    "Evaluate species compatibility using current livestock, water parameters, and water type. Highlight conflicts and provide safer alternatives if needed.",
-  "task-suggestion":
-    "Suggest actionable maintenance/task adjustments based on open issues and recent logs. Provide a simple schedule with frequency and expected outcome.",
-};
-
-const QUESTION_PRESETS: {
-  label: string;
-  mode: "general" | "diagnostic" | "compatibility" | "task-suggestion";
-  question: string;
-}[] = [
-  {
-    label: "Shrimp issue",
-    mode: "diagnostic",
-    question:
-      "Why are my shrimp struggling lately? Please analyze my recent trends and suggest next actions.",
-  },
-  {
-    label: "Stocking check",
-    mode: "compatibility",
-    question:
-      "Can I add Cherry Shrimp to my current tank safely? Explain compatibility and parameter constraints.",
-  },
-  {
-    label: "Algae plan",
-    mode: "task-suggestion",
-    question:
-      "I keep getting algae reports. What maintenance and dosing schedule should I follow for the next 2 weeks?",
-  },
-];
 
 type OpenRouterModel = {
   id: string;
@@ -137,11 +105,7 @@ export default function SettingsScreen() {
   });
   const assistantForm = useForm({
     defaultValues: {
-      mode: "general" as
-        | "general"
-        | "diagnostic"
-        | "compatibility"
-        | "task-suggestion",
+      mode: "general" as AssistantMode,
       question: "",
     },
   });
@@ -435,59 +399,37 @@ export default function SettingsScreen() {
   };
 
   const requestAssistantCompletion = useCallback(
-    async (
-      mode: "general" | "diagnostic" | "compatibility" | "task-suggestion",
-      userQuestion: string,
-    ) => {
+    async (mode: AssistantMode, userQuestion: string) => {
       const values = settingsForm.state.values;
 
-      const response = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${values.apiKey.trim()}`,
-            "Content-Type": "application/json",
+      const result = await requestOpenRouterCompletion({
+        apiKey: values.apiKey,
+        model: values.model.trim() || settings.aiModel,
+        messages: [
+          {
+            role: "system",
+            content: ASSISTANT_SYSTEM_PROMPT,
           },
-          body: JSON.stringify({
-            model: values.model.trim() || settings.aiModel,
-            messages: [
-              {
-                role: "system",
-                content:
-                  "You are Aquapt assistant. Give concise, practical aquarium advice based on provided context. If uncertain, say so. Prioritize actionable steps with safety-first guidance.",
-              },
-              {
-                role: "system",
-                content: `Assistant mode: ${mode}`,
-              },
-              {
-                role: "system",
-                content: MODE_PROMPTS[mode],
-              },
-              {
-                role: "system",
-                content: `App context: ${JSON.stringify(assistantContext)}`,
-              },
-              {
-                role: "user",
-                content: userQuestion,
-              },
-            ],
-          }),
-        },
-      );
+          {
+            role: "system",
+            content: `Assistant mode: ${mode}`,
+          },
+          {
+            role: "system",
+            content: ASSISTANT_MODE_PROMPTS[mode],
+          },
+          {
+            role: "system",
+            content: `App context: ${JSON.stringify(assistantContext)}`,
+          },
+          {
+            role: "user",
+            content: userQuestion,
+          },
+        ],
+      });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || "Assistant request failed.");
-      }
-
-      const data = (await response.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
-
-      return data.choices?.[0]?.message?.content?.trim() ?? "No response.";
+      return result || "No response.";
     },
     [assistantContext, settings.aiModel, settingsForm],
   );
@@ -829,11 +771,7 @@ export default function SettingsScreen() {
                       onPress={() =>
                         assistantForm.setFieldValue(
                           "mode",
-                          mode.value as
-                            | "general"
-                            | "diagnostic"
-                            | "compatibility"
-                            | "task-suggestion",
+                          mode.value as AssistantMode,
                         )
                       }
                     >
@@ -844,7 +782,7 @@ export default function SettingsScreen() {
               )}
             </assistantForm.Subscribe>
             <View style={styles.modeRow}>
-              {QUESTION_PRESETS.map((preset) => (
+              {ASSISTANT_QUESTION_PRESETS.map((preset) => (
                 <Chip
                   key={preset.label}
                   onPress={() => {
