@@ -143,6 +143,12 @@ const parseSseEventData = (rawEvent: string): string | null => {
   return dataLines.join("\n");
 };
 
+const splitSseEvents = (rawText: string): string[] =>
+  rawText
+    .split(/\r?\n\r?\n/)
+    .map((event) => event.trim())
+    .filter((event) => event.length > 0);
+
 async function fetchGenerationMetadata(
   apiKey: string,
   generationId: string,
@@ -217,22 +223,7 @@ export async function requestOpenRouterStreamingCompletion({
     signal,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      errorText || `Assistant request failed (${response.status}).`,
-    );
-  }
-
-  if (!response.body) {
-    throw new Error("Streaming response body was empty.");
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-
   let text = "";
-  let buffer = "";
   let generationId: string | undefined;
   let streamedModel: string | undefined;
   let provider: string | undefined;
@@ -289,6 +280,79 @@ export async function requestOpenRouterStreamingCompletion({
     }
   };
 
+  const finalizeResult = async (): Promise<OpenRouterStreamResult> => {
+    const elapsedMs = Date.now() - startedAt;
+    const throughputCharsPerSecond = getCharsPerSecond(text.length, elapsedMs);
+    const throughputTokensPerSecond =
+      usage && usage.completion_tokens > 0 && elapsedMs > 0
+        ? usage.completion_tokens / toSeconds(elapsedMs)
+        : undefined;
+
+    const generation = generationId
+      ? await fetchGenerationMetadata(trimmedApiKey, generationId)
+      : undefined;
+
+    return {
+      text: text.trim(),
+      generationId,
+      model: streamedModel ?? selectedModel,
+      provider,
+      usage,
+      finishReason,
+      nativeFinishReason,
+      elapsedMs,
+      throughputCharsPerSecond,
+      throughputTokensPerSecond,
+      generation,
+    };
+  };
+
+  const processBufferedResponse = async (): Promise<OpenRouterStreamResult> => {
+    const bufferedText = await response.text();
+    if (!bufferedText.trim()) {
+      throw new Error("Assistant returned an empty response.");
+    }
+
+    const events = splitSseEvents(bufferedText);
+    if (events.length > 0) {
+      for (const rawEvent of events) {
+        processEvent(rawEvent);
+      }
+      return finalizeResult();
+    }
+
+    const nonStreamingResponse = JSON.parse(bufferedText) as OpenRouterResponse;
+    const fallbackText =
+      nonStreamingResponse.choices?.[0]?.message?.content?.trim() ?? "";
+
+    if (!fallbackText) {
+      throw new Error("Assistant returned an empty response.");
+    }
+
+    text = fallbackText;
+    usage = nonStreamingResponse.usage;
+    streamedModel = nonStreamingResponse.model;
+    generationId = nonStreamingResponse.id;
+    emitSnapshot();
+
+    return finalizeResult();
+  };
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      errorText || `Assistant request failed (${response.status}).`,
+    );
+  }
+
+  if (!response.body) {
+    return processBufferedResponse();
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -319,28 +383,5 @@ export async function requestOpenRouterStreamingCompletion({
     reader.releaseLock();
   }
 
-  const elapsedMs = Date.now() - startedAt;
-  const throughputCharsPerSecond = getCharsPerSecond(text.length, elapsedMs);
-  const throughputTokensPerSecond =
-    usage && usage.completion_tokens > 0 && elapsedMs > 0
-      ? usage.completion_tokens / toSeconds(elapsedMs)
-      : undefined;
-
-  const generation = generationId
-    ? await fetchGenerationMetadata(trimmedApiKey, generationId)
-    : undefined;
-
-  return {
-    text: text.trim(),
-    generationId,
-    model: streamedModel ?? selectedModel,
-    provider,
-    usage,
-    finishReason,
-    nativeFinishReason,
-    elapsedMs,
-    throughputCharsPerSecond,
-    throughputTokensPerSecond,
-    generation,
-  };
+  return finalizeResult();
 }

@@ -315,6 +315,50 @@ const validateAction = (
   return errors;
 };
 
+const applyActionDefaults = (
+  action: AssistantDetectedAction,
+  singleAquariumId?: string,
+): AssistantDetectedAction => {
+  if (action.type === "create_task_template" && !action.frequency) {
+    return { ...action, frequency: "weekly" };
+  }
+
+  if (action.type === "add_aquarium" && !action.waterType) {
+    return { ...action, waterType: "freshwater" };
+  }
+
+  if (
+    action.type === "edit_aquarium" &&
+    singleAquariumId &&
+    !action.aquariumId &&
+    !action.aquariumName?.trim()
+  ) {
+    return { ...action, aquariumId: singleAquariumId };
+  }
+
+  if (action.type === "add_livestock" && !action.livestockKind) {
+    return { ...action, livestockKind: "fish" };
+  }
+
+  if (action.type === "set_livestock_status" && !action.livestockStatus) {
+    return { ...action, livestockStatus: "active" };
+  }
+
+  if (action.type === "add_asset" && !action.assetCategory) {
+    return { ...action, assetCategory: "other" };
+  }
+
+  if (action.type === "add_consumable" && !action.consumableUnit) {
+    return { ...action, consumableUnit: "ml" };
+  }
+
+  if (action.type === "set_issue_status" && !action.issueStatus) {
+    return { ...action, issueStatus: "open" };
+  }
+
+  return action;
+};
+
 /* ── inline action card (shown inside chat messages) ─────────── */
 
 function InlineActionCard({
@@ -629,6 +673,19 @@ export default function AssistantScreen() {
     [activeDetectedActions],
   );
 
+  const approvedSelectionCount = useMemo(
+    () => activeDetectedActions.filter((a) => a.approved).length,
+    [activeDetectedActions],
+  );
+
+  const approvedInvalidActionCount = useMemo(
+    () =>
+      activeDetectedActions.filter(
+        (a) => a.approved && a.validationErrors.length > 0,
+      ).length,
+    [activeDetectedActions],
+  );
+
   const assistantContext = useMemo(
     () => ({
       aquariums: aquariums.map((aq) => ({
@@ -737,11 +794,22 @@ export default function AssistantScreen() {
   /* ── validation helper ───────────────────────────────────────── */
   const withValidation = useCallback(
     (next: AssistantDetectedAction[]) =>
-      next.map((a) => ({
-        ...a,
-        validationErrors: validateAction(a, hasMultipleAquariums),
-      })),
-    [hasMultipleAquariums],
+      next.map((action) => {
+        const singleAquariumId =
+          aquariums.length === 1 ? aquariums[0]?.id : undefined;
+        const actionWithDefaults = applyActionDefaults(
+          action,
+          singleAquariumId,
+        );
+        return {
+          ...actionWithDefaults,
+          validationErrors: validateAction(
+            actionWithDefaults,
+            hasMultipleAquariums,
+          ),
+        };
+      }),
+    [aquariums, hasMultipleAquariums],
   );
 
   /* ── ask assistant ───────────────────────────────────────────── */
@@ -1047,6 +1115,7 @@ export default function AssistantScreen() {
           | "frequency"
           | "description"
           | "aquariumId"
+          | "aquariumName"
           | "approved"
           | "taskTemplateId"
           | "taskTitle"
@@ -1824,7 +1893,7 @@ export default function AssistantScreen() {
             <Button
               mode="contained"
               onPress={executeApprovedActionBatch}
-              disabled={approvedActionCount === 0}
+              disabled={approvedSelectionCount === 0}
             >
               Execute approved actions
             </Button>
@@ -1840,6 +1909,19 @@ export default function AssistantScreen() {
             {activeWarnings.join("\n")}
           </Text>
         ) : null}
+
+        {approvedSelectionCount > 0 ? (
+          <Text variant="bodySmall" style={styles.helperText}>
+            {approvedActionCount} ready to execute
+            {approvedInvalidActionCount > 0
+              ? ` · ${approvedInvalidActionCount} approved action${approvedInvalidActionCount > 1 ? "s" : ""} still need edits`
+              : ""}
+          </Text>
+        ) : (
+          <Text variant="bodySmall" style={styles.helperText}>
+            Approve at least one action to execute.
+          </Text>
+        )}
 
         {activeDetectedActions.map((action) => (
           <Card key={action.id} mode="outlined" style={styles.actionCard}>
@@ -2133,6 +2215,27 @@ export default function AssistantScreen() {
 
               {action.type === "edit_aquarium" ? (
                 <>
+                  <ScrollableSegmentedButtons
+                    value={action.aquariumId ?? ""}
+                    onValueChange={(v) =>
+                      updateAction(action.id, { aquariumId: v })
+                    }
+                    buttons={aquariums.map((aq) => ({
+                      label: aq.name,
+                      value: aq.id,
+                    }))}
+                    style={styles.inputSpacing}
+                    density="small"
+                  />
+                  <TextInput
+                    mode="outlined"
+                    label="Aquarium name (optional)"
+                    value={action.aquariumName ?? ""}
+                    onChangeText={(v) =>
+                      updateAction(action.id, { aquariumName: v })
+                    }
+                    style={styles.inputSpacing}
+                  />
                   <TextInput
                     mode="outlined"
                     label="New name (optional)"
@@ -2619,6 +2722,10 @@ const styles = StyleSheet.create({
   warningText: {
     marginTop: 10,
     color: "#8a6d00",
+  },
+  helperText: {
+    marginTop: 8,
+    opacity: 0.75,
   },
   errorText: {
     marginTop: 10,
