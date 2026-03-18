@@ -14,9 +14,11 @@ import {
     TimelineEvent,
     WaterParameterLog,
 } from "@/types/aquapt";
+import { AssistantConversation } from "@/types/assistant";
 
 const DB_NAME = "aquapt.db";
 const STATE_KEY = "app-state-v1";
+const ASSISTANT_CONVERSATIONS_KEY = "assistant-conversations-v1";
 
 export interface PersistedAppState {
   aquariums: Aquarium[];
@@ -31,6 +33,12 @@ export interface PersistedAppState {
   memos: Memo[];
   timeline: TimelineEvent[];
   settings: AppSettings;
+}
+
+export interface PersistedAssistantConversationsState {
+  conversations: AssistantConversation[];
+  activeConversationId: string;
+  updatedAt: string;
 }
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -89,5 +97,52 @@ export async function savePersistedState(state: PersistedAppState) {
         updated_at = excluded.updated_at
     `,
     [STATE_KEY, payload, nowIso],
+  );
+}
+
+export async function loadPersistedAssistantState(): Promise<PersistedAssistantConversationsState | null> {
+  const db = await getDb();
+
+  const row = await db.getFirstAsync<{ payload: string }>(
+    "SELECT payload FROM app_state WHERE key = ? LIMIT 1",
+    [ASSISTANT_CONVERSATIONS_KEY],
+  );
+
+  if (!row?.payload) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(
+      row.payload,
+    ) as PersistedAssistantConversationsState;
+    if (!Array.isArray(parsed.conversations)) {
+      return null;
+    }
+    if (typeof parsed.activeConversationId !== "string") {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function savePersistedAssistantState(
+  state: PersistedAssistantConversationsState,
+) {
+  const db = await getDb();
+  const payload = JSON.stringify(state);
+  const nowIso = new Date().toISOString();
+
+  await db.runAsync(
+    `
+      INSERT INTO app_state (key, payload, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        payload = excluded.payload,
+        updated_at = excluded.updated_at
+    `,
+    [ASSISTANT_CONVERSATIONS_KEY, payload, nowIso],
   );
 }

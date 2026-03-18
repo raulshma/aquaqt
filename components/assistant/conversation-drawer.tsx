@@ -1,19 +1,20 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import {
-  Badge,
-  Button,
-  Divider,
-  IconButton,
-  Surface,
-  Text,
-  useTheme,
+    Badge,
+    Button,
+    Divider,
+    IconButton,
+    Surface,
+    Text,
+    TextInput,
+    useTheme,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  AssistantConversation,
-  AssistantDetectedAction,
+    AssistantConversation,
+    AssistantDetectedAction,
 } from "@/types/assistant";
 
 const HUMANIZED_TYPES: Record<string, string> = {
@@ -54,13 +55,15 @@ const ACTION_ICONS: Record<string, string> = {
   set_issue_status: "flag-outline",
 };
 
-export { HUMANIZED_TYPES, ACTION_ICONS };
+export { ACTION_ICONS, HUMANIZED_TYPES };
 
 interface ConversationDrawerProps {
   conversations: AssistantConversation[];
   activeConversationId: string;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onTogglePin: (id: string) => void;
+  onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }
@@ -95,10 +98,17 @@ function groupByDate(conversations: AssistantConversation[]): DateGroup[] {
   if (today.length > 0) groups.push({ label: "Today", items: today });
   if (yesterday.length > 0)
     groups.push({ label: "Yesterday", items: yesterday });
-  if (week.length > 0)
-    groups.push({ label: "Previous 7 days", items: week });
+  if (week.length > 0) groups.push({ label: "Previous 7 days", items: week });
   if (older.length > 0) groups.push({ label: "Older", items: older });
   return groups;
+}
+
+function buildSearchText(conversation: AssistantConversation) {
+  const messageText = conversation.messages
+    .slice(-10)
+    .map((message) => message.content)
+    .join(" ");
+  return `${conversation.title} ${messageText}`.toLowerCase();
 }
 
 function ActionSubItem({ action }: { action: AssistantDetectedAction }) {
@@ -106,7 +116,12 @@ function ActionSubItem({ action }: { action: AssistantDetectedAction }) {
   const label = HUMANIZED_TYPES[action.type] ?? action.type;
   const icon = ACTION_ICONS[action.type] ?? "lightning-bolt";
   const detail =
-    action.title || action.taskTitle || action.product || action.issueTitle || action.consumableName || "";
+    action.title ||
+    action.taskTitle ||
+    action.product ||
+    action.issueTitle ||
+    action.consumableName ||
+    "";
 
   return (
     <View style={subStyles.row}>
@@ -160,22 +175,46 @@ export function ConversationDrawer({
   activeConversationId,
   onSelect,
   onNew,
+  onTogglePin,
+  onRename,
   onDelete,
   onClose,
 }: ConversationDrawerProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [searchText, setSearchText] = useState("");
+  const [renamingConversationId, setRenamingConversationId] = useState<
+    string | null
+  >(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const normalizedSearch = searchText.trim().toLowerCase();
 
   const sorted = useMemo(
     () =>
-      [...conversations].sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      ),
+      [...conversations].sort((a, b) => {
+        if (Boolean(a.pinned) !== Boolean(b.pinned)) {
+          return a.pinned ? -1 : 1;
+        }
+
+        return (
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+      }),
     [conversations],
   );
 
-  const groups = useMemo(() => groupByDate(sorted), [sorted]);
+  const filtered = useMemo(() => {
+    if (!normalizedSearch) {
+      return sorted;
+    }
+
+    return sorted.filter((conversation) =>
+      buildSearchText(conversation).includes(normalizedSearch),
+    );
+  }, [normalizedSearch, sorted]);
+
+  const groups = useMemo(() => groupByDate(filtered), [filtered]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -184,6 +223,31 @@ export function ConversationDrawer({
     },
     [onSelect, onClose],
   );
+
+  const startRename = useCallback((conversation: AssistantConversation) => {
+    setRenamingConversationId(conversation.id);
+    setRenameValue(conversation.title);
+  }, []);
+
+  const cancelRename = useCallback(() => {
+    setRenamingConversationId(null);
+    setRenameValue("");
+  }, []);
+
+  const commitRename = useCallback(() => {
+    const conversationId = renamingConversationId;
+    if (!conversationId) {
+      return;
+    }
+
+    const nextTitle = renameValue.trim();
+    if (!nextTitle) {
+      return;
+    }
+
+    onRename(conversationId, nextTitle);
+    cancelRename();
+  }, [cancelRename, onRename, renameValue, renamingConversationId]);
 
   return (
     <Surface
@@ -216,6 +280,21 @@ export function ConversationDrawer({
         New Chat
       </Button>
 
+      <TextInput
+        mode="outlined"
+        placeholder="Search conversations"
+        value={searchText}
+        onChangeText={setSearchText}
+        style={styles.searchInput}
+        dense
+        left={<TextInput.Icon icon="magnify" />}
+        right={
+          searchText ? (
+            <TextInput.Icon icon="close" onPress={() => setSearchText("")} />
+          ) : undefined
+        }
+      />
+
       <Divider style={styles.divider} />
 
       {/* Conversation list */}
@@ -224,6 +303,14 @@ export function ConversationDrawer({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
       >
+        {groups.length === 0 ? (
+          <View style={styles.emptyStateWrap}>
+            <Text variant="bodySmall" style={{ opacity: 0.7 }}>
+              No conversations found.
+            </Text>
+          </View>
+        ) : null}
+
         {groups.map((group) => (
           <View key={group.label}>
             <Text
@@ -242,6 +329,30 @@ export function ConversationDrawer({
 
               return (
                 <View key={conv.id}>
+                  {renamingConversationId === conv.id ? (
+                    <View style={styles.renameRow}>
+                      <TextInput
+                        mode="outlined"
+                        value={renameValue}
+                        onChangeText={setRenameValue}
+                        style={styles.renameInput}
+                        dense
+                        autoFocus
+                        onSubmitEditing={commitRename}
+                      />
+                      <IconButton
+                        icon="check"
+                        size={18}
+                        onPress={commitRename}
+                      />
+                      <IconButton
+                        icon="close"
+                        size={18}
+                        onPress={cancelRename}
+                      />
+                    </View>
+                  ) : null}
+
                   <Pressable
                     onPress={() => handleSelect(conv.id)}
                     style={({ pressed }) => [
@@ -268,6 +379,18 @@ export function ConversationDrawer({
                         {conv.title}
                       </Text>
                       <View style={styles.convBadges}>
+                        <IconButton
+                          icon={conv.pinned ? "pin" : "pin-outline"}
+                          size={16}
+                          onPress={() => onTogglePin(conv.id)}
+                          style={styles.actionBtn}
+                        />
+                        <IconButton
+                          icon="pencil-outline"
+                          size={16}
+                          onPress={() => startRename(conv)}
+                          style={styles.actionBtn}
+                        />
                         {actionCount > 0 ? (
                           <Badge
                             size={18}
@@ -283,7 +406,7 @@ export function ConversationDrawer({
                             icon="delete-outline"
                             size={16}
                             onPress={() => onDelete(conv.id)}
-                            style={styles.deleteBtn}
+                            style={styles.actionBtn}
                           />
                         ) : null}
                       </View>
@@ -330,6 +453,10 @@ const styles = StyleSheet.create({
   newChatLabel: {
     fontSize: 14,
   },
+  searchInput: {
+    marginTop: 8,
+    marginHorizontal: 4,
+  },
   divider: {
     marginVertical: 8,
   },
@@ -367,7 +494,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 2,
   },
-  deleteBtn: {
+  actionBtn: {
     margin: 0,
     width: 24,
     height: 24,
@@ -375,5 +502,20 @@ const styles = StyleSheet.create({
   actionsList: {
     paddingBottom: 4,
     gap: 2,
+  },
+  renameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingTop: 6,
+  },
+  renameInput: {
+    flex: 1,
+  },
+  emptyStateWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 24,
   },
 });

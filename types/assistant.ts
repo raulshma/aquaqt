@@ -14,6 +14,27 @@ export interface AssistantChatMessage {
   createdAt: string;
   /** IDs of detected actions linked to this assistant message */
   detectedActionIds?: string[];
+  /** Runtime metadata for AI responses (usage/provider/perf). */
+  responseTelemetry?: AssistantResponseTelemetry;
+}
+
+export interface AssistantResponseTelemetry {
+  generationId?: string;
+  providerName?: string;
+  router?: string;
+  model?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cost?: number;
+  elapsedMs?: number;
+  latencyMs?: number;
+  generationTimeMs?: number;
+  throughputCharsPerSecond?: number;
+  throughputTokensPerSecond?: number;
+  finishReason?: string | null;
+  nativeFinishReason?: string | null;
+  streamed?: boolean;
 }
 
 export type AssistantActionType =
@@ -88,6 +109,7 @@ export interface AssistantDetectedAction {
 export interface AssistantConversation {
   id: string;
   title: string;
+  pinned?: boolean;
   messages: AssistantChatMessage[];
   detectedActions: AssistantDetectedAction[];
   warnings: string[];

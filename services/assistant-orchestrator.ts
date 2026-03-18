@@ -1,8 +1,14 @@
 import { parseAssistantActionExtraction } from "@/services/assistant-actions";
-import { requestOpenRouterCompletion } from "@/services/assistant-ai";
+import {
+    requestOpenRouterCompletion,
+    requestOpenRouterStreamingCompletion,
+} from "@/services/assistant-ai";
 import { ASSISTANT_SYSTEM_PROMPT } from "@/services/assistant-prompts";
 import { Aquarium } from "@/types/aquapt";
-import { AssistantActionExtractionResult } from "@/types/assistant";
+import {
+    AssistantActionExtractionResult,
+    AssistantResponseTelemetry,
+} from "@/types/assistant";
 
 interface AskAssistantWithActionsOptions {
   apiKey: string;
@@ -10,11 +16,21 @@ interface AskAssistantWithActionsOptions {
   userPrompt: string;
   appContext: unknown;
   aquariums: Aquarium[];
+  onAssistantDelta?: (snapshot: {
+    text: string;
+    elapsedMs: number;
+    charsPerSecond: number;
+    generationId?: string;
+    model?: string;
+    provider?: string;
+  }) => void;
+  signal?: AbortSignal;
 }
 
 interface AskAssistantWithActionsResult {
   assistantText: string;
   extractedActions: AssistantActionExtractionResult;
+  telemetry?: AssistantResponseTelemetry;
 }
 
 const stringifyContext = (value: unknown) => {
@@ -31,11 +47,15 @@ export async function askAssistantWithTaskDetection({
   userPrompt,
   appContext,
   aquariums,
+  onAssistantDelta,
+  signal,
 }: AskAssistantWithActionsOptions): Promise<AskAssistantWithActionsResult> {
-  const assistantText = await requestOpenRouterCompletion({
+  const streamedAssistantResult = await requestOpenRouterStreamingCompletion({
     apiKey,
     model,
     temperature: 0.2,
+    onDelta: onAssistantDelta,
+    signal,
     messages: [
       {
         role: "system",
@@ -51,6 +71,8 @@ export async function askAssistantWithTaskDetection({
       },
     ],
   });
+
+  const assistantText = streamedAssistantResult.text;
 
   const aquariumDirectory = aquariums.map((aq) => ({
     id: aq.id,
@@ -88,8 +110,33 @@ export async function askAssistantWithTaskDetection({
     userPrompt,
   );
 
+  const telemetry: AssistantResponseTelemetry = {
+    streamed: true,
+    generationId: streamedAssistantResult.generationId,
+    providerName:
+      streamedAssistantResult.generation?.provider_name ??
+      streamedAssistantResult.provider,
+    router: streamedAssistantResult.generation?.router,
+    model: streamedAssistantResult.model,
+    promptTokens: streamedAssistantResult.usage?.prompt_tokens,
+    completionTokens: streamedAssistantResult.usage?.completion_tokens,
+    totalTokens: streamedAssistantResult.usage?.total_tokens,
+    cost:
+      streamedAssistantResult.usage?.cost ??
+      streamedAssistantResult.generation?.total_cost,
+    elapsedMs: streamedAssistantResult.elapsedMs,
+    latencyMs: streamedAssistantResult.generation?.latency,
+    generationTimeMs: streamedAssistantResult.generation?.generation_time,
+    throughputCharsPerSecond: streamedAssistantResult.throughputCharsPerSecond,
+    throughputTokensPerSecond:
+      streamedAssistantResult.throughputTokensPerSecond,
+    finishReason: streamedAssistantResult.finishReason,
+    nativeFinishReason: streamedAssistantResult.nativeFinishReason,
+  };
+
   return {
     assistantText,
     extractedActions,
+    telemetry,
   };
 }

@@ -28,11 +28,17 @@ import {
   ConversationDrawer,
   HUMANIZED_TYPES,
 } from "@/components/assistant/conversation-drawer";
+import { StreamingMarkdown } from "@/components/assistant/streaming-markdown";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { executeApprovedActions as runApprovedActions } from "@/services/assistant-executor";
 import { askAssistantWithTaskDetection } from "@/services/assistant-orchestrator";
+import {
+  initPersistence,
+  loadPersistedAssistantState,
+  savePersistedAssistantState,
+} from "@/services/persistence";
 import {
   isDictationSupported,
   startPressHoldDictation,
@@ -42,6 +48,7 @@ import {
   AssistantChatMessage,
   AssistantConversation,
   AssistantDetectedAction,
+  AssistantResponseTelemetry,
 } from "@/types/assistant";
 
 /* ── helpers ─────────────────────────────────────────────────────── */
@@ -59,11 +66,66 @@ const FREQUENCIES: { label: string; value: TaskFrequency }[] = [
   { label: "Monthly", value: "monthly" },
 ];
 
+const formatNumber = (
+  value: number | undefined,
+  digits = 0,
+  fallback = "—",
+) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return value.toFixed(digits);
+};
+
+const formatMilliseconds = (value: number | undefined) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(2)}s`;
+  }
+  return `${value.toFixed(0)}ms`;
+};
+
+function AssistantTelemetry({
+  telemetry,
+}: {
+  telemetry: AssistantResponseTelemetry;
+}) {
+  const rows = [
+    `Provider: ${telemetry.providerName ?? "—"}`,
+    `Model: ${telemetry.model ?? "—"}`,
+    `Tokens: ${formatNumber(telemetry.promptTokens)} in · ${formatNumber(telemetry.completionTokens)} out · ${formatNumber(telemetry.totalTokens)} total`,
+    `Throughput: ${formatNumber(telemetry.throughputTokensPerSecond, 1)} tok/s · ${formatNumber(telemetry.throughputCharsPerSecond, 1)} ch/s`,
+    `Latency: ${formatMilliseconds(telemetry.latencyMs)} · Elapsed: ${formatMilliseconds(telemetry.elapsedMs)}`,
+    `Cost: ${typeof telemetry.cost === "number" ? `$${telemetry.cost.toFixed(6)}` : "—"} · Finish: ${telemetry.finishReason ?? "—"}`,
+  ];
+
+  return (
+    <View style={styles.telemetryWrap}>
+      <Text variant="labelSmall" style={styles.telemetryLabel}>
+        AI runtime metadata
+      </Text>
+      {rows.map((row) => (
+        <Text key={row} variant="labelSmall" style={styles.telemetryText}>
+          {row}
+        </Text>
+      ))}
+      {telemetry.generationId ? (
+        <Text variant="labelSmall" style={styles.telemetryText}>
+          Generation: {telemetry.generationId}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function createConversation(): AssistantConversation {
   const ts = new Date().toISOString();
   return {
     id: nowId("conv"),
     title: "New Chat",
+    pinned: false,
     messages: [
       {
         id: nowId("msg"),
@@ -391,12 +453,19 @@ export default function AssistantScreen() {
   const [activeConversationId, setActiveConversationId] = useState(
     () => conversations[0]?.id ?? "",
   );
+  const [isConversationsHydrated, setConversationsHydrated] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const persistConversationsTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   /* ── chat state ──────────────────────────────────────────────── */
   const [composerText, setComposerText] = useState("");
   const [isAsking, setAsking] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [activeStreamingMessageId, setActiveStreamingMessageId] = useState<
+    string | null
+  >(null);
   const [isReviewVisible, setReviewVisible] = useState(false);
 
   /* ── dictation state ─────────────────────────────────────────── */
@@ -440,6 +509,83 @@ export default function AssistantScreen() {
       conversations[0],
     [conversations, activeConversationId],
   );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const hydrateConversations = async () => {
+      try {
+        await initPersistence();
+        const persistedAssistantState = await loadPersistedAssistantState();
+
+        if (!isMounted || !persistedAssistantState) {
+          return;
+        }
+
+        const persistedConversations = persistedAssistantState.conversations;
+        if (persistedConversations.length === 0) {
+          return;
+        }
+
+        setConversations(persistedConversations);
+
+        const persistedActiveId = persistedAssistantState.activeConversationId;
+        const hasPersistedActive = persistedConversations.some(
+          (conversation) => conversation.id === persistedActiveId,
+        );
+
+        setActiveConversationId(
+          hasPersistedActive ? persistedActiveId : persistedConversations[0].id,
+        );
+      } catch (error) {
+        console.warn("Assistant conversation hydration failed", error);
+      } finally {
+        if (isMounted) {
+          setConversationsHydrated(true);
+        }
+      }
+    };
+
+    void hydrateConversations();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isConversationsHydrated) {
+      return;
+    }
+
+    if (persistConversationsTimeoutRef.current) {
+      clearTimeout(persistConversationsTimeoutRef.current);
+    }
+
+    const activeId =
+      conversations.find(
+        (conversation) => conversation.id === activeConversationId,
+      )?.id ?? conversations[0]?.id;
+
+    persistConversationsTimeoutRef.current = setTimeout(() => {
+      if (!activeId) {
+        return;
+      }
+
+      void savePersistedAssistantState({
+        conversations,
+        activeConversationId: activeId,
+        updatedAt: new Date().toISOString(),
+      });
+    }, 250);
+
+    return () => {
+      if (persistConversationsTimeoutRef.current) {
+        clearTimeout(persistConversationsTimeoutRef.current);
+        persistConversationsTimeoutRef.current = null;
+      }
+    };
+  }, [activeConversationId, conversations, isConversationsHydrated]);
 
   const activeMessages = useMemo(
     () => activeConversation?.messages ?? [],
@@ -524,6 +670,39 @@ export default function AssistantScreen() {
     [activeConversationId],
   );
 
+  const toggleConversationPin = useCallback((id: string) => {
+    setConversations((prev) =>
+      prev.map((conversation) =>
+        conversation.id === id
+          ? {
+              ...conversation,
+              pinned: !conversation.pinned,
+              updatedAt: new Date().toISOString(),
+            }
+          : conversation,
+      ),
+    );
+  }, []);
+
+  const renameConversation = useCallback((id: string, title: string) => {
+    const nextTitle = title.trim();
+    if (!nextTitle) {
+      return;
+    }
+
+    setConversations((prev) =>
+      prev.map((conversation) =>
+        conversation.id === id
+          ? {
+              ...conversation,
+              title: nextTitle,
+              updatedAt: new Date().toISOString(),
+            }
+          : conversation,
+      ),
+    );
+  }, []);
+
   const updateConversation = useCallback(
     (
       convId: string,
@@ -566,6 +745,17 @@ export default function AssistantScreen() {
       content: prompt,
       createdAt: new Date().toISOString(),
     };
+    const assistantDraftId = nowId("msg");
+    const assistantDraftMessage: AssistantChatMessage = {
+      id: assistantDraftId,
+      role: "assistant",
+      content: "",
+      createdAt: new Date().toISOString(),
+      responseTelemetry: {
+        streamed: true,
+        model: settings.aiModel,
+      },
+    };
 
     // Auto-title the conversation from first user message
     const isFirstUserMsg =
@@ -577,10 +767,11 @@ export default function AssistantScreen() {
       title: isFirstUserMsg
         ? prompt.slice(0, 40) + (prompt.length > 40 ? "…" : "")
         : c.title,
-      messages: [...c.messages, userMessage],
+      messages: [...c.messages, userMessage, assistantDraftMessage],
       updatedAt: new Date().toISOString(),
     }));
 
+    setActiveStreamingMessageId(assistantDraftId);
     setComposerText("");
     scrollToBottom();
 
@@ -591,21 +782,51 @@ export default function AssistantScreen() {
         userPrompt: prompt,
         appContext: assistantContext,
         aquariums,
+        onAssistantDelta: (snapshot) => {
+          updateConversation(activeConversationId, (conversation) => ({
+            ...conversation,
+            messages: conversation.messages.map((message) =>
+              message.id === assistantDraftId
+                ? {
+                    ...message,
+                    content: snapshot.text,
+                    responseTelemetry: {
+                      ...(message.responseTelemetry ?? {}),
+                      streamed: true,
+                      generationId:
+                        snapshot.generationId ??
+                        message.responseTelemetry?.generationId,
+                      model: snapshot.model ?? message.responseTelemetry?.model,
+                      elapsedMs: snapshot.elapsedMs,
+                      throughputCharsPerSecond: snapshot.charsPerSecond,
+                    },
+                  }
+                : message,
+            ),
+            updatedAt: new Date().toISOString(),
+          }));
+          scrollToBottom();
+        },
       });
 
       const normalizedActions = withValidation(result.extractedActions.actions);
 
-      const assistantMessage: AssistantChatMessage = {
-        id: nowId("msg"),
-        role: "assistant",
-        content: result.assistantText || "I could not generate a response.",
-        createdAt: new Date().toISOString(),
-        detectedActionIds: normalizedActions.map((a) => a.id),
-      };
-
       updateConversation(activeConversationId, (c) => ({
         ...c,
-        messages: [...c.messages, assistantMessage],
+        messages: c.messages.map((message) =>
+          message.id === assistantDraftId
+            ? {
+                ...message,
+                content:
+                  result.assistantText || "I could not generate a response.",
+                detectedActionIds: normalizedActions.map((a) => a.id),
+                responseTelemetry: {
+                  ...(message.responseTelemetry ?? {}),
+                  ...(result.telemetry ?? {}),
+                },
+              }
+            : message,
+        ),
         detectedActions: [...c.detectedActions, ...normalizedActions],
         warnings: result.extractedActions.warnings,
         updatedAt: new Date().toISOString(),
@@ -619,7 +840,14 @@ export default function AssistantScreen() {
       setAssistantError(
         error instanceof Error ? error.message : "Assistant request failed.",
       );
+      updateConversation(activeConversationId, (conversation) => ({
+        ...conversation,
+        messages: conversation.messages.filter(
+          (message) => message.id !== assistantDraftId,
+        ),
+      }));
     } finally {
+      setActiveStreamingMessageId(null);
       setAsking(false);
     }
   }, [
@@ -629,9 +857,9 @@ export default function AssistantScreen() {
     assistantContext,
     composerText,
     isAsking,
-    scrollToBottom,
     settings.aiModel,
     settings.openRouterApiKey,
+    scrollToBottom,
     updateConversation,
     withValidation,
   ]);
@@ -863,9 +1091,7 @@ export default function AssistantScreen() {
       }
       const transcript = result.transcript.trim();
       if (!transcript) {
-        setDictationError(
-          "No speech detected. Tap the mic and try again.",
-        );
+        setDictationError("No speech detected. Tap the mic and try again.");
         return;
       }
       setComposerText((prev) => (prev ? `${prev} ${transcript}` : transcript));
@@ -887,7 +1113,6 @@ export default function AssistantScreen() {
       dictationSessionRef.current = null;
     };
   }, []);
-
 
   /* ── render ──────────────────────────────────────────────────── */
   return (
@@ -930,6 +1155,8 @@ export default function AssistantScreen() {
           {activeMessages.map((message) => {
             const isUser = message.role === "user";
             const isSystem = message.role === "system";
+            const isAssistant = message.role === "assistant";
+            const isStreaming = activeStreamingMessageId === message.id;
 
             // Find linked actions for this message
             const linkedActions = (message.detectedActionIds ?? [])
@@ -990,14 +1217,31 @@ export default function AssistantScreen() {
                       SYSTEM
                     </Text>
                   ) : null}
-                  <Text
-                    variant="bodyMedium"
-                    style={[
-                      isUser && { color: theme.colors.onPrimaryContainer },
-                    ]}
-                  >
-                    {message.content}
-                  </Text>
+                  {isAssistant ? (
+                    <StreamingMarkdown
+                      content={message.content}
+                      isStreaming={isStreaming}
+                    />
+                  ) : (
+                    <Text
+                      variant="bodyMedium"
+                      style={[
+                        isUser && { color: theme.colors.onPrimaryContainer },
+                      ]}
+                    >
+                      {message.content}
+                    </Text>
+                  )}
+
+                  {isStreaming ? (
+                    <Text variant="labelSmall" style={styles.streamingLabel}>
+                      Streaming…
+                    </Text>
+                  ) : null}
+
+                  {isAssistant && message.responseTelemetry ? (
+                    <AssistantTelemetry telemetry={message.responseTelemetry} />
+                  ) : null}
 
                   {/* Inline detected actions */}
                   {linkedActions.length > 0 ? (
@@ -1071,7 +1315,10 @@ export default function AssistantScreen() {
               <ActivityIndicator size={14} color={theme.colors.primary} />
               <Text
                 variant="bodySmall"
-                style={[styles.dictationPreview, { color: theme.colors.primary }]}
+                style={[
+                  styles.dictationPreview,
+                  { color: theme.colors.primary },
+                ]}
                 numberOfLines={3}
               >
                 {dictationPreview || "Listening…"}
@@ -1185,6 +1432,8 @@ export default function AssistantScreen() {
           activeConversationId={activeConversationId}
           onSelect={switchConversation}
           onNew={createNewConversation}
+          onTogglePin={toggleConversationPin}
+          onRename={renameConversation}
           onDelete={deleteConversation}
           onClose={closeDrawer}
         />
@@ -1865,6 +2114,25 @@ const styles = StyleSheet.create({
   inlineActions: {
     marginTop: 4,
     gap: 2,
+  },
+  streamingLabel: {
+    marginTop: 6,
+    opacity: 0.6,
+  },
+  telemetryWrap: {
+    marginTop: 8,
+    borderRadius: 10,
+    padding: 8,
+    backgroundColor: "rgba(127,127,127,0.12)",
+    gap: 1,
+  },
+  telemetryLabel: {
+    fontWeight: "700",
+    opacity: 0.8,
+    marginBottom: 2,
+  },
+  telemetryText: {
+    opacity: 0.75,
   },
 
   /* Composer */
