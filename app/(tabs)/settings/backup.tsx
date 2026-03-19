@@ -1,12 +1,6 @@
 import { useState } from "react";
 import { View } from "react-native";
-import {
-    Button,
-    Chip,
-    Text,
-    TextInput,
-    useTheme
-} from "react-native-paper";
+import { Button, Chip, Text, TextInput, useTheme } from "react-native-paper";
 
 import {
     DashboardHero,
@@ -80,7 +74,7 @@ export default function BackupSettingsScreen() {
   };
 
   return (
-    <DashboardScrollView>
+    <DashboardScrollView topPadding={4}>
       <DashboardHero
         title="Backup & restore"
         subtitle="Encrypted S3 sync plus a manual JSON export/import path."

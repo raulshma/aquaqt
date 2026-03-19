@@ -10,9 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": [
-          "fetch"
-        ],
+        "UIBackgroundModes": ["fetch"],
         "NSSpeechRecognitionUsageDescription": "AquaPT needs speech recognition to convert your voice to text.",
         "NSMicrophoneUsageDescription": "AquaPT needs access to your microphone for voice dictation."
       }
@@ -26,9 +24,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.keepaside.aquapt",
-      "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+      "permissions": ["android.permission.RECORD_AUDIO"]
     },
     "web": {
       "output": "static",

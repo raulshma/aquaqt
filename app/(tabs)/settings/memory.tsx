@@ -101,7 +101,7 @@ export default function MemorySettingsScreen() {
   }, [assistantMemoryEnabled, refreshAssistantMemory]);
 
   return (
-    <DashboardScrollView>
+    <DashboardScrollView topPadding={4}>
       <DashboardHero
         title="Assistant memory"
         subtitle="Review, clear, and forget semantic snippets."

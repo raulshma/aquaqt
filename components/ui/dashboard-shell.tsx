@@ -1,10 +1,10 @@
 import type { PropsWithChildren, ReactNode } from "react";
 import {
-  ScrollView,
-  StyleSheet,
-  View,
-  type StyleProp,
-  type ViewStyle,
+    ScrollView,
+    StyleSheet,
+    View,
+    type StyleProp,
+    type ViewStyle,
 } from "react-native";
 import { Card, Text, useTheme, type MD3Theme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,6 +19,7 @@ type DashboardTone =
 
 type DashboardScrollViewProps = PropsWithChildren<{
   contentContainerStyle?: StyleProp<ViewStyle>;
+  topPadding?: number;
 }>;
 
 type DashboardHeroProps = {
@@ -76,6 +77,7 @@ const resolveTone = (theme: MD3Theme, tone: DashboardTone) => {
 export function DashboardScrollView({
   children,
   contentContainerStyle,
+  topPadding = 16,
 }: DashboardScrollViewProps) {
   const insets = useSafeAreaInsets();
 
@@ -83,7 +85,7 @@ export function DashboardScrollView({
     <ScrollView
       contentContainerStyle={[
         styles.page,
-        { paddingTop: 16 + insets.top },
+        { paddingTop: topPadding + insets.top },
         contentContainerStyle,
       ]}
       showsVerticalScrollIndicator={false}
@@ -105,10 +107,7 @@ export function DashboardHero({
   const { backgroundColor, textColor } = resolveTone(theme, tone);
 
   return (
-    <Card
-      mode="elevated"
-      style={[styles.heroCard, { backgroundColor }, style]}
-    >
+    <Card mode="elevated" style={[styles.heroCard, { backgroundColor }, style]}>
       <Card.Content style={styles.heroContent}>
         <View style={styles.heroHeader}>
           <Text variant="headlineMedium" style={{ color: textColor }}>

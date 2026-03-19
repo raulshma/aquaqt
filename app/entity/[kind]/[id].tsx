@@ -4,12 +4,12 @@ import { type ReactNode, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Card, Chip, Text, useTheme } from "react-native-paper";
 
+import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
   DashboardHero,
   DashboardScrollView,
   DashboardSection,
 } from "@/components/ui/dashboard-shell";
-import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import { useAquapt } from "@/context/aquapt-context";
 import {
   AquaptEntityStore,
@@ -124,13 +124,20 @@ function MiniCard({
   const textColor = getCardTextColorForBackground(theme, backgroundColor);
 
   return (
-    <Card style={[styles.card, { backgroundColor }]} mode="contained" onPress={onPress}>
+    <Card
+      style={[styles.card, { backgroundColor }]}
+      mode="contained"
+      onPress={onPress}
+    >
       <Card.Content style={styles.cardContent}>
         <Text variant="titleSmall" style={{ color: textColor }}>
           {title}
         </Text>
         {subtitle ? (
-          <Text variant="bodySmall" style={[styles.subtitle, { color: textColor }]}>
+          <Text
+            variant="bodySmall"
+            style={[styles.subtitle, { color: textColor }]}
+          >
             {subtitle}
           </Text>
         ) : null}
@@ -188,23 +195,33 @@ export default function EntityDetailScreen() {
     router.push(getEntityHref(entityRef) as never);
 
   const taskItem =
-    resolved?.ref.kind === "task" ? (resolved.item as TaskTemplate | undefined) : undefined;
+    resolved?.ref.kind === "task"
+      ? (resolved.item as TaskTemplate | undefined)
+      : undefined;
   const livestockItem =
     resolved?.ref.kind === "livestock"
       ? (resolved.item as Livestock | undefined)
       : undefined;
   const assetItem =
-    resolved?.ref.kind === "asset" ? (resolved.item as Asset | undefined) : undefined;
+    resolved?.ref.kind === "asset"
+      ? (resolved.item as Asset | undefined)
+      : undefined;
   const consumableItem =
     resolved?.ref.kind === "consumable"
       ? (resolved.item as Consumable | undefined)
       : undefined;
   const issueItem =
-    resolved?.ref.kind === "issue" ? (resolved.item as Issue | undefined) : undefined;
+    resolved?.ref.kind === "issue"
+      ? (resolved.item as Issue | undefined)
+      : undefined;
   const memoItem =
-    resolved?.ref.kind === "memo" ? (resolved.item as Memo | undefined) : undefined;
+    resolved?.ref.kind === "memo"
+      ? (resolved.item as Memo | undefined)
+      : undefined;
   const dosingItem =
-    resolved?.ref.kind === "dosing" ? (resolved.item as DosingLog | undefined) : undefined;
+    resolved?.ref.kind === "dosing"
+      ? (resolved.item as DosingLog | undefined)
+      : undefined;
   const parameterLogItem =
     resolved?.ref.kind === "parameter-log"
       ? (resolved.item as WaterParameterLog | undefined)
@@ -264,7 +281,13 @@ export default function EntityDetailScreen() {
                 body={task.description}
                 backgroundColor={theme.colors.primaryContainer}
                 onPress={() =>
-                  openEntity(createEntityRef("task", task.id, aquariumCollections.aquarium.id))
+                  openEntity(
+                    createEntityRef(
+                      "task",
+                      task.id,
+                      aquariumCollections.aquarium.id,
+                    ),
+                  )
                 }
               />
             ))}
@@ -279,7 +302,11 @@ export default function EntityDetailScreen() {
                   backgroundColor={theme.colors.errorContainer}
                   onPress={() =>
                     openEntity(
-                      createEntityRef("issue", issue.id, aquariumCollections.aquarium.id),
+                      createEntityRef(
+                        "issue",
+                        issue.id,
+                        aquariumCollections.aquarium.id,
+                      ),
                     )
                   }
                 />
@@ -298,7 +325,13 @@ export default function EntityDetailScreen() {
                 body={item.dietaryNotes}
                 backgroundColor={theme.colors.tertiaryContainer}
                 onPress={() =>
-                  openEntity(createEntityRef("livestock", item.id, aquariumCollections.aquarium.id))
+                  openEntity(
+                    createEntityRef(
+                      "livestock",
+                      item.id,
+                      aquariumCollections.aquarium.id,
+                    ),
+                  )
                 }
               />
             ))}
@@ -314,7 +347,13 @@ export default function EntityDetailScreen() {
                 }
                 backgroundColor={theme.colors.surfaceVariant}
                 onPress={() =>
-                  openEntity(createEntityRef("asset", asset.id, aquariumCollections.aquarium.id))
+                  openEntity(
+                    createEntityRef(
+                      "asset",
+                      asset.id,
+                      aquariumCollections.aquarium.id,
+                    ),
+                  )
                 }
               >
                 <View style={styles.chipRow}>
@@ -327,7 +366,11 @@ export default function EntityDetailScreen() {
                         key={task.id}
                         label={task.title}
                         icon="wrench"
-                        entityRef={createEntityRef("task", task.id, aquariumCollections.aquarium.id)}
+                        entityRef={createEntityRef(
+                          "task",
+                          task.id,
+                          aquariumCollections.aquarium.id,
+                        )}
                       />
                     ) : null;
                   })}
@@ -357,7 +400,10 @@ export default function EntityDetailScreen() {
               />
             ))}
             {aquariumCollections.parameterLogs
-              .sort((left, right) => +new Date(right.createdAt) - +new Date(left.createdAt))
+              .sort(
+                (left, right) =>
+                  +new Date(right.createdAt) - +new Date(left.createdAt),
+              )
               .slice(0, 2)
               .map((entry) => (
                 <MiniCard
@@ -379,7 +425,10 @@ export default function EntityDetailScreen() {
                 </MiniCard>
               ))}
             {aquariumCollections.dosingLogs
-              .sort((left, right) => +new Date(right.createdAt) - +new Date(left.createdAt))
+              .sort(
+                (left, right) =>
+                  +new Date(right.createdAt) - +new Date(left.createdAt),
+              )
               .slice(0, 2)
               .map((entry) => (
                 <MiniCard
@@ -389,12 +438,21 @@ export default function EntityDetailScreen() {
                   body={`${entry.amountMl}ml${entry.note ? ` • ${entry.note}` : ""}`}
                   backgroundColor={theme.colors.tertiaryContainer}
                   onPress={() =>
-                    openEntity(createEntityRef("dosing", entry.id, aquariumCollections.aquarium.id))
+                    openEntity(
+                      createEntityRef(
+                        "dosing",
+                        entry.id,
+                        aquariumCollections.aquarium.id,
+                      ),
+                    )
                   }
                 />
               ))}
             {aquariumCollections.memos
-              .sort((left, right) => +new Date(right.createdAt) - +new Date(left.createdAt))
+              .sort(
+                (left, right) =>
+                  +new Date(right.createdAt) - +new Date(left.createdAt),
+              )
               .slice(0, 2)
               .map((memo) => (
                 <MiniCard
@@ -404,7 +462,13 @@ export default function EntityDetailScreen() {
                   body={memo.content}
                   backgroundColor={theme.colors.surfaceVariant}
                   onPress={() =>
-                    openEntity(createEntityRef("memo", memo.id, aquariumCollections.aquarium.id))
+                    openEntity(
+                      createEntityRef(
+                        "memo",
+                        memo.id,
+                        aquariumCollections.aquarium.id,
+                      ),
+                    )
                   }
                 />
               ))}
@@ -415,7 +479,10 @@ export default function EntityDetailScreen() {
             description="Latest events for this aquarium."
           >
             {aquariumCollections.timeline
-              .sort((left, right) => +new Date(right.createdAt) - +new Date(left.createdAt))
+              .sort(
+                (left, right) =>
+                  +new Date(right.createdAt) - +new Date(left.createdAt),
+              )
               .slice(0, 8)
               .map((event) => (
                 <MiniCard
@@ -442,17 +509,24 @@ export default function EntityDetailScreen() {
                   {taskItem.frequency}
                 </Chip>
                 <Chip compact icon="history">
-                  {getTaskExecutionHistory(store, taskItem.id).length} executions
+                  {getTaskExecutionHistory(store, taskItem.id).length}{" "}
+                  executions
                 </Chip>
               </>
             }
           />
-          <DashboardSection title="Linked aquariums" description="Aquarium-specific state for this task.">
+          <DashboardSection
+            title="Linked aquariums"
+            description="Aquarium-specific state for this task."
+          >
             {taskItem.aquariumIds.map((aquariumId) => {
-              const aquarium = store.aquariums.find((entry) => entry.id === aquariumId);
-              const latestExecution = getTaskExecutionHistory(store, taskItem.id).find(
-                (entry) => entry.aquariumId === aquariumId,
+              const aquarium = store.aquariums.find(
+                (entry) => entry.id === aquariumId,
               );
+              const latestExecution = getTaskExecutionHistory(
+                store,
+                taskItem.id,
+              ).find((entry) => entry.aquariumId === aquariumId);
 
               return (
                 <MiniCard
@@ -464,12 +538,21 @@ export default function EntityDetailScreen() {
                       : "Never completed"
                   }
                   body={
-                    isTaskDue(taskItem, aquariumId, store.taskExecutions, new Date())
+                    isTaskDue(
+                      taskItem,
+                      aquariumId,
+                      store.taskExecutions,
+                      new Date(),
+                    )
                       ? "Due now"
                       : "On schedule"
                   }
                   backgroundColor={theme.colors.primaryContainer}
-                  onPress={() => openEntity(createEntityRef("aquarium", aquariumId, aquariumId))}
+                  onPress={() =>
+                    openEntity(
+                      createEntityRef("aquarium", aquariumId, aquariumId),
+                    )
+                  }
                 />
               );
             })}
@@ -477,8 +560,9 @@ export default function EntityDetailScreen() {
               {taskItem.livestockId ? (
                 <LinkChip
                   label={
-                    store.livestock.find((entry) => entry.id === taskItem.livestockId)?.name ??
-                    "Target livestock"
+                    store.livestock.find(
+                      (entry) => entry.id === taskItem.livestockId,
+                    )?.name ?? "Target livestock"
                   }
                   icon="fish"
                   entityRef={createEntityRef(
@@ -490,20 +574,28 @@ export default function EntityDetailScreen() {
               ) : null}
             </View>
           </DashboardSection>
-          <DashboardSection title="Execution history" description="Recent completions for this task across aquariums.">
+          <DashboardSection
+            title="Execution history"
+            description="Recent completions for this task across aquariums."
+          >
             {getTaskExecutionHistory(store, taskItem.id).map((execution) => (
               <MiniCard
                 key={execution.id}
                 title={
-                  store.aquariums.find((entry) => entry.id === execution.aquariumId)?.name ??
-                  "Unknown aquarium"
+                  store.aquariums.find(
+                    (entry) => entry.id === execution.aquariumId,
+                  )?.name ?? "Unknown aquarium"
                 }
                 subtitle={new Date(execution.completedAt).toLocaleString()}
                 body={execution.note}
                 backgroundColor={theme.colors.surfaceVariant}
                 onPress={() =>
                   openEntity(
-                    createEntityRef("aquarium", execution.aquariumId, execution.aquariumId),
+                    createEntityRef(
+                      "aquarium",
+                      execution.aquariumId,
+                      execution.aquariumId,
+                    ),
                   )
                 }
               />
@@ -533,16 +625,36 @@ export default function EntityDetailScreen() {
           />
           {livestockItem.photoUri ? (
             <Card mode="contained" style={styles.imageCard}>
-              <Image source={{ uri: livestockItem.photoUri }} style={styles.heroImage} />
+              <Image
+                source={{ uri: livestockItem.photoUri }}
+                style={styles.heroImage}
+              />
             </Card>
           ) : null}
-          <DashboardSection title="Related links" description="Family and feeding connections for this livestock.">
+          {livestockItem.photoUri ? (
+            <DashboardSection
+              title="Photo"
+              description="Saved image for this livestock record."
+            >
+              <Card mode="contained" style={styles.imageCard}>
+                <Image
+                  source={{ uri: livestockItem.photoUri }}
+                  style={styles.heroImage}
+                />
+              </Card>
+            </DashboardSection>
+          ) : null}
+          <DashboardSection
+            title="Related links"
+            description="Family and feeding connections for this livestock."
+          >
             <View style={styles.chipRow}>
               {livestockItem.parentId ? (
                 <LinkChip
                   label={
-                    store.livestock.find((entry) => entry.id === livestockItem.parentId)?.name ??
-                    "Parent"
+                    store.livestock.find(
+                      (entry) => entry.id === livestockItem.parentId,
+                    )?.name ?? "Parent"
                   }
                   icon="family-tree"
                   entityRef={createEntityRef(
@@ -552,20 +664,30 @@ export default function EntityDetailScreen() {
                   )}
                 />
               ) : null}
-              {getLivestockOffspring(store, livestockItem.id).map((offspring) => (
-                <LinkChip
-                  key={offspring.id}
-                  label={offspring.name}
-                  icon="baby-face-outline"
-                  entityRef={createEntityRef("livestock", offspring.id, offspring.aquariumId)}
-                />
-              ))}
+              {getLivestockOffspring(store, livestockItem.id).map(
+                (offspring) => (
+                  <LinkChip
+                    key={offspring.id}
+                    label={offspring.name}
+                    icon="baby-face-outline"
+                    entityRef={createEntityRef(
+                      "livestock",
+                      offspring.id,
+                      offspring.aquariumId,
+                    )}
+                  />
+                ),
+              )}
               {getLivestockFeedingTasks(store, livestockItem.id).map((task) => (
                 <LinkChip
                   key={task.id}
                   label={task.title}
                   icon="wrench"
-                  entityRef={createEntityRef("task", task.id, livestockItem.aquariumId)}
+                  entityRef={createEntityRef(
+                    "task",
+                    task.id,
+                    livestockItem.aquariumId,
+                  )}
                 />
               ))}
             </View>
@@ -592,7 +714,10 @@ export default function EntityDetailScreen() {
               </>
             }
           />
-          <DashboardSection title="Asset details" description="Purchase data and linked maintenance tasks.">
+          <DashboardSection
+            title="Asset details"
+            description="Purchase data and linked maintenance tasks."
+          >
             <MiniCard
               title="Purchase"
               subtitle={assetItem.purchasedAt ?? "Purchase date not set"}
@@ -609,14 +734,20 @@ export default function EntityDetailScreen() {
             />
             <View style={styles.chipRow}>
               {(assetItem.maintenanceTaskTemplateIds ?? [])
-                .map((taskId) => store.taskTemplates.find((entry) => entry.id === taskId))
+                .map((taskId) =>
+                  store.taskTemplates.find((entry) => entry.id === taskId),
+                )
                 .filter((task): task is TaskTemplate => !!task)
                 .map((task) => (
                   <LinkChip
                     key={task.id}
                     label={task.title}
                     icon="wrench"
-                    entityRef={createEntityRef("task", task.id, assetItem.aquariumId)}
+                    entityRef={createEntityRef(
+                      "task",
+                      task.id,
+                      assetItem.aquariumId,
+                    )}
                   />
                 ))}
             </View>
@@ -643,7 +774,10 @@ export default function EntityDetailScreen() {
               </>
             }
           />
-          <DashboardSection title="Stock state" description="Current amount and reorder threshold.">
+          <DashboardSection
+            title="Stock state"
+            description="Current amount and reorder threshold."
+          >
             <MiniCard
               title="Inventory"
               subtitle={`Updated ${new Date(consumableItem.updatedAt).toLocaleString()}`}
@@ -736,14 +870,24 @@ export default function EntityDetailScreen() {
                 />
                 <Chip compact icon="shield-alert">
                   {resolved.aquarium
-                    ? evaluateParameterAlerts(resolved.aquarium, parameterLogItem.values).length
-                    : 0} alerts
+                    ? evaluateParameterAlerts(
+                        resolved.aquarium,
+                        parameterLogItem.values,
+                      ).length
+                    : 0}{" "}
+                  alerts
                 </Chip>
               </>
             }
           />
-          <DashboardSection title="Recorded values" description="Full values saved in this entry.">
-            <MiniCard title="Parameters" backgroundColor={theme.colors.secondaryContainer}>
+          <DashboardSection
+            title="Recorded values"
+            description="Full values saved in this entry."
+          >
+            <MiniCard
+              title="Parameters"
+              backgroundColor={theme.colors.secondaryContainer}
+            >
               <ParameterChips values={parameterLogItem.values} />
             </MiniCard>
           </DashboardSection>
@@ -755,9 +899,14 @@ export default function EntityDetailScreen() {
           title="Related activity"
           description="Timeline entries connected to this record."
         >
-          {resolved.item && "photoUri" in resolved.item && resolved.item.photoUri ? (
+          {resolved.item &&
+          "photoUri" in resolved.item &&
+          resolved.item.photoUri ? (
             <Card mode="contained" style={styles.imageCard}>
-              <Image source={{ uri: resolved.item.photoUri }} style={styles.heroImage} />
+              <Image
+                source={{ uri: resolved.item.photoUri }}
+                style={styles.heroImage}
+              />
             </Card>
           ) : null}
           {resolved.item && "content" in resolved.item ? (
@@ -774,7 +923,9 @@ export default function EntityDetailScreen() {
               backgroundColor={theme.colors.surfaceVariant}
             />
           ) : null}
-          {resolved.item && "resolutionNote" in resolved.item && resolved.item.resolutionNote ? (
+          {resolved.item &&
+          "resolutionNote" in resolved.item &&
+          resolved.item.resolutionNote ? (
             <MiniCard
               title="Resolution"
               body={resolved.item.resolutionNote}
@@ -820,5 +971,8 @@ const styles = StyleSheet.create({
   heroImage: {
     width: "100%",
     height: 220,
+  },
+  classificationErrorText: {
+    color: "#dc2626",
   },
 });

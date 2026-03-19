@@ -6,7 +6,7 @@ import {
     Chip,
     Text,
     TextInput,
-    useTheme
+    useTheme,
 } from "react-native-paper";
 
 import {
@@ -221,7 +221,7 @@ export default function WorkflowSettingsScreen() {
   };
 
   return (
-    <DashboardScrollView>
+    <DashboardScrollView topPadding={4}>
       <DashboardHero
         title="AI workflows"
         subtitle="Contextual assistant, diagnostics, and compatibility checks."

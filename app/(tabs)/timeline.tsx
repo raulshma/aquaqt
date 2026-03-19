@@ -4,31 +4,32 @@ import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import {
-  Button,
-  Card,
-  Chip,
-  FAB,
-  Text,
-  TextInput,
-  useTheme,
+    Button,
+    Card,
+    Chip,
+    FAB,
+    Text,
+    TextInput,
+    useTheme,
 } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import {
-  DashboardHero,
-  DashboardScrollView,
-  DashboardSection,
-} from "@/components/ui/dashboard-shell";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
+import {
+    DashboardHero,
+    DashboardScrollView,
+    DashboardSection,
+} from "@/components/ui/dashboard-shell";
+import {
+    PhotoSourceDialog,
+    type PhotoSource,
+} from "@/components/ui/photo-source-dialog";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
-import {
-  getEntityHref,
-  getTimelineEventTarget,
-} from "@/services/entity-links";
+import { getEntityHref, getTimelineEventTarget } from "@/services/entity-links";
 import { isTaskDue } from "@/services/scheduling";
 import { TimelineEventType } from "@/types/aquapt";
 
@@ -75,6 +76,7 @@ export default function TimelineScreen() {
   const [selectedAquariumFilter, setSelectedAquariumFilter] = useState("all");
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [isPickingMemoPhoto, setPickingMemoPhoto] = useState(false);
+  const [isPhotoSourceDialogOpen, setPhotoSourceDialogOpen] = useState(false);
   const [isMemoDatePickerOpen, setMemoDatePickerOpen] = useState(false);
 
   const form = useForm({
@@ -254,58 +256,43 @@ export default function TimelineScreen() {
     );
   }, [aquariums, taskExecutions, taskTemplates]);
 
-  const pickMemoPhoto = async () => {
-    const pickFromSource = async (source: "camera" | "library") => {
-      setPickingMemoPhoto(true);
-      try {
-        const permission =
-          source === "camera"
-            ? await ImagePicker.requestCameraPermissionsAsync()
-            : await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const pickMemoPhotoFromSource = async (source: PhotoSource) => {
+    setPhotoSourceDialogOpen(false);
+    setPickingMemoPhoto(true);
 
-        if (!permission.granted) {
-          return;
-        }
+    try {
+      const permission =
+        source === "camera"
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-        const result =
-          source === "camera"
-            ? await ImagePicker.launchCameraAsync({
-                mediaTypes: ["images"],
-                allowsEditing: true,
-                quality: 0.7,
-              })
-            : await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ["images"],
-                allowsEditing: true,
-                quality: 0.7,
-              });
-
-        if (!result.canceled && result.assets?.[0]?.uri) {
-          form.setFieldValue("memo.photoUri", result.assets[0].uri);
-        }
-      } finally {
-        setPickingMemoPhoto(false);
+      if (!permission.granted) {
+        return;
       }
-    };
 
-    Alert.alert("Add memo photo", "Choose photo source", [
-      {
-        text: "Take photo",
-        onPress: () => {
-          void pickFromSource("camera");
-        },
-      },
-      {
-        text: "Choose from library",
-        onPress: () => {
-          void pickFromSource("library");
-        },
-      },
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-    ]);
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: ["images"],
+              allowsEditing: true,
+              quality: 0.7,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ["images"],
+              allowsEditing: true,
+              quality: 0.7,
+            });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        form.setFieldValue("memo.photoUri", result.assets[0].uri);
+      }
+    } finally {
+      setPickingMemoPhoto(false);
+    }
+  };
+
+  const pickMemoPhoto = () => {
+    setPhotoSourceDialogOpen(true);
   };
 
   const saveQuickLog = () => {
@@ -353,7 +340,7 @@ export default function TimelineScreen() {
               <Chip compact icon="fish">
                 {selectedAquariumFilter === "all"
                   ? "All tanks"
-                  : aquariumNameById[selectedAquariumFilter] ?? "1 tank"}
+                  : (aquariumNameById[selectedAquariumFilter] ?? "1 tank")}
               </Chip>
             </>
           }
@@ -403,7 +390,9 @@ export default function TimelineScreen() {
         >
           {filteredTimeline.map((event) => {
             const eventImageUri =
-              event.photoUri || aquariumPhotoById[event.aquariumId] || undefined;
+              event.photoUri ||
+              aquariumPhotoById[event.aquariumId] ||
+              undefined;
             const backgroundColor = getEventBackground(event.type);
             const cardBackground = eventImageUri
               ? theme.colors.surface
@@ -463,12 +452,7 @@ export default function TimelineScreen() {
                 <Card.Content>
                   {!eventImageUri ? (
                     <View style={styles.eventHeader}>
-                      <View
-                        style={[
-                          styles.eventTypePill,
-                          { backgroundColor },
-                        ]}
-                      >
+                      <View style={[styles.eventTypePill, { backgroundColor }]}>
                         <Text
                           variant="labelSmall"
                           style={{
@@ -772,6 +756,22 @@ export default function TimelineScreen() {
         </form.Subscribe>
       </BottomSheet>
 
+      <PhotoSourceDialog
+        visible={isPhotoSourceDialogOpen}
+        title="Add memo photo"
+        description="Choose photo source"
+        hasCurrentPhoto={Boolean(form.state.values.memo.photoUri)}
+        loading={isPickingMemoPhoto}
+        onDismiss={() => setPhotoSourceDialogOpen(false)}
+        onPickSource={(source) => {
+          void pickMemoPhotoFromSource(source);
+        }}
+        onRemovePhoto={() => {
+          form.setFieldValue("memo.photoUri", "");
+          setPhotoSourceDialogOpen(false);
+        }}
+      />
+
       <form.Subscribe selector={(state) => state.values.memo.date}>
         {(memoDate) => (
           <DatePickerModal
@@ -797,10 +797,7 @@ export default function TimelineScreen() {
           resetQuickLogForm(aquariums[0]?.id ?? "");
           setDialogOpen(true);
         }}
-        style={[
-          styles.fab,
-          { backgroundColor: theme.colors.primaryContainer },
-        ]}
+        style={[styles.fab, { backgroundColor: theme.colors.primaryContainer }]}
         color={theme.colors.onPrimaryContainer}
       />
     </>

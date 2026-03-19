@@ -18,17 +18,38 @@ export default function SettingsLayout() {
         },
       }}
     >
-      <Stack.Screen name="index" options={{ title: "Settings" }} />
-      <Stack.Screen name="appearance" options={{ title: "Appearance" }} />
-      <Stack.Screen name="regional" options={{ title: "Regional defaults" }} />
+      <Stack.Screen
+        name="index"
+        options={{ headerShown: false, title: "Settings" }}
+      />
+      <Stack.Screen
+        name="appearance"
+        options={{ headerShown: false, title: "Appearance" }}
+      />
+      <Stack.Screen
+        name="regional"
+        options={{ headerShown: false, title: "Regional defaults" }}
+      />
       <Stack.Screen
         name="assistant"
-        options={{ title: "OpenRouter assistant" }}
+        options={{ headerShown: false, title: "OpenRouter assistant" }}
       />
-      <Stack.Screen name="reminders" options={{ title: "Task reminders" }} />
-      <Stack.Screen name="backup" options={{ title: "Backup & restore" }} />
-      <Stack.Screen name="memory" options={{ title: "Assistant memory" }} />
-      <Stack.Screen name="workflows" options={{ title: "AI workflows" }} />
+      <Stack.Screen
+        name="reminders"
+        options={{ headerShown: false, title: "Task reminders" }}
+      />
+      <Stack.Screen
+        name="backup"
+        options={{ headerShown: false, title: "Backup & restore" }}
+      />
+      <Stack.Screen
+        name="memory"
+        options={{ headerShown: false, title: "Assistant memory" }}
+      />
+      <Stack.Screen
+        name="workflows"
+        options={{ headerShown: false, title: "AI workflows" }}
+      />
     </Stack>
   );
 }

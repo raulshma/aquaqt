@@ -1,14 +1,19 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
-import { ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
+import {
+    ScrollView,
+    StyleSheet,
+    useWindowDimensions,
+    View,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, {
-  interpolate,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
 import { Modal, Portal, Surface, Text } from "react-native-paper";
+import Animated, {
+    interpolate,
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface BottomSheetProps {
@@ -17,6 +22,7 @@ interface BottomSheetProps {
   title: string;
   children: ReactNode;
   actions?: ReactNode;
+  layer?: number;
 }
 
 const SWIPE_THRESHOLD = 50;
@@ -31,6 +37,7 @@ export function BottomSheet({
   title,
   children,
   actions,
+  layer = 9999,
 }: BottomSheetProps) {
   const { height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -126,7 +133,13 @@ export function BottomSheet({
         visible={visible}
         onDismiss={handleModalDismiss}
         contentContainerStyle={styles.modalContainer}
-        style={styles.modalRoot}
+        style={[
+          styles.modalRoot,
+          {
+            zIndex: layer,
+            elevation: layer,
+          },
+        ]}
       >
         <Animated.View style={[styles.sheetWrapper, animatedSheetStyle]}>
           <Surface

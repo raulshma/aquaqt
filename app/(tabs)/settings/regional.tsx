@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
-import {
-    Button,
-    Chip,
-    Text,
-    TextInput,
-    useTheme
-} from "react-native-paper";
+import { Button, Chip, Text, TextInput, useTheme } from "react-native-paper";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import {
@@ -128,7 +122,7 @@ export default function RegionalSettingsScreen() {
   }, [settings.defaultCurrency, settings.defaultLocale]);
 
   return (
-    <DashboardScrollView>
+    <DashboardScrollView topPadding={4}>
       <DashboardHero
         title="Regional defaults"
         subtitle="Country, currency, timezone, and money formatting."

@@ -6,7 +6,7 @@ import {
     Chip,
     Text,
     TextInput,
-    useTheme
+    useTheme,
 } from "react-native-paper";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -88,7 +88,7 @@ export default function AssistantSettingsScreen() {
   }, [modelQuery, models]);
 
   return (
-    <DashboardScrollView>
+    <DashboardScrollView topPadding={4}>
       <DashboardHero
         title="OpenRouter assistant"
         subtitle="Save your API key and pick the default model."

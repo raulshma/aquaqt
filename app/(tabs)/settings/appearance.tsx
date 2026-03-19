@@ -12,7 +12,7 @@ export default function AppearanceSettingsScreen() {
   const { settings, saveThemePreference } = useAquapt();
 
   return (
-    <DashboardScrollView>
+    <DashboardScrollView topPadding={4}>
       <DashboardHero
         title="Appearance"
         subtitle="Choose how Aquapt colors the app."

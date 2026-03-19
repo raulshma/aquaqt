@@ -12,7 +12,6 @@ import {
   useState,
 } from "react";
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   useWindowDimensions,
@@ -29,7 +28,7 @@ import {
   Surface,
   Text,
   TextInput,
-  useTheme
+  useTheme,
 } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -42,6 +41,10 @@ import {
 } from "@/components/illustrations/AnimatedCardBackgrounds";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
+import {
+  type PhotoSource,
+  PhotoSourceDialog,
+} from "@/components/ui/photo-source-dialog";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { createEntityRef, getEntityHref } from "@/services/entity-links";
@@ -152,6 +155,14 @@ type AquariumAlertEntry = ReturnType<typeof evaluateParameterAlerts>[number] & {
   aquariumName: string;
 };
 
+type PhotoDialogConfig = {
+  title: string;
+  currentUri?: string;
+  setLoading: Dispatch<SetStateAction<boolean>>;
+  onPicked: (uri: string) => void;
+  onCleared: () => void;
+};
+
 type AquariumOverviewCardProps = {
   aquarium: Aquarium;
   backgroundColor: string;
@@ -244,7 +255,7 @@ type LivestockCardProps = {
   feedingTaskFrequency: TaskFrequency;
   cardBackground: string;
   parentEntity?: { id: string; name: string; aquariumId: string };
-  offspringEntities: Array<{ id: string; name: string; aquariumId: string }>;
+  offspringEntities: { id: string; name: string; aquariumId: string }[];
   feedingTasks: TaskTemplate[];
   openEntity: (ref: EntityRef) => void;
   setFeedingNoteDraft: Dispatch<SetStateAction<Record<string, string>>>;
@@ -318,7 +329,9 @@ const LivestockCard = memo(function LivestockCard({
         { backgroundColor: cardBackground },
       ]}
       mode="contained"
-      onPress={() => openEntity(createEntityRef("livestock", item.id, item.aquariumId))}
+      onPress={() =>
+        openEntity(createEntityRef("livestock", item.id, item.aquariumId))
+      }
     >
       <Card.Content>
         <Text variant="titleSmall" style={{ color: textColor }}>
@@ -337,7 +350,9 @@ const LivestockCard = memo(function LivestockCard({
             compact
             icon="fishbowl"
             onPress={() =>
-              openEntity(createEntityRef("aquarium", item.aquariumId, item.aquariumId))
+              openEntity(
+                createEntityRef("aquarium", item.aquariumId, item.aquariumId),
+              )
             }
           >
             {aquariumName}
@@ -366,7 +381,11 @@ const LivestockCard = memo(function LivestockCard({
               icon="baby-face-outline"
               onPress={() =>
                 openEntity(
-                  createEntityRef("livestock", offspring.id, offspring.aquariumId),
+                  createEntityRef(
+                    "livestock",
+                    offspring.id,
+                    offspring.aquariumId,
+                  ),
                 )
               }
             >
@@ -587,7 +606,11 @@ const IssueCard = memo(function IssueCard({
           {aquariumName} • Logged {new Date(issue.createdAt).toLocaleString()}
         </Text>
         <View style={styles.summaryRow}>
-          <Chip compact icon="fishbowl" onPress={() => onOpenDetails(issue.id, issue.aquariumId)}>
+          <Chip
+            compact
+            icon="fishbowl"
+            onPress={() => onOpenDetails(issue.id, issue.aquariumId)}
+          >
             Open issue
           </Chip>
         </View>
@@ -657,7 +680,10 @@ const TodayMetricCard = memo(function TodayMetricCard({
   textColor,
 }: TodayMetricCardProps) {
   return (
-    <Surface elevation={1} style={[styles.todayMetricCard, { backgroundColor }]}>
+    <Surface
+      elevation={1}
+      style={[styles.todayMetricCard, { backgroundColor }]}
+    >
       <View style={styles.todayMetricHeader}>
         <View
           style={[styles.todayMetricAccent, { backgroundColor: accentColor }]}
@@ -712,9 +738,15 @@ const TodayFocusPanel = memo(function TodayFocusPanel({
   emptyAccentColor,
 }: TodayFocusPanelProps) {
   return (
-    <Surface elevation={1} style={[styles.todayFocusPanel, { backgroundColor }]}>
+    <Surface
+      elevation={1}
+      style={[styles.todayFocusPanel, { backgroundColor }]}
+    >
       <View style={styles.todayFocusHeader}>
-        <Text variant="labelMedium" style={[styles.todayFocusEyebrow, { color: textColor }]}>
+        <Text
+          variant="labelMedium"
+          style={[styles.todayFocusEyebrow, { color: textColor }]}
+        >
           {eyebrow}
         </Text>
         <Text variant="titleSmall" style={{ color: textColor }}>
@@ -889,6 +921,8 @@ export default function HomeScreen() {
   const [selectedMetric, setSelectedMetric] =
     useState<AnalyticMetricKey>("nitrate");
   const [isFabTooltipVisible, setFabTooltipVisible] = useState(false);
+  const [photoDialogConfig, setPhotoDialogConfig] =
+    useState<PhotoDialogConfig | null>(null);
   const fabTooltipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -1104,7 +1138,47 @@ export default function HomeScreen() {
     },
   });
 
-  const promptForPhoto = async ({
+  const pickPhotoFromSource = async (source: PhotoSource) => {
+    if (!photoDialogConfig) {
+      return;
+    }
+
+    const { setLoading, onPicked } = photoDialogConfig;
+    setPhotoDialogConfig(null);
+    setLoading(true);
+
+    try {
+      const permission =
+        source === "camera"
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        return;
+      }
+
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: ["images"],
+              allowsEditing: true,
+              quality: 0.7,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ["images"],
+              allowsEditing: true,
+              quality: 0.7,
+            });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        onPicked(result.assets[0].uri);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const promptForPhoto = ({
     title,
     currentUri,
     setLoading,
@@ -1117,68 +1191,13 @@ export default function HomeScreen() {
     onPicked: (uri: string) => void;
     onCleared: () => void;
   }) => {
-    const pickFromSource = async (source: "camera" | "library") => {
-      setLoading(true);
-      try {
-        const permission =
-          source === "camera"
-            ? await ImagePicker.requestCameraPermissionsAsync()
-            : await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-        if (!permission.granted) {
-          return;
-        }
-
-        const result =
-          source === "camera"
-            ? await ImagePicker.launchCameraAsync({
-                mediaTypes: ["images"],
-                allowsEditing: true,
-                quality: 0.7,
-              })
-            : await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ["images"],
-                allowsEditing: true,
-                quality: 0.7,
-              });
-
-        if (!result.canceled && result.assets?.[0]?.uri) {
-          onPicked(result.assets[0].uri);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const actions = [
-      {
-        text: "Take photo",
-        onPress: () => {
-          void pickFromSource("camera");
-        },
-      },
-      {
-        text: "Choose from library",
-        onPress: () => {
-          void pickFromSource("library");
-        },
-      },
-      ...(currentUri
-        ? [
-            {
-              text: "Remove photo",
-              style: "destructive" as const,
-              onPress: onCleared,
-            },
-          ]
-        : []),
-      {
-        text: "Cancel",
-        style: "cancel" as const,
-      },
-    ];
-
-    Alert.alert(title, "Choose photo source", actions);
+    setPhotoDialogConfig({
+      title,
+      currentUri,
+      setLoading,
+      onPicked,
+      onCleared,
+    });
   };
 
   useEffect(() => {
@@ -1407,18 +1426,20 @@ export default function HomeScreen() {
     setAddLivestockOpen(false);
   };
 
-  const pickLivestockPhoto = async () => {
-    await promptForPhoto({
+  const pickLivestockPhoto = () => {
+    promptForPhoto({
       title: "Add livestock photo",
       currentUri: newLivestockPhotoUri,
       setLoading: setPickingPhoto,
-      onPicked: setNewLivestockPhotoUri,
-      onCleared: () => setNewLivestockPhotoUri(""),
+      onPicked: (uri) => setNewLivestockPhotoUri(uri),
+      onCleared: () => {
+        setNewLivestockPhotoUri("");
+      },
     });
   };
 
-  const pickMemoPhoto = async () => {
-    await promptForPhoto({
+  const pickMemoPhoto = () => {
+    promptForPhoto({
       title: "Add memo photo",
       currentUri: quickLogForm.state.values.memo.photoUri,
       setLoading: setPickingMemoPhoto,
@@ -1427,13 +1448,13 @@ export default function HomeScreen() {
     });
   };
 
-  const pickAquariumPhoto = async (target: "add" | "edit") => {
+  const pickAquariumPhoto = (target: "add" | "edit") => {
     const currentUri =
       target === "add"
         ? addAquariumForm.state.values.photoUri
         : editAquariumForm.state.values.photoUri;
 
-    await promptForPhoto({
+    promptForPhoto({
       title: target === "add" ? "Add aquarium photo" : "Update aquarium photo",
       currentUri,
       setLoading: setPickingAquariumPhoto,
@@ -1456,8 +1477,8 @@ export default function HomeScreen() {
     });
   };
 
-  const pickAssetPhoto = async () => {
-    await promptForPhoto({
+  const pickAssetPhoto = () => {
+    promptForPhoto({
       title: "Add asset photo",
       currentUri: newAssetPhotoUri,
       setLoading: setPickingAssetPhoto,
@@ -1466,8 +1487,8 @@ export default function HomeScreen() {
     });
   };
 
-  const pickConsumablePhoto = async () => {
-    await promptForPhoto({
+  const pickConsumablePhoto = () => {
+    promptForPhoto({
       title: "Add consumable photo",
       currentUri: newConsumablePhotoUri,
       setLoading: setPickingConsumablePhoto,
@@ -1878,7 +1899,9 @@ export default function HomeScreen() {
                   nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
                   onEdit={openEditAquarium}
                   onOpenDetails={(aquariumId) =>
-                    openEntity(createEntityRef("aquarium", aquariumId, aquariumId))
+                    openEntity(
+                      createEntityRef("aquarium", aquariumId, aquariumId),
+                    )
                   }
                 />
               );
@@ -1914,7 +1937,9 @@ export default function HomeScreen() {
                   nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
                   onEdit={openEditAquarium}
                   onOpenDetails={(aquariumId) =>
-                    openEntity(createEntityRef("aquarium", aquariumId, aquariumId))
+                    openEntity(
+                      createEntityRef("aquarium", aquariumId, aquariumId),
+                    )
                   }
                 />
               );
@@ -2212,7 +2237,9 @@ export default function HomeScreen() {
                 const livestockStatusNote =
                   livestockStatusNoteDraft[item.id] ?? "";
                 const parentEntity = item.parentId
-                  ? livestock.find((candidate) => candidate.id === item.parentId)
+                  ? livestock.find(
+                      (candidate) => candidate.id === item.parentId,
+                    )
                   : undefined;
                 const offspringEntities = livestock.filter(
                   (candidate) => candidate.parentId === item.id,
@@ -2324,7 +2351,9 @@ export default function HomeScreen() {
                     ]}
                     mode="contained"
                     onPress={() =>
-                      openEntity(createEntityRef("asset", asset.id, asset.aquariumId))
+                      openEntity(
+                        createEntityRef("asset", asset.id, asset.aquariumId),
+                      )
                     }
                   >
                     <Card.Content>
@@ -2364,7 +2393,11 @@ export default function HomeScreen() {
                                 icon="wrench"
                                 onPress={() =>
                                   openEntity(
-                                    createEntityRef("task", task.id, asset.aquariumId),
+                                    createEntityRef(
+                                      "task",
+                                      task.id,
+                                      asset.aquariumId,
+                                    ),
                                   )
                                 }
                               >
@@ -2962,6 +2995,32 @@ export default function HomeScreen() {
           ) : null}
         </View>
       </BottomSheet>
+
+      <PhotoSourceDialog
+        visible={Boolean(photoDialogConfig)}
+        title={photoDialogConfig?.title ?? "Select photo"}
+        description="Choose photo source"
+        hasCurrentPhoto={Boolean(photoDialogConfig?.currentUri)}
+        loading={
+          isPickingPhoto ||
+          isPickingMemoPhoto ||
+          isPickingAquariumPhoto ||
+          isPickingAssetPhoto ||
+          isPickingConsumablePhoto
+        }
+        onDismiss={() => setPhotoDialogConfig(null)}
+        onPickSource={(source) => {
+          void pickPhotoFromSource(source);
+        }}
+        onRemovePhoto={
+          photoDialogConfig
+            ? () => {
+                photoDialogConfig.onCleared();
+                setPhotoDialogConfig(null);
+              }
+            : undefined
+        }
+      />
 
       <addAquariumForm.Subscribe
         selector={(state) => state.values.setupDateValue}
@@ -3630,6 +3689,18 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 160,
     borderRadius: 18,
+  },
+  classificationPanel: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(120,120,120,0.35)",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  classificationErrorText: {
+    color: "#dc2626",
+    marginTop: 2,
   },
   aquariumCardPhoto: {
     width: "100%",

@@ -55,7 +55,7 @@ export default function RemindersSettingsScreen() {
   };
 
   return (
-    <DashboardScrollView>
+    <DashboardScrollView topPadding={4}>
       <DashboardHero
         title="Task reminders"
         subtitle="Daily notifications with a quick deep link to due tasks."
