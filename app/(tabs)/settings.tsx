@@ -2,47 +2,47 @@ import { useForm } from "@tanstack/react-form";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 import {
-    ActivityIndicator,
-    Button,
-    Card,
-    Chip,
-    Divider,
-    Text,
-    TextInput,
-    useTheme,
+  ActivityIndicator,
+  Button,
+  Card,
+  Chip,
+  Divider,
+  Text,
+  TextInput,
+  useTheme,
 } from "react-native-paper";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTone } from "@/components/ui/card-tone";
 import {
-    DashboardHero,
-    DashboardScrollView,
+  DashboardHero,
+  DashboardScrollView,
 } from "@/components/ui/dashboard-shell";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { requestOpenRouterCompletion } from "@/services/assistant-ai";
 import {
-    clearAssistantMemoryStore,
-    forgetAssistantMemorySnippet,
-    listAssistantMemorySnippets,
+  clearAssistantMemoryStore,
+  forgetAssistantMemorySnippet,
+  listAssistantMemorySnippets,
 } from "@/services/assistant-memory";
 import {
-    ASSISTANT_MODE_PROMPTS,
-    ASSISTANT_QUESTION_PRESETS,
-    ASSISTANT_SYSTEM_PROMPT,
-    AssistantMode,
+  ASSISTANT_MODE_PROMPTS,
+  ASSISTANT_QUESTION_PRESETS,
+  ASSISTANT_SYSTEM_PROMPT,
+  AssistantMode,
 } from "@/services/assistant-prompts";
 import {
-    convertCurrencyAmount,
-    findCountry,
-    formatCurrencyAmount,
-    listRegionalCountryOptions,
-    listSupportedCurrencyCodes,
+  convertCurrencyAmount,
+  findCountry,
+  formatCurrencyAmount,
+  listRegionalCountryOptions,
+  listSupportedCurrencyCodes,
 } from "@/services/localization";
 import {
-    clearDailyReminderSchedule,
-    ensureReminderPermissions,
-    scheduleDailyReminder,
+  clearDailyReminderSchedule,
+  ensureReminderPermissions,
+  scheduleDailyReminder,
 } from "@/services/notifications";
 import { countDueTasks } from "@/services/scheduling";
 import { AppThemePreference } from "@/types/aquapt";
@@ -511,6 +511,17 @@ export default function SettingsScreen() {
     [settings.defaultCurrency, settings.defaultLocale],
   );
 
+  const openRouterApiKeyValue = settingsForm.state.values.apiKey.trim();
+  const openRouterModelValue =
+    settingsForm.state.values.model.trim() || settings.aiModel.trim();
+  const openRouterApiKeyLabel = openRouterApiKeyValue
+    ? `${openRouterApiKeyValue.slice(0, 8)}…${openRouterApiKeyValue.slice(-4)}`
+    : "No API key saved";
+  const openRouterModelLabel = openRouterModelValue || "No model selected";
+  const openRouterReadinessLabel = openRouterApiKeyValue
+    ? "Ready to save"
+    : "Add a key to get started";
+
   const handleSave = () => {
     const values = settingsForm.state.values;
     saveApiKey(values.apiKey);
@@ -973,60 +984,136 @@ export default function SettingsScreen() {
           ]}
         >
           <Card.Title
-            title="OpenRouter API Key (BYOK)"
-            subtitle="Stored in local encrypted-ish app storage context"
+            title="OpenRouter assistant"
+            subtitle="Bring your own key and pick the model used across the app."
             titleStyle={{ color: primaryTone.textColor }}
             subtitleStyle={{ color: primaryTone.textColor, opacity: 0.8 }}
           />
           <Card.Content>
+            <View
+              style={[
+                styles.openRouterSummary,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+            >
+              <View style={styles.openRouterSummaryHeader}>
+                <Text
+                  variant="labelLarge"
+                  style={{ color: primaryTone.textColor }}
+                >
+                  Status
+                </Text>
+                <Chip
+                  compact
+                  icon={openRouterApiKeyValue ? "check-circle" : "alert-circle"}
+                >
+                  {openRouterReadinessLabel}
+                </Chip>
+              </View>
+              <View style={styles.modeRow}>
+                <Chip compact icon="key-variant">
+                  {openRouterApiKeyLabel}
+                </Chip>
+                <Chip compact icon="brain">
+                  {openRouterModelLabel}
+                </Chip>
+                <Chip compact icon="shield-lock">
+                  {assistantMemoryEnabled ? "Memory on" : "Memory off"}
+                </Chip>
+              </View>
+              <Text
+                variant="bodySmall"
+                style={[styles.helperText, { color: primaryTone.textColor }]}
+              >
+                Your OpenRouter key stays local to this device. The selected
+                model is used by the assistant, diagnostics, and other AI
+                workflows.
+              </Text>
+            </View>
             <settingsForm.Field name="apiKey">
               {(field) => (
-                <TextInput
-                  mode="outlined"
-                  label="sk-or-v1-..."
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={field.state.value}
-                  onChangeText={field.handleChange}
-                />
+                <View>
+                  <TextInput
+                    mode="outlined"
+                    label="OpenRouter API key"
+                    placeholder="sk-or-v1-..."
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={field.state.value}
+                    onChangeText={field.handleChange}
+                  />
+                  <Text variant="bodySmall" style={styles.helperText}>
+                    Paste your personal OpenRouter key here. It is never shown
+                    in full once saved.
+                  </Text>
+                </View>
               )}
             </settingsForm.Field>
             <settingsForm.Field name="model">
               {(field) => (
-                <TextInput
-                  mode="outlined"
-                  label="Assistant model"
-                  value={field.state.value}
-                  onChangeText={field.handleChange}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={styles.modelInput}
-                />
+                <View>
+                  <TextInput
+                    mode="outlined"
+                    label="Assistant model ID"
+                    placeholder="anthropic/claude-3.5-sonnet"
+                    value={field.state.value}
+                    onChangeText={field.handleChange}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.modelInput}
+                  />
+                  <Text variant="bodySmall" style={styles.helperText}>
+                    Type any OpenRouter model ID or browse the list below to
+                    autofill it.
+                  </Text>
+                </View>
               )}
             </settingsForm.Field>
-            <View style={styles.modelPickerRow}>
+            <View style={styles.openRouterActions}>
               <Button
                 mode="contained-tonal"
+                icon="format-list-bulleted"
                 onPress={() => setModelSheetVisible(true)}
+                style={styles.modelPickerRow}
               >
                 Browse OpenRouter models
+              </Button>
+              <Button
+                mode="contained-tonal"
+                icon="refresh"
+                onPress={() => void loadOpenRouterModels()}
+                disabled={isLoadingModels}
+                style={styles.modelPickerRow}
+              >
+                Refresh list
               </Button>
             </View>
             <Text
               variant="bodySmall"
               style={[styles.helperText, { color: primaryTone.textColor }]}
             >
-              Pick a model from the OpenRouter list in the bottom sheet, or type
-              your own ID.
+              Pick a model from the OpenRouter list in the bottom sheet, or
+              enter your own ID.
             </Text>
-            <Button
-              mode="contained"
-              onPress={handleSave}
-              style={styles.saveButton}
-            >
-              Save key
-            </Button>
+            <View style={styles.openRouterActions}>
+              <Button
+                mode="outlined"
+                icon="content-save"
+                onPress={handleSave}
+                textColor={theme.colors.primary}
+                buttonColor={theme.colors.surface}
+                style={[
+                  styles.saveButton,
+                  {
+                    borderColor: theme.colors.primary,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                Save OpenRouter settings
+              </Button>
+            </View>
             <View style={styles.modeRow}>
               <Chip
                 selected={assistantMemoryEnabled}
@@ -1642,9 +1729,15 @@ export default function SettingsScreen() {
         onDismiss={() => setModelSheetVisible(false)}
         title="Select OpenRouter model"
       >
+        <Text variant="bodySmall" style={styles.helperText}>
+          Showing {filteredModels.length} models ({freeModels.length} free,{" "}
+          {paidModels.length} paid). Use filters to narrow the list, then tap a
+          model to fill the field above.
+        </Text>
         <View style={styles.modeRow}>
           <Button
             mode="contained-tonal"
+            icon="refresh"
             onPress={() => {
               void loadOpenRouterModels();
             }}
@@ -1777,6 +1870,24 @@ const styles = StyleSheet.create({
   primaryCard: {
     borderRadius: 24,
   },
+  openRouterSummary: {
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 14,
+  },
+  openRouterSummaryHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 10,
+  },
+  openRouterActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 10,
+  },
   saveButton: {
     marginTop: 12,
     alignSelf: "flex-start",
@@ -1785,7 +1896,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   modelPickerRow: {
-    marginTop: 10,
     alignSelf: "flex-start",
   },
   helperText: {
