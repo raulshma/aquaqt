@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
-import { Dimensions, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   interpolate,
@@ -9,6 +9,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { Modal, Portal, Surface, Text } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface BottomSheetProps {
   visible: boolean;
@@ -19,7 +20,6 @@ interface BottomSheetProps {
 }
 
 const SWIPE_THRESHOLD = 50;
-const SCREEN_HEIGHT = Dimensions.get("window").height;
 const DISMISS_VELOCITY = 900;
 const OPEN_DURATION = 180;
 const RESET_DURATION = 140;
@@ -32,13 +32,17 @@ export function BottomSheet({
   children,
   actions,
 }: BottomSheetProps) {
-  const translateY = useSharedValue(SCREEN_HEIGHT);
+  const { height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const translateY = useSharedValue(screenHeight);
   const isClosing = useSharedValue(false);
+  const maxSheetHeight = Math.max(320, screenHeight - insets.top - 12);
+  const sheetPaddingBottom = 20 + insets.bottom;
   const animatedSheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
     opacity: interpolate(
       translateY.value,
-      [0, SCREEN_HEIGHT * 0.35, SCREEN_HEIGHT],
+      [0, screenHeight * 0.35, screenHeight],
       [1, 0.82, 0],
     ),
   }));
@@ -56,7 +60,7 @@ export function BottomSheet({
 
     isClosing.value = true;
     translateY.value = withTiming(
-      SCREEN_HEIGHT,
+      screenHeight,
       { duration: CLOSE_DURATION },
       (finished) => {
         if (finished) {
@@ -64,19 +68,19 @@ export function BottomSheet({
         }
       },
     );
-  }, [finishDismiss, translateY]);
+  }, [finishDismiss, isClosing, screenHeight, translateY]);
 
   useEffect(() => {
     if (!visible) {
-      translateY.value = SCREEN_HEIGHT;
+      translateY.value = screenHeight;
       isClosing.value = false;
       return;
     }
 
     isClosing.value = false;
-    translateY.value = SCREEN_HEIGHT;
+    translateY.value = screenHeight;
     translateY.value = withTiming(0, { duration: OPEN_DURATION });
-  }, [isClosing, translateY, visible]);
+  }, [isClosing, screenHeight, translateY, visible]);
 
   const panGesture = useMemo(
     () =>
@@ -95,7 +99,7 @@ export function BottomSheet({
             if (!isClosing.value) {
               isClosing.value = true;
               translateY.value = withTiming(
-                SCREEN_HEIGHT,
+                screenHeight,
                 { duration: CLOSE_DURATION },
                 (finished) => {
                   if (finished) {
@@ -109,7 +113,7 @@ export function BottomSheet({
 
           translateY.value = withTiming(0, { duration: RESET_DURATION });
         }),
-    [finishDismiss, isClosing, translateY],
+    [finishDismiss, isClosing, screenHeight, translateY],
   );
 
   const handleModalDismiss = useCallback(() => {
@@ -125,7 +129,16 @@ export function BottomSheet({
         style={styles.modalRoot}
       >
         <Animated.View style={[styles.sheetWrapper, animatedSheetStyle]}>
-          <Surface style={styles.sheet} elevation={2}>
+          <Surface
+            style={[
+              styles.sheet,
+              {
+                maxHeight: maxSheetHeight,
+                paddingBottom: sheetPaddingBottom,
+              },
+            ]}
+            elevation={2}
+          >
             <GestureDetector gesture={panGesture}>
               <View style={styles.handleArea}>
                 <View style={styles.handle} />
@@ -138,6 +151,7 @@ export function BottomSheet({
               style={styles.content}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.contentContainer}
+              keyboardShouldPersistTaps="handled"
             >
               {children}
             </ScrollView>
@@ -159,13 +173,13 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheetWrapper: {
-    maxHeight: "90%",
+    justifyContent: "flex-end",
   },
   sheet: {
+    flexShrink: 1,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 16,
-    paddingBottom: 24,
     overflow: "hidden",
   },
   handleArea: {
@@ -183,7 +197,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   content: {
-    flexGrow: 0,
     flexShrink: 1,
   },
   contentContainer: {

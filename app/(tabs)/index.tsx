@@ -3,21 +3,21 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    useWindowDimensions,
-    View,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import {
-    Button,
-    Card,
-    Chip,
-    FAB,
-    Text,
-    TextInput,
-    useTheme,
+  Button,
+  Card,
+  Chip,
+  FAB,
+  Text,
+  TextInput,
+  useTheme,
 } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -843,7 +843,10 @@ export default function HomeScreen() {
           style={[
             styles.summaryCard,
             styles.keepCard,
-            { backgroundColor: theme.colors.primaryContainer, marginBottom: 10 },
+            {
+              backgroundColor: theme.colors.primaryContainer,
+              marginBottom: 10,
+            },
           ]}
           mode="elevated"
         >
@@ -918,7 +921,7 @@ export default function HomeScreen() {
                   styles.keepCard,
                   { backgroundColor: theme.colors.secondaryContainer },
                 ]}
-                mode="outlined"
+                mode="elevated"
               >
                 <Card.Title title="Tasks due today" />
                 <Card.Content>
@@ -948,15 +951,34 @@ export default function HomeScreen() {
               style={[
                 styles.keepCard,
                 styles.actionCard,
-                { backgroundColor: theme.colors.tertiaryContainer, overflow: "hidden" },
+                {
+                  backgroundColor: theme.colors.tertiaryContainer,
+                  overflow: "hidden",
+                },
               ]}
               mode="contained"
               onPress={() => setAddAquariumOpen(true)}
             >
               <View style={styles.actionCardInner}>
-                <AquariumBackground tint={theme.colors.onTertiaryContainer + "30"} />
-                <Text variant="titleSmall" style={[styles.actionTitle, { color: theme.colors.onTertiaryContainer }]}>New aquarium</Text>
-                <Text variant="bodySmall" style={[styles.actionDescription, { color: theme.colors.onTertiaryContainer }]}>
+                <AquariumBackground
+                  tint={theme.colors.onTertiaryContainer + "30"}
+                />
+                <Text
+                  variant="titleSmall"
+                  style={[
+                    styles.actionTitle,
+                    { color: theme.colors.onTertiaryContainer },
+                  ]}
+                >
+                  New aquarium
+                </Text>
+                <Text
+                  variant="bodySmall"
+                  style={[
+                    styles.actionDescription,
+                    { color: theme.colors.onTertiaryContainer },
+                  ]}
+                >
                   Add tank size, setup date, and water type.
                 </Text>
               </View>
@@ -966,15 +988,34 @@ export default function HomeScreen() {
               style={[
                 styles.keepCard,
                 styles.actionCard,
-                { backgroundColor: theme.colors.secondaryContainer, overflow: "hidden" },
+                {
+                  backgroundColor: theme.colors.secondaryContainer,
+                  overflow: "hidden",
+                },
               ]}
               mode="contained"
               onPress={() => setAddAssetOpen(true)}
             >
               <View style={styles.actionCardInner}>
-                <AssetBackground tint={theme.colors.onSecondaryContainer + "30"} />
-                <Text variant="titleSmall" style={[styles.actionTitle, { color: theme.colors.onSecondaryContainer }]}>New asset</Text>
-                <Text variant="bodySmall" style={[styles.actionDescription, { color: theme.colors.onSecondaryContainer }]}>
+                <AssetBackground
+                  tint={theme.colors.onSecondaryContainer + "30"}
+                />
+                <Text
+                  variant="titleSmall"
+                  style={[
+                    styles.actionTitle,
+                    { color: theme.colors.onSecondaryContainer },
+                  ]}
+                >
+                  New asset
+                </Text>
+                <Text
+                  variant="bodySmall"
+                  style={[
+                    styles.actionDescription,
+                    { color: theme.colors.onSecondaryContainer },
+                  ]}
+                >
                   Register equipment and maintenance links.
                 </Text>
               </View>
@@ -986,15 +1027,34 @@ export default function HomeScreen() {
               style={[
                 styles.keepCard,
                 styles.actionCard,
-                { backgroundColor: theme.colors.primaryContainer, overflow: "hidden" },
+                {
+                  backgroundColor: theme.colors.primaryContainer,
+                  overflow: "hidden",
+                },
               ]}
               mode="contained"
               onPress={() => setAddLivestockOpen(true)}
             >
               <View style={styles.actionCardInner}>
-                <LivestockBackground tint={theme.colors.onPrimaryContainer + "30"} />
-                <Text variant="titleSmall" style={[styles.actionTitle, { color: theme.colors.onPrimaryContainer }]}>New livestock</Text>
-                <Text variant="bodySmall" style={[styles.actionDescription, { color: theme.colors.onPrimaryContainer }]}>
+                <LivestockBackground
+                  tint={theme.colors.onPrimaryContainer + "30"}
+                />
+                <Text
+                  variant="titleSmall"
+                  style={[
+                    styles.actionTitle,
+                    { color: theme.colors.onPrimaryContainer },
+                  ]}
+                >
+                  New livestock
+                </Text>
+                <Text
+                  variant="bodySmall"
+                  style={[
+                    styles.actionDescription,
+                    { color: theme.colors.onPrimaryContainer },
+                  ]}
+                >
                   Log species, quantity, and optional photo.
                 </Text>
               </View>
@@ -1004,15 +1064,34 @@ export default function HomeScreen() {
               style={[
                 styles.keepCard,
                 styles.actionCard,
-                { backgroundColor: theme.colors.surfaceVariant, overflow: "hidden" },
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  overflow: "hidden",
+                },
               ]}
               mode="contained"
               onPress={() => setAddConsumableOpen(true)}
             >
               <View style={styles.actionCardInner}>
-                <ConsumableBackground tint={theme.colors.onSurfaceVariant + "30"} />
-                <Text variant="titleSmall" style={[styles.actionTitle, { color: theme.colors.onSurfaceVariant }]}>New consumable</Text>
-                <Text variant="bodySmall" style={[styles.actionDescription, { color: theme.colors.onSurfaceVariant }]}>
+                <ConsumableBackground
+                  tint={theme.colors.onSurfaceVariant + "30"}
+                />
+                <Text
+                  variant="titleSmall"
+                  style={[
+                    styles.actionTitle,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  New consumable
+                </Text>
+                <Text
+                  variant="bodySmall"
+                  style={[
+                    styles.actionDescription,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
                   Track stock levels and reorder thresholds.
                 </Text>
               </View>
@@ -1020,384 +1099,590 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <Card style={styles.tankCard} mode="outlined">
-          <Card.Title
-            title="Parameter Analytics"
-            subtitle={`${selectedMetricLabel} trend (recent logs)`}
-          />
-          <Card.Content>
-            <ScrollableSegmentedButtons
-              value={chartAquariumId}
-              onValueChange={setSelectedAquariumId}
-              buttons={aquariums.map((aq) => ({
-                label: aq.name,
-                value: aq.id,
-              }))}
-            />
-            <ScrollableSegmentedButtons
-              value={selectedMetric}
-              onValueChange={(value) =>
-                setSelectedMetric(value as AnalyticMetricKey)
-              }
-              buttons={ANALYTIC_METRICS.map((metric) => ({
-                label: metric.label,
-                value: metric.value,
-              }))}
-              style={styles.metricSelector}
-            />
-            {chartData.length > 1 ? (
-              <View style={styles.chartWrap}>
-                <LineChart
-                  areaChart
-                  data={chartData}
-                  width={Math.max(220, width - 96)}
-                  spacing={28}
-                  color={METRIC_COLORS[selectedMetric]}
-                  startFillColor={METRIC_COLORS[selectedMetric]}
-                  endFillColor={METRIC_COLORS[selectedMetric]}
-                  startOpacity={0.22}
-                  endOpacity={0.04}
-                  hideDataPoints={false}
-                  dataPointsColor={METRIC_COLORS[selectedMetric]}
-                  yAxisTextStyle={styles.chartAxisLabel}
-                  xAxisLabelTextStyle={styles.chartAxisLabel}
-                  rulesColor="rgba(120,120,120,0.2)"
-                />
-                <Text variant="bodySmall" style={styles.chartUnitLabel}>
-                  Unit: {METRIC_UNITS[selectedMetric] || "value"}
-                </Text>
-              </View>
-            ) : (
-              <Text variant="bodyMedium" style={styles.chartEmpty}>
-                Need at least 2 {selectedMetricLabel} logs for charting.
+        <Card
+          style={[
+            styles.sectionShell,
+            styles.keepCard,
+            { backgroundColor: theme.colors.surface },
+          ]}
+          mode="elevated"
+        >
+          <Card.Content style={styles.sectionShellContent}>
+            <View style={styles.sectionHeader}>
+              <Text variant="titleMedium">Parameter analytics</Text>
+              <Text variant="bodySmall" style={styles.sectionDescription}>
+                Track recent chemistry shifts and compare trends across tanks.
               </Text>
-            )}
+            </View>
+
+            <Card
+              style={[
+                styles.tankCard,
+                styles.keepCard,
+                styles.sectionFeatureCard,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+              mode="contained"
+            >
+              <Card.Content>
+                <View style={styles.sectionChipRow}>
+                  <Chip compact icon="chart-line">
+                    {selectedMetricLabel} trend
+                  </Chip>
+                  <Chip compact icon="timeline-clock">
+                    Last 8 logs
+                  </Chip>
+                </View>
+                <ScrollableSegmentedButtons
+                  value={chartAquariumId}
+                  onValueChange={setSelectedAquariumId}
+                  buttons={aquariums.map((aq) => ({
+                    label: aq.name,
+                    value: aq.id,
+                  }))}
+                />
+                <ScrollableSegmentedButtons
+                  value={selectedMetric}
+                  onValueChange={(value) =>
+                    setSelectedMetric(value as AnalyticMetricKey)
+                  }
+                  buttons={ANALYTIC_METRICS.map((metric) => ({
+                    label: metric.label,
+                    value: metric.value,
+                  }))}
+                  style={styles.metricSelector}
+                />
+                {chartData.length > 1 ? (
+                  <View style={styles.chartWrap}>
+                    <LineChart
+                      areaChart
+                      data={chartData}
+                      width={Math.max(220, width - 96)}
+                      spacing={28}
+                      color={METRIC_COLORS[selectedMetric]}
+                      startFillColor={METRIC_COLORS[selectedMetric]}
+                      endFillColor={METRIC_COLORS[selectedMetric]}
+                      startOpacity={0.22}
+                      endOpacity={0.04}
+                      hideDataPoints={false}
+                      dataPointsColor={METRIC_COLORS[selectedMetric]}
+                      yAxisTextStyle={styles.chartAxisLabel}
+                      xAxisLabelTextStyle={styles.chartAxisLabel}
+                      rulesColor="rgba(120,120,120,0.2)"
+                    />
+                    <Text variant="bodySmall" style={styles.chartUnitLabel}>
+                      Unit: {METRIC_UNITS[selectedMetric] || "value"}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text variant="bodyMedium" style={styles.chartEmpty}>
+                    Need at least 2 {selectedMetricLabel} logs for charting.
+                  </Text>
+                )}
+              </Card.Content>
+            </Card>
           </Card.Content>
         </Card>
 
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          Livestock tracking
-        </Text>
+        <Card
+          style={[
+            styles.sectionShell,
+            styles.keepCard,
+            { backgroundColor: theme.colors.surface },
+          ]}
+          mode="elevated"
+        >
+          <Card.Content style={styles.sectionShellContent}>
+            <View style={styles.sectionHeader}>
+              <Text variant="titleMedium">Livestock tracking</Text>
+              <Text variant="bodySmall" style={styles.sectionDescription}>
+                Keep feeding, status, and breeding actions close to each record.
+              </Text>
+            </View>
 
-        {livestock.map((item) => {
-          const currentIndex = aquariums.findIndex(
-            (aq) => aq.id === item.aquariumId,
-          );
-          const fallbackTarget =
-            aquariums[(currentIndex + 1 + aquariums.length) % aquariums.length]
-              ?.id;
-          const feedingNote =
-            feedingNoteDraft[item.id] ?? item.dietaryNotes ?? "";
-          const livestockStatus =
-            livestockStatusDraft[item.id] ?? item.status ?? "active";
-          const livestockStatusNote = livestockStatusNoteDraft[item.id] ?? "";
-
-          return (
-            <Card key={item.id} style={styles.issueCard} mode="outlined">
-              <Card.Content>
-                <Text variant="titleSmall">
-                  {item.name} ({item.quantity})
-                </Text>
-                <Text variant="bodySmall" style={styles.issueMeta}>
-                  {item.species} •{" "}
-                  {aquariums.find((aq) => aq.id === item.aquariumId)?.name}
-                </Text>
-                <View style={styles.summaryRow}>
-                  <Chip compact>{item.kind}</Chip>
-                  <Chip compact>{item.status ?? "active"}</Chip>
-                </View>
-                {item.photoUri ? (
-                  <Image
-                    source={{ uri: item.photoUri }}
-                    style={styles.livestockPhoto}
-                  />
-                ) : null}
-                <TextInput
-                  mode="outlined"
-                  label="Feeding notes"
-                  value={feedingNote}
-                  onChangeText={(value) =>
-                    setFeedingNoteDraft((prev) => ({
-                      ...prev,
-                      [item.id]: value,
-                    }))
-                  }
-                  multiline
-                  numberOfLines={2}
-                  style={styles.issueResolutionInput}
-                />
-                <ScrollableSegmentedButtons
-                  value={livestockStatus}
-                  onValueChange={(value) =>
-                    setLivestockStatusDraft((prev) => ({
-                      ...prev,
-                      [item.id]: value as NonNullable<Livestock["status"]>,
-                    }))
-                  }
-                  buttons={[
-                    { label: "Active", value: "active" },
-                    { label: "Ill", value: "ill" },
-                    { label: "Deceased", value: "deceased" },
+            <View style={styles.sectionStack}>
+              {livestock.length === 0 ? (
+                <Card
+                  style={[
+                    styles.keepCard,
+                    styles.sectionFeatureCard,
+                    { backgroundColor: theme.colors.surfaceVariant },
                   ]}
-                  style={styles.issueStatusSelector}
-                />
-                <TextInput
-                  mode="outlined"
-                  label="Status note (optional)"
-                  value={livestockStatusNote}
-                  onChangeText={(value) =>
-                    setLivestockStatusNoteDraft((prev) => ({
-                      ...prev,
-                      [item.id]: value,
-                    }))
-                  }
-                  multiline
-                  numberOfLines={2}
-                  style={styles.issueResolutionInput}
-                />
-                <View style={styles.summaryRow}>
-                  <Button
-                    mode="contained-tonal"
-                    onPress={() =>
-                      setLivestockFeedingNotes(item.id, feedingNote.trim())
-                    }
-                  >
-                    Save feeding
-                  </Button>
-                  <Button
-                    mode="contained-tonal"
-                    onPress={() =>
-                      setLivestockStatus(
-                        item.id,
-                        livestockStatus,
-                        livestockStatusNote.trim() || undefined,
-                      )
-                    }
-                  >
-                    Save status
-                  </Button>
-                  <Button
-                    mode="contained-tonal"
-                    disabled={
-                      !fallbackTarget || fallbackTarget === item.aquariumId
-                    }
-                    onPress={() =>
-                      fallbackTarget
-                        ? transferLivestock(
-                            item.id,
-                            fallbackTarget,
-                            "Manual transfer",
-                          )
-                        : undefined
-                    }
-                  >
-                    Transfer
-                  </Button>
-                  <Button
-                    mode="contained-tonal"
-                    onPress={() =>
-                      addOffspring(item.id, {
-                        kind: item.kind,
-                        name: `${item.name} offspring`,
-                        species: item.species,
-                        quantity: 1,
-                        acquiredAt: new Date().toISOString(),
-                        status: "active",
-                      })
-                    }
-                  >
-                    Add offspring
-                  </Button>
-                </View>
-                <TextInput
-                  mode="outlined"
-                  label="Feeding task title"
-                  value={feedingTaskTitleDraft[item.id] ?? ""}
-                  onChangeText={(value) =>
-                    setFeedingTaskTitleDraft((prev) => ({
-                      ...prev,
-                      [item.id]: value,
-                    }))
-                  }
-                  style={styles.issueResolutionInput}
-                  placeholder={`Feed ${item.name}`}
-                />
-                <ScrollableSegmentedButtons
-                  value={feedingTaskFrequencyDraft[item.id] ?? "daily"}
-                  onValueChange={(value) =>
-                    setFeedingTaskFrequencyDraft((prev) => ({
-                      ...prev,
-                      [item.id]: value as TaskFrequency,
-                    }))
-                  }
-                  buttons={[
-                    { label: "Daily", value: "daily" },
-                    { label: "Weekly", value: "weekly" },
-                    { label: "Bi-weekly", value: "bi-weekly" },
-                    { label: "Monthly", value: "monthly" },
-                  ]}
-                  style={styles.issueStatusSelector}
-                />
-                <Button
-                  mode="contained-tonal"
-                  style={styles.issueSaveButton}
-                  onPress={() => {
-                    const customTitle = feedingTaskTitleDraft[item.id]?.trim();
-                    addLivestockFeedingTask({
-                      livestockId: item.id,
-                      title: customTitle || `Feed ${item.name}`,
-                      frequency: feedingTaskFrequencyDraft[item.id] ?? "daily",
-                      description:
-                        feedingNote.trim() ||
-                        item.dietaryNotes ||
-                        `Targeted feeding regimen for ${item.name}`,
-                    });
-
-                    setFeedingTaskTitleDraft((prev) => ({
-                      ...prev,
-                      [item.id]: "",
-                    }));
-                  }}
+                  mode="contained"
                 >
-                  Create feeding task
-                </Button>
-              </Card.Content>
-            </Card>
-          );
-        })}
-
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          Assets & consumables inventory
-        </Text>
-
-        {assets.map((asset) => (
-          <Card key={asset.id} style={styles.issueCard} mode="contained">
-            <Card.Content>
-              <Text variant="titleSmall">{asset.brandModel}</Text>
-              <Text variant="bodySmall" style={styles.issueMeta}>
-                {asset.category} •{" "}
-                {aquariums.find((aq) => aq.id === asset.aquariumId)?.name}
-              </Text>
-              <Text variant="bodySmall" style={styles.issueMeta}>
-                Purchased: {asset.purchasedAt ?? "-"}
-                {asset.price !== undefined ? ` • $${asset.price}` : ""}
-              </Text>
-              {asset.maintenanceTaskTemplateIds?.length ? (
-                <Text variant="bodySmall" style={styles.issueMeta}>
-                  Linked maintenance tasks:{" "}
-                  {asset.maintenanceTaskTemplateIds.length}
-                </Text>
+                  <Card.Content>
+                    <Text variant="bodyMedium">
+                      Add livestock to start tracking feeding notes, health, and
+                      transfers.
+                    </Text>
+                  </Card.Content>
+                </Card>
               ) : null}
-            </Card.Content>
-          </Card>
-        ))}
 
-        {consumables.map((consumable) => {
-          const low =
-            consumable.reorderAt !== undefined &&
-            consumable.remaining <= consumable.reorderAt;
+              {livestock.map((item, index) => {
+                const currentIndex = aquariums.findIndex(
+                  (aq) => aq.id === item.aquariumId,
+                );
+                const fallbackTarget =
+                  aquariums[
+                    (currentIndex + 1 + aquariums.length) % aquariums.length
+                  ]?.id;
+                const feedingNote =
+                  feedingNoteDraft[item.id] ?? item.dietaryNotes ?? "";
+                const livestockStatus =
+                  livestockStatusDraft[item.id] ?? item.status ?? "active";
+                const livestockStatusNote =
+                  livestockStatusNoteDraft[item.id] ?? "";
 
-          return (
-            <Card key={consumable.id} style={styles.issueCard} mode="contained">
-              <Card.Content>
-                <Text variant="titleSmall">{consumable.name}</Text>
-                <Text variant="bodySmall" style={styles.issueMeta}>
-                  {consumable.remaining}
-                  {consumable.unit} remaining •{" "}
-                  {low ? "Reorder soon" : "Stock OK"}
-                </Text>
-                <Button
-                  mode="contained"
-                  style={styles.issueSaveButton}
-                  onPress={() =>
-                    consumeConsumable(consumable.id, 1, "Daily usage")
-                  }
-                >
-                  Use 1 {consumable.unit}
-                </Button>
-              </Card.Content>
-            </Card>
-          );
-        })}
+                const cardBackground =
+                  index % 2 === 0
+                    ? theme.colors.tertiaryContainer
+                    : theme.colors.secondaryContainer;
 
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          Issue tracking
-        </Text>
-        {issues.length === 0 ? (
-          <Card mode="outlined">
-            <Card.Content>
-              <Text variant="bodyMedium">
-                No issues logged yet. Great news for your tanks 🐠
+                return (
+                  <Card
+                    key={item.id}
+                    style={[
+                      styles.issueCard,
+                      styles.sectionItemCard,
+                      styles.keepCard,
+                      { backgroundColor: cardBackground },
+                    ]}
+                    mode="contained"
+                  >
+                    <Card.Content>
+                      <Text variant="titleSmall">
+                        {item.name} ({item.quantity})
+                      </Text>
+                      <Text variant="bodySmall" style={styles.issueMeta}>
+                        {item.species} •{" "}
+                        {
+                          aquariums.find((aq) => aq.id === item.aquariumId)
+                            ?.name
+                        }
+                      </Text>
+                      <View style={styles.summaryRow}>
+                        <Chip compact>{item.kind}</Chip>
+                        <Chip compact>{item.status ?? "active"}</Chip>
+                      </View>
+                      {item.photoUri ? (
+                        <Image
+                          source={{ uri: item.photoUri }}
+                          style={styles.livestockPhoto}
+                        />
+                      ) : null}
+                      <TextInput
+                        mode="outlined"
+                        label="Feeding notes"
+                        value={feedingNote}
+                        onChangeText={(value) =>
+                          setFeedingNoteDraft((prev) => ({
+                            ...prev,
+                            [item.id]: value,
+                          }))
+                        }
+                        multiline
+                        numberOfLines={2}
+                        style={styles.issueResolutionInput}
+                      />
+                      <ScrollableSegmentedButtons
+                        value={livestockStatus}
+                        onValueChange={(value) =>
+                          setLivestockStatusDraft((prev) => ({
+                            ...prev,
+                            [item.id]: value as NonNullable<
+                              Livestock["status"]
+                            >,
+                          }))
+                        }
+                        buttons={[
+                          { label: "Active", value: "active" },
+                          { label: "Ill", value: "ill" },
+                          { label: "Deceased", value: "deceased" },
+                        ]}
+                        style={styles.issueStatusSelector}
+                      />
+                      <TextInput
+                        mode="outlined"
+                        label="Status note (optional)"
+                        value={livestockStatusNote}
+                        onChangeText={(value) =>
+                          setLivestockStatusNoteDraft((prev) => ({
+                            ...prev,
+                            [item.id]: value,
+                          }))
+                        }
+                        multiline
+                        numberOfLines={2}
+                        style={styles.issueResolutionInput}
+                      />
+                      <View style={styles.summaryRow}>
+                        <Button
+                          mode="contained-tonal"
+                          onPress={() =>
+                            setLivestockFeedingNotes(
+                              item.id,
+                              feedingNote.trim(),
+                            )
+                          }
+                        >
+                          Save feeding
+                        </Button>
+                        <Button
+                          mode="contained-tonal"
+                          onPress={() =>
+                            setLivestockStatus(
+                              item.id,
+                              livestockStatus,
+                              livestockStatusNote.trim() || undefined,
+                            )
+                          }
+                        >
+                          Save status
+                        </Button>
+                        <Button
+                          mode="contained-tonal"
+                          disabled={
+                            !fallbackTarget ||
+                            fallbackTarget === item.aquariumId
+                          }
+                          onPress={() =>
+                            fallbackTarget
+                              ? transferLivestock(
+                                  item.id,
+                                  fallbackTarget,
+                                  "Manual transfer",
+                                )
+                              : undefined
+                          }
+                        >
+                          Transfer
+                        </Button>
+                        <Button
+                          mode="contained-tonal"
+                          onPress={() =>
+                            addOffspring(item.id, {
+                              kind: item.kind,
+                              name: `${item.name} offspring`,
+                              species: item.species,
+                              quantity: 1,
+                              acquiredAt: new Date().toISOString(),
+                              status: "active",
+                            })
+                          }
+                        >
+                          Add offspring
+                        </Button>
+                      </View>
+                      <TextInput
+                        mode="outlined"
+                        label="Feeding task title"
+                        value={feedingTaskTitleDraft[item.id] ?? ""}
+                        onChangeText={(value) =>
+                          setFeedingTaskTitleDraft((prev) => ({
+                            ...prev,
+                            [item.id]: value,
+                          }))
+                        }
+                        style={styles.issueResolutionInput}
+                        placeholder={`Feed ${item.name}`}
+                      />
+                      <ScrollableSegmentedButtons
+                        value={feedingTaskFrequencyDraft[item.id] ?? "daily"}
+                        onValueChange={(value) =>
+                          setFeedingTaskFrequencyDraft((prev) => ({
+                            ...prev,
+                            [item.id]: value as TaskFrequency,
+                          }))
+                        }
+                        buttons={[
+                          { label: "Daily", value: "daily" },
+                          { label: "Weekly", value: "weekly" },
+                          { label: "Bi-weekly", value: "bi-weekly" },
+                          { label: "Monthly", value: "monthly" },
+                        ]}
+                        style={styles.issueStatusSelector}
+                      />
+                      <Button
+                        mode="contained-tonal"
+                        style={styles.issueSaveButton}
+                        onPress={() => {
+                          const customTitle =
+                            feedingTaskTitleDraft[item.id]?.trim();
+                          addLivestockFeedingTask({
+                            livestockId: item.id,
+                            title: customTitle || `Feed ${item.name}`,
+                            frequency:
+                              feedingTaskFrequencyDraft[item.id] ?? "daily",
+                            description:
+                              feedingNote.trim() ||
+                              item.dietaryNotes ||
+                              `Targeted feeding regimen for ${item.name}`,
+                          });
+
+                          setFeedingTaskTitleDraft((prev) => ({
+                            ...prev,
+                            [item.id]: "",
+                          }));
+                        }}
+                      >
+                        Create feeding task
+                      </Button>
+                    </Card.Content>
+                  </Card>
+                );
+              })}
+            </View>
+          </Card.Content>
+        </Card>
+
+        <Card
+          style={[
+            styles.sectionShell,
+            styles.keepCard,
+            { backgroundColor: theme.colors.surface },
+          ]}
+          mode="elevated"
+        >
+          <Card.Content style={styles.sectionShellContent}>
+            <View style={styles.sectionHeader}>
+              <Text variant="titleMedium">Assets & consumables inventory</Text>
+              <Text variant="bodySmall" style={styles.sectionDescription}>
+                See equipment coverage and stock usage in the same visual rhythm
+                as the rest of the dashboard.
               </Text>
-            </Card.Content>
-          </Card>
-        ) : null}
+            </View>
 
-        {issues.map((issue) => {
-          const currentStatus = issueStatusDraft[issue.id] ?? issue.status;
-          const resolutionNote =
-            resolutionNoteDraft[issue.id] ?? issue.resolutionNote ?? "";
-
-          return (
-            <Card key={issue.id} style={styles.issueCard} mode="outlined">
-              <Card.Content>
-                <Text variant="titleSmall">{issue.title}</Text>
-                <Text variant="bodySmall" style={styles.issueMeta}>
-                  {aquariums.find((aq) => aq.id === issue.aquariumId)?.name ??
-                    "Unknown tank"}{" "}
-                  • Logged {new Date(issue.createdAt).toLocaleString()}
+            <View style={styles.sectionStack}>
+              <View style={styles.sectionSubgroup}>
+                <Text variant="labelLarge" style={styles.sectionLabel}>
+                  Assets
                 </Text>
-
-                <ScrollableSegmentedButtons
-                  value={currentStatus}
-                  onValueChange={(value) =>
-                    setIssueStatusDraft((prev) => ({
-                      ...prev,
-                      [issue.id]: value as IssueStatus,
-                    }))
-                  }
-                  buttons={[
-                    { label: "Open", value: "open" },
-                    { label: "Monitoring", value: "monitoring" },
-                    { label: "Resolved", value: "resolved" },
-                  ]}
-                  style={styles.issueStatusSelector}
-                />
-
-                {currentStatus === "resolved" ? (
-                  <TextInput
-                    mode="outlined"
-                    label="Resolution note"
-                    value={resolutionNote}
-                    onChangeText={(value) =>
-                      setResolutionNoteDraft((prev) => ({
-                        ...prev,
-                        [issue.id]: value,
-                      }))
-                    }
-                    multiline
-                    numberOfLines={3}
-                    style={styles.issueResolutionInput}
-                  />
+                {assets.length === 0 ? (
+                  <Card
+                    style={[
+                      styles.keepCard,
+                      styles.sectionFeatureCard,
+                      { backgroundColor: theme.colors.surfaceVariant },
+                    ]}
+                    mode="contained"
+                  >
+                    <Card.Content>
+                      <Text variant="bodyMedium">
+                        No equipment registered yet.
+                      </Text>
+                    </Card.Content>
+                  </Card>
                 ) : null}
+                {assets.map((asset) => (
+                  <Card
+                    key={asset.id}
+                    style={[
+                      styles.issueCard,
+                      styles.sectionItemCard,
+                      styles.keepCard,
+                      { backgroundColor: theme.colors.secondaryContainer },
+                    ]}
+                    mode="contained"
+                  >
+                    <Card.Content>
+                      <Text variant="titleSmall">{asset.brandModel}</Text>
+                      <Text variant="bodySmall" style={styles.issueMeta}>
+                        {asset.category} •{" "}
+                        {
+                          aquariums.find((aq) => aq.id === asset.aquariumId)
+                            ?.name
+                        }
+                      </Text>
+                      <Text variant="bodySmall" style={styles.issueMeta}>
+                        Purchased: {asset.purchasedAt ?? "-"}
+                        {asset.price !== undefined ? ` • $${asset.price}` : ""}
+                      </Text>
+                      {asset.maintenanceTaskTemplateIds?.length ? (
+                        <Text variant="bodySmall" style={styles.issueMeta}>
+                          Linked maintenance tasks:{" "}
+                          {asset.maintenanceTaskTemplateIds.length}
+                        </Text>
+                      ) : null}
+                    </Card.Content>
+                  </Card>
+                ))}
+              </View>
 
-                <Button
+              <View style={styles.sectionSubgroup}>
+                <Text variant="labelLarge" style={styles.sectionLabel}>
+                  Consumables
+                </Text>
+                {consumables.length === 0 ? (
+                  <Card
+                    style={[
+                      styles.keepCard,
+                      styles.sectionFeatureCard,
+                      { backgroundColor: theme.colors.surfaceVariant },
+                    ]}
+                    mode="contained"
+                  >
+                    <Card.Content>
+                      <Text variant="bodyMedium">
+                        No consumables added yet.
+                      </Text>
+                    </Card.Content>
+                  </Card>
+                ) : null}
+                {consumables.map((consumable) => {
+                  const low =
+                    consumable.reorderAt !== undefined &&
+                    consumable.remaining <= consumable.reorderAt;
+
+                  return (
+                    <Card
+                      key={consumable.id}
+                      style={[
+                        styles.issueCard,
+                        styles.sectionItemCard,
+                        styles.keepCard,
+                        { backgroundColor: theme.colors.primaryContainer },
+                      ]}
+                      mode="contained"
+                    >
+                      <Card.Content>
+                        <Text variant="titleSmall">{consumable.name}</Text>
+                        <Text variant="bodySmall" style={styles.issueMeta}>
+                          {consumable.remaining}
+                          {consumable.unit} remaining •{" "}
+                          {low ? "Reorder soon" : "Stock OK"}
+                        </Text>
+                        <Button
+                          mode="contained"
+                          style={styles.issueSaveButton}
+                          onPress={() =>
+                            consumeConsumable(consumable.id, 1, "Daily usage")
+                          }
+                        >
+                          Use 1 {consumable.unit}
+                        </Button>
+                      </Card.Content>
+                    </Card>
+                  );
+                })}
+              </View>
+            </View>
+          </Card.Content>
+        </Card>
+
+        <Card
+          style={[
+            styles.sectionShell,
+            styles.keepCard,
+            { backgroundColor: theme.colors.surface },
+          ]}
+          mode="elevated"
+        >
+          <Card.Content style={styles.sectionShellContent}>
+            <View style={styles.sectionHeader}>
+              <Text variant="titleMedium">Issue tracking</Text>
+              <Text variant="bodySmall" style={styles.sectionDescription}>
+                Manage open problems with the same quick-edit flow, now in a
+                layout that matches the top-of-page cards.
+              </Text>
+            </View>
+
+            <View style={styles.sectionStack}>
+              {issues.length === 0 ? (
+                <Card
+                  style={[
+                    styles.keepCard,
+                    styles.sectionFeatureCard,
+                    { backgroundColor: theme.colors.surfaceVariant },
+                  ]}
                   mode="contained"
-                  style={styles.issueSaveButton}
-                  onPress={() =>
-                    setIssueStatus(
-                      issue.id,
-                      currentStatus,
-                      resolutionNote.trim() || undefined,
-                    )
-                  }
                 >
-                  Save issue update
-                </Button>
-              </Card.Content>
-            </Card>
-          );
-        })}
+                  <Card.Content>
+                    <Text variant="bodyMedium">
+                      No issues logged yet. Great news for your tanks.
+                    </Text>
+                  </Card.Content>
+                </Card>
+              ) : null}
+
+              {issues.map((issue) => {
+                const currentStatus =
+                  issueStatusDraft[issue.id] ?? issue.status;
+                const resolutionNote =
+                  resolutionNoteDraft[issue.id] ?? issue.resolutionNote ?? "";
+
+                return (
+                  <Card
+                    key={issue.id}
+                    style={[
+                      styles.issueCard,
+                      styles.sectionItemCard,
+                      styles.keepCard,
+                      { backgroundColor: theme.colors.surfaceVariant },
+                    ]}
+                    mode="contained"
+                  >
+                    <Card.Content>
+                      <Text variant="titleSmall">{issue.title}</Text>
+                      <Text variant="bodySmall" style={styles.issueMeta}>
+                        {aquariums.find((aq) => aq.id === issue.aquariumId)
+                          ?.name ?? "Unknown tank"}{" "}
+                        • Logged {new Date(issue.createdAt).toLocaleString()}
+                      </Text>
+
+                      <ScrollableSegmentedButtons
+                        value={currentStatus}
+                        onValueChange={(value) =>
+                          setIssueStatusDraft((prev) => ({
+                            ...prev,
+                            [issue.id]: value as IssueStatus,
+                          }))
+                        }
+                        buttons={[
+                          { label: "Open", value: "open" },
+                          { label: "Monitoring", value: "monitoring" },
+                          { label: "Resolved", value: "resolved" },
+                        ]}
+                        style={styles.issueStatusSelector}
+                      />
+
+                      {currentStatus === "resolved" ? (
+                        <TextInput
+                          mode="outlined"
+                          label="Resolution note"
+                          value={resolutionNote}
+                          onChangeText={(value) =>
+                            setResolutionNoteDraft((prev) => ({
+                              ...prev,
+                              [issue.id]: value,
+                            }))
+                          }
+                          multiline
+                          numberOfLines={3}
+                          style={styles.issueResolutionInput}
+                        />
+                      ) : null}
+
+                      <Button
+                        mode="contained"
+                        style={styles.issueSaveButton}
+                        onPress={() =>
+                          setIssueStatus(
+                            issue.id,
+                            currentStatus,
+                            resolutionNote.trim() || undefined,
+                          )
+                        }
+                      >
+                        Save issue update
+                      </Button>
+                    </Card.Content>
+                  </Card>
+                );
+              })}
+            </View>
+          </Card.Content>
+        </Card>
       </ScrollView>
 
       <BottomSheet
@@ -2193,9 +2478,42 @@ const styles = StyleSheet.create({
     marginVertical: 0,
     borderRadius: 24,
   },
+  sectionShell: {
+    marginTop: 8,
+    borderRadius: 28,
+  },
+  sectionShellContent: {
+    gap: 14,
+  },
+  sectionHeader: {
+    gap: 4,
+  },
+  sectionDescription: {
+    opacity: 0.74,
+    lineHeight: 18,
+  },
+  sectionFeatureCard: {
+    marginTop: 0,
+  },
   tankCard: {
     marginTop: 8,
     borderRadius: 24,
+  },
+  sectionChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionStack: {
+    gap: 12,
+  },
+  sectionSubgroup: {
+    gap: 10,
+  },
+  sectionLabel: {
+    opacity: 0.72,
+    letterSpacing: 0.4,
   },
   summaryRow: {
     flexDirection: "row",
@@ -2212,6 +2530,9 @@ const styles = StyleSheet.create({
   issueCard: {
     marginTop: 8,
     borderRadius: 24,
+  },
+  sectionItemCard: {
+    marginTop: 0,
   },
   issueMeta: {
     marginTop: 4,
