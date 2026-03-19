@@ -17,6 +17,7 @@ import {
   DashboardHero,
   DashboardScrollView,
 } from "@/components/ui/dashboard-shell";
+import { getCardTone } from "@/components/ui/card-tone";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { requestOpenRouterCompletion } from "@/services/assistant-ai";
@@ -32,12 +33,13 @@ import {
     AssistantMode,
 } from "@/services/assistant-prompts";
 import {
-    clearDailyReminderSchedule,
-    ensureReminderPermissions,
-    scheduleDailyReminder,
+  clearDailyReminderSchedule,
+  ensureReminderPermissions,
+  scheduleDailyReminder,
 } from "@/services/notifications";
 import { countDueTasks } from "@/services/scheduling";
 import { AssistantMemorySnippet } from "@/types/assistant";
+import { AppThemePreference } from "@/types/aquapt";
 
 type OpenRouterModel = {
   id: string;
@@ -93,6 +95,7 @@ const formatPricingPreview = (pricing?: OpenRouterModel["pricing"]) => {
 
 export default function SettingsScreen() {
   const theme = useTheme();
+  const primaryTone = getCardTone(theme, "primaryContainer");
   const {
     settings,
     aquariums,
@@ -107,6 +110,7 @@ export default function SettingsScreen() {
     saveApiKey,
     saveAiModel,
     saveAssistantMemoryEnabled,
+    saveThemePreference,
   } = useAquapt();
   const settingsForm = useForm({
     defaultValues: {
@@ -675,23 +679,58 @@ export default function SettingsScreen() {
               <Chip compact icon="brain">
                 {assistantMemoryEnabled ? "Memory on" : "Memory off"}
               </Chip>
-              <Chip compact icon="robot-outline">
-                {settings.aiModel || "No model"}
+              <Chip compact icon="theme-light-dark">
+                {settings.themePreference ?? "system"}
               </Chip>
             </>
           }
         />
 
         <Card
+          mode="elevated"
+          style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
+        >
+          <Card.Title
+            title="Appearance"
+            subtitle="Choose whether the app follows the system theme or stays in light or dark mode."
+          />
+          <Card.Content>
+            <View style={styles.modeRow}>
+              {([
+                { label: "System", value: "system" },
+                { label: "Light", value: "light" },
+                { label: "Dark", value: "dark" },
+              ] as const).map((option) => (
+                <Chip
+                  key={option.value}
+                  selected={(settings.themePreference ?? "system") === option.value}
+                  onPress={() =>
+                    saveThemePreference(option.value as AppThemePreference)
+                  }
+                >
+                  {option.label}
+                </Chip>
+              ))}
+            </View>
+            <Text variant="bodySmall" style={styles.helperText}>
+              Light mode is now available explicitly, and system mode keeps the
+              app synced with your device preference.
+            </Text>
+          </Card.Content>
+        </Card>
+
+        <Card
           mode="contained"
           style={[
             styles.primaryCard,
-            { backgroundColor: theme.colors.primaryContainer },
+            { backgroundColor: primaryTone.backgroundColor },
           ]}
         >
           <Card.Title
             title="OpenRouter API Key (BYOK)"
             subtitle="Stored in local encrypted-ish app storage context"
+            titleStyle={{ color: primaryTone.textColor }}
+            subtitleStyle={{ color: primaryTone.textColor, opacity: 0.8 }}
           />
           <Card.Content>
             <settingsForm.Field name="apiKey">
@@ -728,7 +767,10 @@ export default function SettingsScreen() {
                 Browse OpenRouter models
               </Button>
             </View>
-            <Text variant="bodySmall" style={styles.helperText}>
+            <Text
+              variant="bodySmall"
+              style={[styles.helperText, { color: primaryTone.textColor }]}
+            >
               Pick a model from the OpenRouter list in the bottom sheet, or type
               your own ID.
             </Text>
@@ -759,12 +801,18 @@ export default function SettingsScreen() {
                 Assistant memory OFF
               </Chip>
             </View>
-            <Text variant="bodySmall" style={styles.helperText}>
+            <Text
+              variant="bodySmall"
+              style={[styles.helperText, { color: primaryTone.textColor }]}
+            >
               When enabled, the assistant stores and retrieves relevant prior
               chat snippets locally to improve future responses.
             </Text>
             {savedAt ? (
-              <Text variant="bodySmall" style={styles.savedAt}>
+              <Text
+                variant="bodySmall"
+                style={[styles.savedAt, { color: primaryTone.textColor }]}
+              >
                 Saved: {savedAt}
               </Text>
             ) : null}

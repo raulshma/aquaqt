@@ -20,6 +20,7 @@ import {
   DashboardScrollView,
   DashboardSection,
 } from "@/components/ui/dashboard-shell";
+import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
@@ -365,40 +366,53 @@ export default function TimelineScreen() {
           title="Event stream"
           description="The latest cross-app activity, ordered most recent first."
         >
-          {filteredTimeline.map((event) => (
-            <Card
-              key={event.id}
-              style={[
-                styles.eventCard,
-                { backgroundColor: getEventBackground(event.type) },
-              ]}
-              mode="contained"
-            >
-              <Card.Content>
-                <View style={styles.eventHeader}>
-                  <Chip compact>{event.type}</Chip>
-                  <Text variant="labelSmall">
-                    {new Date(event.createdAt).toLocaleString()}
+          {filteredTimeline.map((event) => {
+            const backgroundColor = getEventBackground(event.type);
+            const textColor = getCardTextColorForBackground(
+              theme,
+              backgroundColor,
+            );
+
+            return (
+              <Card
+                key={event.id}
+                style={[styles.eventCard, { backgroundColor }]}
+                mode="contained"
+              >
+                <Card.Content>
+                  <View style={styles.eventHeader}>
+                    <Chip compact>{event.type}</Chip>
+                    <Text variant="labelSmall" style={{ color: textColor }}>
+                      {new Date(event.createdAt).toLocaleString()}
+                    </Text>
+                  </View>
+                  <Text
+                    variant="titleSmall"
+                    style={[styles.eventTitle, { color: textColor }]}
+                  >
+                    {event.title}
                   </Text>
-                </View>
-                <Text variant="titleSmall" style={styles.eventTitle}>
-                  {event.title}
-                </Text>
-                <Text variant="bodySmall" style={styles.aquariumName}>
-                  {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
-                </Text>
-                {event.description ? (
-                  <Text variant="bodyMedium">{event.description}</Text>
-                ) : null}
-                {event.photoUri ? (
-                  <Image
-                    source={{ uri: event.photoUri }}
-                    style={styles.eventPhoto}
-                  />
-                ) : null}
-              </Card.Content>
-            </Card>
-          ))}
+                  <Text
+                    variant="bodySmall"
+                    style={[styles.aquariumName, { color: textColor }]}
+                  >
+                    {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
+                  </Text>
+                  {event.description ? (
+                    <Text variant="bodyMedium" style={{ color: textColor }}>
+                      {event.description}
+                    </Text>
+                  ) : null}
+                  {event.photoUri ? (
+                    <Image
+                      source={{ uri: event.photoUri }}
+                      style={styles.eventPhoto}
+                    />
+                  ) : null}
+                </Card.Content>
+              </Card>
+            );
+          })}
 
           {filteredTimeline.length === 0 ? (
             <Card

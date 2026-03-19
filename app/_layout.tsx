@@ -1,9 +1,9 @@
 import "react-native-gesture-handler";
 import { useMaterial3Theme } from "@pchmn/expo-material3-theme";
 import {
-    DarkTheme,
-    DefaultTheme,
-    ThemeProvider,
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
 } from "@react-navigation/native";
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -33,6 +33,17 @@ registerTranslation("en", en);
 const KEEP_SOURCE_COLOR = "#F9AB00";
 
 export default function RootLayout() {
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AquaptProvider>
+        <ThemedRoot />
+      </AquaptProvider>
+    </GestureHandlerRootView>
+  );
+}
+
+function ThemedRoot() {
+  const { settings } = useAquapt();
   const colorScheme = useColorScheme();
   const { theme: materialTheme } = useMaterial3Theme({
     sourceColor: KEEP_SOURCE_COLOR,
@@ -40,7 +51,11 @@ export default function RootLayout() {
     colorFidelity: true,
   });
 
-  const isDark = colorScheme === "dark";
+  const resolvedColorScheme =
+    settings.themePreference && settings.themePreference !== "system"
+      ? settings.themePreference
+      : (colorScheme ?? "light");
+  const isDark = resolvedColorScheme === "dark";
   const materialColors = isDark ? materialTheme.dark : materialTheme.light;
 
   const navigationTheme = useMemo(
@@ -92,16 +107,12 @@ export default function RootLayout() {
   }, [isDark, materialTheme]);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={navigationTheme}>
-        <PaperProvider theme={paperTheme}>
-          <AquaptProvider>
-            <AppShell />
-          </AquaptProvider>
-        </PaperProvider>
-        <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-      </ThemeProvider>
-    </GestureHandlerRootView>
+    <ThemeProvider value={navigationTheme}>
+      <PaperProvider theme={paperTheme}>
+        <AppShell />
+      </PaperProvider>
+      <StatusBar style={resolvedColorScheme === "dark" ? "light" : "dark"} />
+    </ThemeProvider>
   );
 }
 

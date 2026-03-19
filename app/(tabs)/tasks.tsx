@@ -18,6 +18,7 @@ import {
   DashboardScrollView,
   DashboardSection,
 } from "@/components/ui/dashboard-shell";
+import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
@@ -251,35 +252,50 @@ export default function TasksScreen() {
             const targetLivestock = task.livestockId
               ? livestock.find((item) => item.id === task.livestockId)
               : undefined;
+            const backgroundColor = getKeepTone(index);
+            const textColor = getCardTextColorForBackground(
+              theme,
+              backgroundColor,
+            );
 
             return (
               <Card
                 key={key}
-                style={[
-                  styles.card,
-                  { backgroundColor: getKeepTone(index) },
-                ]}
+                style={[styles.card, { backgroundColor }]}
                 mode="contained"
               >
                 <Card.Content>
                   <View style={styles.titleRow}>
-                    <Text variant="titleMedium">{task.title}</Text>
+                    <Text variant="titleMedium" style={{ color: textColor }}>
+                      {task.title}
+                    </Text>
                     <Chip compact>{task.frequency}</Chip>
                   </View>
-                  <Text variant="bodySmall" style={styles.targetTank}>
+                  <Text
+                    variant="bodySmall"
+                    style={[styles.targetTank, { color: textColor }]}
+                  >
                     {getAquariumName(aquariumId)}
                   </Text>
                   {targetLivestock ? (
-                    <Text variant="bodySmall" style={styles.targetTank}>
+                    <Text
+                      variant="bodySmall"
+                      style={[styles.targetTank, { color: textColor }]}
+                    >
                       Target livestock: {targetLivestock.name}
                     </Text>
                   ) : null}
                   {task.description ? (
-                    <Text variant="bodyMedium">{task.description}</Text>
+                    <Text variant="bodyMedium" style={{ color: textColor }}>
+                      {task.description}
+                    </Text>
                   ) : null}
                   <Divider style={styles.divider} />
                   <View style={styles.actionsRow}>
-                    <Text variant="bodySmall" style={styles.lastDoneText}>
+                    <Text
+                      variant="bodySmall"
+                      style={[styles.lastDoneText, { color: textColor }]}
+                    >
                       Last done:{" "}
                       {doneAt ? new Date(doneAt).toLocaleString() : "Never"}
                     </Text>
@@ -338,24 +354,34 @@ export default function TasksScreen() {
           title="Latest dosing by tank"
           description="A quick dosing snapshot across every aquarium."
         >
-          {aquariums.map((aquarium, index) => (
-            <Card
-              key={aquarium.id}
-              style={[
-                styles.card,
-                { backgroundColor: getKeepTone(index) },
-              ]}
-              mode="contained"
-            >
-              <Card.Title title={aquarium.name} subtitle={aquarium.waterType} />
-              <Card.Content>
-                <Text variant="bodyMedium">
-                  {latestDosingByAquarium[aquarium.id] ??
-                    "No dosing recorded yet."}
-                </Text>
-              </Card.Content>
-            </Card>
-          ))}
+          {aquariums.map((aquarium, index) => {
+            const backgroundColor = getKeepTone(index);
+            const textColor = getCardTextColorForBackground(
+              theme,
+              backgroundColor,
+            );
+
+            return (
+              <Card
+                key={aquarium.id}
+                style={[styles.card, { backgroundColor }]}
+                mode="contained"
+              >
+                <Card.Title
+                  title={aquarium.name}
+                  subtitle={aquarium.waterType}
+                  titleStyle={{ color: textColor }}
+                  subtitleStyle={{ color: textColor, opacity: 0.8 }}
+                />
+                <Card.Content>
+                  <Text variant="bodyMedium" style={{ color: textColor }}>
+                    {latestDosingByAquarium[aquarium.id] ??
+                      "No dosing recorded yet."}
+                  </Text>
+                </Card.Content>
+              </Card>
+            );
+          })}
         </DashboardSection>
 
         <DashboardSection
@@ -382,27 +408,39 @@ export default function TasksScreen() {
               const targetLivestock = task?.livestockId
                 ? livestock.find((item) => item.id === task.livestockId)
                 : undefined;
+              const backgroundColor = getKeepTone(index);
+              const textColor = getCardTextColorForBackground(
+                theme,
+                backgroundColor,
+              );
 
               return (
                 <Card
                   key={execution.id}
-                  style={[
-                    styles.card,
-                    { backgroundColor: getKeepTone(index) },
-                  ]}
+                  style={[styles.card, { backgroundColor }]}
                   mode="contained"
                 >
                   <Card.Content>
-                    <Text variant="titleSmall">{task?.title ?? "Task"}</Text>
-                    <Text variant="bodySmall" style={styles.targetTank}>
+                    <Text variant="titleSmall" style={{ color: textColor }}>
+                      {task?.title ?? "Task"}
+                    </Text>
+                    <Text
+                      variant="bodySmall"
+                      style={[styles.targetTank, { color: textColor }]}
+                    >
                       {getAquariumName(execution.aquariumId)} •{" "}
                       {new Date(execution.completedAt).toLocaleString()}
                     </Text>
                     {execution.note ? (
-                      <Text variant="bodyMedium">{execution.note}</Text>
+                      <Text variant="bodyMedium" style={{ color: textColor }}>
+                        {execution.note}
+                      </Text>
                     ) : null}
                     {targetLivestock ? (
-                      <Text variant="bodySmall" style={styles.targetTank}>
+                      <Text
+                        variant="bodySmall"
+                        style={[styles.targetTank, { color: textColor }]}
+                      >
                         Target livestock: {targetLivestock.name}
                       </Text>
                     ) : null}

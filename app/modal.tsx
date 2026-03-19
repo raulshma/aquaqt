@@ -7,12 +7,14 @@ import {
   DashboardScrollView,
   DashboardSection,
 } from "@/components/ui/dashboard-shell";
+import { getCardTone } from "@/components/ui/card-tone";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 
 export default function ModalScreen() {
   const theme = useTheme();
+  const actionTone = getCardTone(theme, "surfaceVariant");
   const { aquariums, taskTemplates, taskExecutions, issues, parameterLogs } =
     useAquapt();
 
@@ -60,16 +62,16 @@ export default function ModalScreen() {
       >
         <Card
           mode="contained"
-          style={[styles.actionCard, { backgroundColor: theme.colors.surfaceVariant }]}
+          style={[styles.actionCard, { backgroundColor: actionTone.backgroundColor }]}
         >
           <Card.Content style={styles.actionContent}>
-            <Text variant="bodyMedium">
+            <Text variant="bodyMedium" style={{ color: actionTone.textColor }}>
               Complete due tasks first to keep schedule drift low.
             </Text>
-            <Text variant="bodyMedium">
+            <Text variant="bodyMedium" style={{ color: actionTone.textColor }}>
               Resolve safety alerts before adding livestock.
             </Text>
-            <Text variant="bodyMedium">
+            <Text variant="bodyMedium" style={{ color: actionTone.textColor }}>
               Close open issues with resolution notes for better diagnostics.
             </Text>
           </Card.Content>

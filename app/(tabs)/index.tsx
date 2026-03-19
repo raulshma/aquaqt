@@ -36,6 +36,7 @@ import {
   LivestockBackground,
 } from "@/components/illustrations/AnimatedCardBackgrounds";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
@@ -157,17 +158,25 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
   nitrateTrend,
   onEdit,
 }: AquariumOverviewCardProps) {
+  const theme = useTheme();
+  const textColor = getCardTextColorForBackground(theme, backgroundColor);
+
   return (
     <Card style={[styles.keepCard, { backgroundColor }]} mode="contained">
       <Card.Title
         title={aquarium.name}
         subtitle={`${aquarium.volumeLiters}L • ${aquarium.waterType}`}
+        titleStyle={{ color: textColor }}
+        subtitleStyle={{ color: textColor, opacity: 0.8 }}
       />
       <Card.Content>
-        <Text variant="bodyMedium">
+        <Text variant="bodyMedium" style={{ color: textColor }}>
           Latest parameters: {latestParameterSummary}
         </Text>
-        <Text variant="bodySmall" style={styles.issueMeta}>
+        <Text
+          variant="bodySmall"
+          style={[styles.issueMeta, { color: textColor }]}
+        >
           {aquarium.dimensions} • Setup {aquarium.setupDate}
           {aquarium.investmentCost !== undefined
             ? ` • $${aquarium.investmentCost}`
@@ -257,6 +266,9 @@ const LivestockCard = memo(function LivestockCard({
   addOffspring,
   addLivestockFeedingTask,
 }: LivestockCardProps) {
+  const theme = useTheme();
+  const textColor = getCardTextColorForBackground(theme, cardBackground);
+
   return (
     <Card
       style={[
@@ -268,10 +280,13 @@ const LivestockCard = memo(function LivestockCard({
       mode="contained"
     >
       <Card.Content>
-        <Text variant="titleSmall">
+        <Text variant="titleSmall" style={{ color: textColor }}>
           {item.name} ({item.quantity})
         </Text>
-        <Text variant="bodySmall" style={styles.issueMeta}>
+        <Text
+          variant="bodySmall"
+          style={[styles.issueMeta, { color: textColor }]}
+        >
           {item.species} • {aquariumName}
         </Text>
         <View style={styles.summaryRow}>
@@ -445,6 +460,9 @@ const IssueCard = memo(function IssueCard({
   setIssueStatus,
   backgroundColor,
 }: IssueCardProps) {
+  const theme = useTheme();
+  const textColor = getCardTextColorForBackground(theme, backgroundColor);
+
   return (
     <Card
       style={[
@@ -456,8 +474,13 @@ const IssueCard = memo(function IssueCard({
       mode="contained"
     >
       <Card.Content>
-        <Text variant="titleSmall">{issue.title}</Text>
-        <Text variant="bodySmall" style={styles.issueMeta}>
+        <Text variant="titleSmall" style={{ color: textColor }}>
+          {issue.title}
+        </Text>
+        <Text
+          variant="bodySmall"
+          style={[styles.issueMeta, { color: textColor }]}
+        >
           {aquariumName} • Logged {new Date(issue.createdAt).toLocaleString()}
         </Text>
 
@@ -1209,6 +1232,18 @@ export default function HomeScreen() {
     ];
     return keepTones[cardIndex % keepTones.length];
   };
+  const primarySummaryTextColor = getCardTextColorForBackground(
+    theme,
+    theme.colors.primaryContainer,
+  );
+  const errorSummaryTextColor = getCardTextColorForBackground(
+    theme,
+    theme.colors.errorContainer,
+  );
+  const secondarySummaryTextColor = getCardTextColorForBackground(
+    theme,
+    theme.colors.secondaryContainer,
+  );
 
   return (
     <>
@@ -1235,7 +1270,9 @@ export default function HomeScreen() {
           mode="elevated"
         >
           <Card.Content>
-            <Text variant="titleMedium">Today at a glance</Text>
+            <Text variant="titleMedium" style={{ color: primarySummaryTextColor }}>
+              Today at a glance
+            </Text>
             <View style={styles.summaryRow}>
               <Chip compact icon="fish">
                 {aquariums.length} Tanks
@@ -1267,7 +1304,10 @@ export default function HomeScreen() {
                 ]}
                 mode="outlined"
               >
-                <Card.Title title="Water safety alerts" />
+                <Card.Title
+                  title="Water safety alerts"
+                  titleStyle={{ color: errorSummaryTextColor }}
+                />
                 <Card.Content>
                   <View style={styles.summaryRow}>
                     {aquariums.flatMap((aquarium) =>
@@ -1322,7 +1362,10 @@ export default function HomeScreen() {
                 ]}
                 mode="elevated"
               >
-                <Card.Title title="Tasks due today" />
+                <Card.Title
+                  title="Tasks due today"
+                  titleStyle={{ color: secondarySummaryTextColor }}
+                />
                 <Card.Content>
                   <View style={styles.summaryRow}>
                     {pendingTasksToday.slice(0, 6).map((entry) => (

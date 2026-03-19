@@ -14,6 +14,8 @@ export type TimelineEventType =
   | "asset"
   | "consumable";
 
+export type AppThemePreference = "system" | "light" | "dark";
+
 export interface Aquarium {
   id: string;
   name: string;
@@ -139,4 +141,5 @@ export interface AppSettings {
   notificationsEnabled?: boolean;
   reminderHour?: number;
   assistantMemoryEnabled?: boolean;
+  themePreference?: AppThemePreference;
 }

@@ -16,6 +16,7 @@ import {
     savePersistedState,
 } from "@/services/persistence";
 import {
+    AppThemePreference,
     AppSettings,
     Aquarium,
     Asset,
@@ -131,6 +132,7 @@ interface AquaptContextValue {
   saveApiKey: (value: string) => void;
   saveAiModel: (value: string) => void;
   saveAssistantMemoryEnabled: (value: boolean) => void;
+  saveThemePreference: (value: AppThemePreference) => void;
 }
 
 const AquaptContext = createContext<AquaptContextValue | null>(null);
@@ -154,6 +156,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     notificationsEnabled: false,
     reminderHour: 8,
     assistantMemoryEnabled: true,
+    themePreference: "system",
   });
   const hasHydratedOnceRef = useRef(false);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -193,6 +196,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           reminderHour: persisted.settings?.reminderHour ?? 8,
           assistantMemoryEnabled:
             persisted.settings?.assistantMemoryEnabled ?? true,
+          themePreference: persisted.settings?.themePreference ?? "system",
         });
       } catch (error) {
         console.warn("Persistence bootstrap failed", error);
@@ -563,6 +567,10 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     setSettings((prev) => ({ ...prev, assistantMemoryEnabled: value }));
   }, []);
 
+  const saveThemePreference = useCallback((value: AppThemePreference) => {
+    setSettings((prev) => ({ ...prev, themePreference: value }));
+  }, []);
+
   const addLivestock = useCallback((input: Omit<Livestock, "id">) => {
     const livestockItem: Livestock = {
       ...input,
@@ -880,6 +888,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
                 assistantMemoryEnabled:
                   (parsed.settings as AppSettings).assistantMemoryEnabled ??
                   true,
+                themePreference:
+                  (parsed.settings as AppSettings).themePreference ?? "system",
               }
             : {
                 openRouterApiKey: "",
@@ -887,6 +897,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
                 notificationsEnabled: false,
                 reminderHour: 8,
                 assistantMemoryEnabled: true,
+                themePreference: "system",
               },
       };
 
@@ -956,6 +967,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       saveApiKey,
       saveAiModel,
       saveAssistantMemoryEnabled,
+      saveThemePreference,
     }),
     [
       isHydrated,
@@ -997,6 +1009,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       saveApiKey,
       saveAiModel,
       saveAssistantMemoryEnabled,
+      saveThemePreference,
     ],
   );
 
