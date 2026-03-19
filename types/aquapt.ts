@@ -161,6 +161,7 @@ export interface TimelineEvent {
 export interface AppSettings {
   openRouterApiKey: string;
   aiModel: string;
+  assistantMemoryModel?: string;
   notificationsEnabled?: boolean;
   reminderHour?: number;
   assistantMemoryEnabled?: boolean;

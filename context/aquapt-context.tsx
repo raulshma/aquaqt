@@ -1,68 +1,71 @@
 import {
-    createContext,
-    ReactNode,
-    useCallback,
-    useContext,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 
 import {
-    loadBackupMasterKey,
-    loadBackupS3Credentials,
-    saveBackupMasterKey,
-    saveBackupS3Credentials,
+  loadBackupMasterKey,
+  loadBackupS3Credentials,
+  saveBackupMasterKey,
+  saveBackupS3Credentials,
 } from "@/services/backup-secrets";
 import {
-    buildVersionedBackupObjectKey,
-    cleanupVersionedBackups,
-    createBackupEnvelope,
-    decryptBackupEnvelope,
-    downloadEncryptedBackupFromS3,
-    encryptBackupEnvelope,
-    getBackupDateStamp,
-    uploadEncryptedBackupToS3,
+  buildVersionedBackupObjectKey,
+  cleanupVersionedBackups,
+  createBackupEnvelope,
+  decryptBackupEnvelope,
+  downloadEncryptedBackupFromS3,
+  encryptBackupEnvelope,
+  getBackupDateStamp,
+  uploadEncryptedBackupToS3,
 } from "@/services/backup-sync";
 import {
-    createEntityRef,
-    entityRefEquals,
-    normalizeTimelineEvents,
+  createEntityRef,
+  entityRefEquals,
+  normalizeTimelineEvents,
 } from "@/services/entity-links";
 import {
-    applyRegionalDefaults,
-    resolveManualRegionalSettings,
+  applyRegionalDefaults,
+  resolveManualRegionalSettings,
 } from "@/services/localization";
 import {
-    initPersistence,
-    loadPersistedState,
-    PersistedAppState,
-    savePersistedState,
+  initPersistence,
+  loadPersistedState,
+  PersistedAppState,
+  savePersistedState,
 } from "@/services/persistence";
 import {
-    AppSettings,
-    AppThemePreference,
-    Aquarium,
-    Asset,
-    Consumable,
-    DosingLog,
-    Issue,
-    Livestock,
-    Memo,
-    TaskExecution,
-    TaskFrequency,
-    TaskTemplate,
-    TimelineEvent,
-    WaterParameterLog,
-    WaterParameters,
+  AppSettings,
+  AppThemePreference,
+  Aquarium,
+  Asset,
+  Consumable,
+  DosingLog,
+  Issue,
+  Livestock,
+  Memo,
+  TaskExecution,
+  TaskFrequency,
+  TaskTemplate,
+  TimelineEvent,
+  WaterParameterLog,
+  WaterParameters,
 } from "@/types/aquapt";
+
+const AI_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+const AI_ASSISTANT_MEMORY_MODEL = "arcee-ai/trinity-mini:free";
 
 const nowId = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const dedupeEntityRefs = (
-  ...refs: Array<ReturnType<typeof createEntityRef> | undefined>
+  ...refs: (ReturnType<typeof createEntityRef> | undefined)[]
 ) =>
   refs
     .filter((ref): ref is ReturnType<typeof createEntityRef> => !!ref)
@@ -77,7 +80,7 @@ const dedupeEntityRefs = (
 
 const aquariumRelatedRefs = (
   aquariumId: string,
-  ...refs: Array<ReturnType<typeof createEntityRef> | undefined>
+  ...refs: (ReturnType<typeof createEntityRef> | undefined)[]
 ) =>
   dedupeEntityRefs(
     createEntityRef("aquarium", aquariumId, aquariumId),
@@ -87,7 +90,8 @@ const aquariumRelatedRefs = (
 const createDefaultSettings = (): AppSettings =>
   applyRegionalDefaults({
     openRouterApiKey: "",
-    aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
+    aiModel: AI_MODEL,
+    assistantMemoryModel: AI_ASSISTANT_MEMORY_MODEL,
     notificationsEnabled: false,
     reminderHour: 8,
     assistantMemoryEnabled: true,
@@ -111,7 +115,11 @@ const createDefaultSettings = (): AppSettings =>
 const buildAppSettings = (persisted?: Partial<AppSettings>): AppSettings =>
   applyRegionalDefaults({
     openRouterApiKey: persisted?.openRouterApiKey ?? "",
-    aiModel: persisted?.aiModel ?? "nvidia/nemotron-3-super-120b-a12b:free",
+    aiModel: persisted?.aiModel ?? AI_MODEL,
+    assistantMemoryModel:
+      persisted?.assistantMemoryModel ??
+      persisted?.aiModel ??
+      AI_ASSISTANT_MEMORY_MODEL,
     notificationsEnabled: persisted?.notificationsEnabled ?? false,
     reminderHour: persisted?.reminderHour ?? 8,
     assistantMemoryEnabled: persisted?.assistantMemoryEnabled ?? true,
@@ -273,6 +281,7 @@ interface AquaptContextValue {
   }>;
   saveApiKey: (value: string) => void;
   saveAiModel: (value: string) => void;
+  saveAssistantMemoryModel: (value: string) => void;
   saveAssistantMemoryEnabled: (value: boolean) => void;
   saveThemePreference: (value: AppThemePreference) => void;
   saveRegionalPreferences: (input: { country: string; currency: string }) => {
@@ -714,6 +723,14 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
 
   const saveAiModel = useCallback((value: string) => {
     setSettings((prev) => ({ ...prev, aiModel: value.trim() || prev.aiModel }));
+  }, []);
+
+  const saveAssistantMemoryModel = useCallback((value: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      assistantMemoryModel:
+        value.trim() || prev.assistantMemoryModel || prev.aiModel,
+    }));
   }, []);
 
   const saveReminderSettings = useCallback(
@@ -1682,6 +1699,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       runAutoBackupSyncIfDue,
       saveApiKey,
       saveAiModel,
+      saveAssistantMemoryModel,
       saveAssistantMemoryEnabled,
       saveThemePreference,
       saveRegionalPreferences,
@@ -1732,6 +1750,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       runAutoBackupSyncIfDue,
       saveApiKey,
       saveAiModel,
+      saveAssistantMemoryModel,
       saveAssistantMemoryEnabled,
       saveThemePreference,
       saveRegionalPreferences,

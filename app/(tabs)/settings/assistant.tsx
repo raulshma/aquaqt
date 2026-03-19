@@ -1,39 +1,51 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import {
-    ActivityIndicator,
-    Button,
-    Chip,
-    Text,
-    TextInput,
-    useTheme,
+  ActivityIndicator,
+  Button,
+  Chip,
+  Text,
+  TextInput,
+  useTheme,
 } from "react-native-paper";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import {
-    DashboardHero,
-    DashboardScrollView,
-    DashboardSection,
+  DashboardHero,
+  DashboardScrollView,
+  DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
 
 export default function AssistantSettingsScreen() {
   const theme = useTheme();
-  const { settings, saveApiKey, saveAiModel } = useAquapt();
+  const { settings, saveApiKey, saveAiModel, saveAssistantMemoryModel } =
+    useAquapt();
   const [apiKey, setApiKey] = useState(settings.openRouterApiKey);
   const [model, setModel] = useState(settings.aiModel);
+  const [memoryModel, setMemoryModel] = useState(
+    settings.assistantMemoryModel || settings.aiModel,
+  );
   const [models, setModels] = useState<
     { id: string; name?: string; created?: number; context_length?: number }[]
   >([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isModelSheetVisible, setModelSheetVisible] = useState(false);
+  const [modelSheetTarget, setModelSheetTarget] = useState<
+    "assistant" | "memory"
+  >("assistant");
   const [modelQuery, setModelQuery] = useState("");
 
   useEffect(() => {
     setApiKey(settings.openRouterApiKey);
     setModel(settings.aiModel);
-  }, [settings.aiModel, settings.openRouterApiKey]);
+    setMemoryModel(settings.assistantMemoryModel || settings.aiModel);
+  }, [
+    settings.aiModel,
+    settings.assistantMemoryModel,
+    settings.openRouterApiKey,
+  ]);
 
   const loadOpenRouterModels = useCallback(async () => {
     setIsLoadingModels(true);
@@ -94,9 +106,14 @@ export default function AssistantSettingsScreen() {
         subtitle="Save your API key and pick the default model."
         tone="primary"
         chips={
-          <Chip compact icon="brain">
-            {model || "No model selected"}
-          </Chip>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Chip compact icon="brain">
+              Assistant: {model || "None"}
+            </Chip>
+            <Chip compact icon="database-edit">
+              Memory: {memoryModel || "None"}
+            </Chip>
+          </View>
         }
       />
 
@@ -125,6 +142,16 @@ export default function AssistantSettingsScreen() {
           style={{ marginTop: 10 }}
         />
 
+        <TextInput
+          mode="outlined"
+          label="Memory generation model ID"
+          value={memoryModel}
+          onChangeText={setMemoryModel}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={{ marginTop: 10 }}
+        />
+
         <View
           style={{
             flexDirection: "row",
@@ -135,15 +162,28 @@ export default function AssistantSettingsScreen() {
         >
           <Button
             mode="contained-tonal"
-            onPress={() => setModelSheetVisible(true)}
+            onPress={() => {
+              setModelSheetTarget("assistant");
+              setModelSheetVisible(true);
+            }}
           >
-            Browse models
+            Browse assistant models
+          </Button>
+          <Button
+            mode="contained-tonal"
+            onPress={() => {
+              setModelSheetTarget("memory");
+              setModelSheetVisible(true);
+            }}
+          >
+            Browse memory models
           </Button>
           <Button
             mode="outlined"
             onPress={() => {
               saveApiKey(apiKey);
               saveAiModel(model);
+              saveAssistantMemoryModel(memoryModel);
             }}
           >
             Save settings
@@ -154,7 +194,7 @@ export default function AssistantSettingsScreen() {
       <BottomSheet
         visible={isModelSheetVisible}
         onDismiss={() => setModelSheetVisible(false)}
-        title="Select OpenRouter model"
+        title={`Select ${modelSheetTarget === "assistant" ? "assistant" : "memory generation"} model`}
       >
         <Text variant="bodySmall" style={{ opacity: 0.75 }}>
           {filteredModels.length} models shown
@@ -194,7 +234,11 @@ export default function AssistantSettingsScreen() {
               key={candidate.id}
               mode="text"
               onPress={() => {
-                setModel(candidate.id);
+                if (modelSheetTarget === "assistant") {
+                  setModel(candidate.id);
+                } else {
+                  setMemoryModel(candidate.id);
+                }
                 setModelSheetVisible(false);
               }}
             >

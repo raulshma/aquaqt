@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 
+import { requestOpenRouterCompletion } from "@/services/assistant-ai";
 import {
     loadPersistedAssistantMemoryState,
     savePersistedAssistantMemoryState,
@@ -57,6 +58,8 @@ interface RememberTurnParams {
   userMessageId: string;
   userPrompt: string;
   assistantText: string;
+  apiKey?: string;
+  model?: string;
 }
 
 interface RememberManualSnippetParams {
@@ -212,6 +215,53 @@ const buildMemoryDocument = ({
   return clamp(content, MAX_MEMORY_CHARS);
 };
 
+const buildMemoryDocumentWithAi = async ({
+  userPrompt,
+  assistantText,
+  apiKey,
+  model,
+}: RememberTurnParams): Promise<string | null> => {
+  const trimmedApiKey = apiKey?.trim();
+  const trimmedModel = model?.trim();
+
+  if (!trimmedApiKey || !trimmedModel) {
+    return null;
+  }
+
+  const normalizedPrompt = normalizeText(userPrompt);
+  const normalizedReply = normalizeText(assistantText);
+  if (!normalizedPrompt || !normalizedReply) {
+    return null;
+  }
+
+  const raw = await requestOpenRouterCompletion({
+    apiKey: trimmedApiKey,
+    model: trimmedModel,
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You generate compact long-term memory snippets for an aquarium assistant. Return plain text only (no markdown code fences), max 4 lines, max 450 chars. Keep only durable user preferences, stable constraints, and actionable follow-up context. If nothing durable exists, return EXACTLY: NO_MEMORY.",
+      },
+      {
+        role: "user",
+        content: [
+          `User prompt: ${normalizedPrompt}`,
+          `Assistant reply: ${normalizedReply}`,
+        ].join("\n"),
+      },
+    ],
+  });
+
+  const normalized = normalizeText(raw).replace(/^`+|`+$/g, "");
+  if (!normalized || normalized === "NO_MEMORY") {
+    return null;
+  }
+
+  return clamp(normalized, MAX_MEMORY_CHARS);
+};
+
 const toSnippet = (result: QueryResultLike): AssistantMemorySnippet | null => {
   const content =
     typeof result.document === "string" ? result.document.trim() : "";
@@ -293,7 +343,18 @@ export async function rememberAssistantTurn(
     return;
   }
 
-  const doc = buildMemoryDocument(params);
+  let doc: string | null = null;
+
+  try {
+    doc = await buildMemoryDocumentWithAi(params);
+  } catch (error) {
+    console.warn("Assistant memory AI generation failed", error);
+  }
+
+  if (!doc) {
+    doc = buildMemoryDocument(params);
+  }
+
   if (!doc) {
     return;
   }

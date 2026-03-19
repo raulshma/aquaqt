@@ -1,32 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  KeyboardAvoidingView,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
+    KeyboardAvoidingView,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    View,
 } from "react-native";
 import {
-  ActivityIndicator,
-  Button,
-  Card,
-  Chip,
-  IconButton,
-  Text,
-  TextInput,
-  useTheme,
+    ActivityIndicator,
+    Button,
+    Card,
+    Chip,
+    IconButton,
+    Text,
+    TextInput,
+    useTheme,
 } from "react-native-paper";
 import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
+    useAnimatedStyle,
+    useSharedValue,
+    withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  ACTION_ICONS,
-  ConversationDrawer,
-  HUMANIZED_TYPES,
+    ACTION_ICONS,
+    ConversationDrawer,
+    HUMANIZED_TYPES,
 } from "@/components/assistant/conversation-drawer";
 import { StreamingMarkdown } from "@/components/assistant/streaming-markdown";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -34,31 +34,31 @@ import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented
 import { useAquapt } from "@/context/aquapt-context";
 import { executeApprovedActions as runApprovedActions } from "@/services/assistant-executor";
 import {
-  forgetManualAssistantSnippet,
-  queryAssistantMemorySnippets,
-  rememberAssistantTurn,
-  rememberManualAssistantSnippet,
+    forgetManualAssistantSnippet,
+    queryAssistantMemorySnippets,
+    rememberAssistantTurn,
+    rememberManualAssistantSnippet,
 } from "@/services/assistant-memory";
 import { askAssistantWithTaskDetection } from "@/services/assistant-orchestrator";
 import {
-  convertCurrencyAmount,
-  formatCurrencyAmount,
+    convertCurrencyAmount,
+    formatCurrencyAmount,
 } from "@/services/localization";
 import {
-  initPersistence,
-  loadPersistedAssistantState,
-  savePersistedAssistantState,
+    initPersistence,
+    loadPersistedAssistantState,
+    savePersistedAssistantState,
 } from "@/services/persistence";
 import {
-  isDictationSupported,
-  startPressHoldDictation,
+    isDictationSupported,
+    startPressHoldDictation,
 } from "@/services/voice";
 import { TaskFrequency } from "@/types/aquapt";
 import {
-  AssistantChatMessage,
-  AssistantConversation,
-  AssistantDetectedAction,
-  AssistantResponseTelemetry,
+    AssistantChatMessage,
+    AssistantConversation,
+    AssistantDetectedAction,
+    AssistantResponseTelemetry,
 } from "@/types/assistant";
 
 /* ── helpers ─────────────────────────────────────────────────────── */
@@ -117,7 +117,10 @@ function AssistantTelemetry({
     const currencyCode = settings.defaultCurrency ?? "USD";
     const locale = settings.defaultLocale;
 
-    if (typeof telemetry.cost !== "number" || !Number.isFinite(telemetry.cost)) {
+    if (
+      typeof telemetry.cost !== "number" ||
+      !Number.isFinite(telemetry.cost)
+    ) {
       setLocalizedCost("—");
       return () => {
         isCancelled = true;
@@ -1044,6 +1047,8 @@ export default function AssistantScreen() {
           userMessageId,
           userPrompt: normalizedPrompt,
           assistantText: result.assistantText,
+          apiKey: settings.openRouterApiKey,
+          model: settings.assistantMemoryModel || settings.aiModel,
           enabled: settings.assistantMemoryEnabled,
         });
 
@@ -1080,6 +1085,7 @@ export default function AssistantScreen() {
       assistantContext,
       isAsking,
       settings.aiModel,
+      settings.assistantMemoryModel,
       settings.assistantMemoryEnabled,
       settings.openRouterApiKey,
       scrollToBottom,
@@ -1506,10 +1512,7 @@ export default function AssistantScreen() {
       >
         {/* Header bar */}
         <View
-          style={[
-            styles.header,
-            { backgroundColor: theme.colors.surface },
-          ]}
+          style={[styles.header, { backgroundColor: theme.colors.surface }]}
         >
           <IconButton icon="menu" onPress={openDrawer} />
           <Text
