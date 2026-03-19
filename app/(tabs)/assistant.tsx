@@ -1,32 +1,36 @@
+import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { GestureResponderEvent } from "react-native";
 import {
-    KeyboardAvoidingView,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    View,
+  KeyboardAvoidingView,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
 } from "react-native";
 import {
-    ActivityIndicator,
-    Button,
-    Card,
-    Chip,
-    IconButton,
-    Text,
-    TextInput,
-    useTheme,
+  ActivityIndicator,
+  Button,
+  Card,
+  Chip,
+  IconButton,
+  Menu,
+  Snackbar,
+  Text,
+  TextInput,
+  useTheme,
 } from "react-native-paper";
 import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withTiming,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-    ACTION_ICONS,
-    ConversationDrawer,
-    HUMANIZED_TYPES,
+  ACTION_ICONS,
+  ConversationDrawer,
+  HUMANIZED_TYPES,
 } from "@/components/assistant/conversation-drawer";
 import { StreamingMarkdown } from "@/components/assistant/streaming-markdown";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -34,31 +38,31 @@ import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented
 import { useAquapt } from "@/context/aquapt-context";
 import { executeApprovedActions as runApprovedActions } from "@/services/assistant-executor";
 import {
-    forgetManualAssistantSnippet,
-    queryAssistantMemorySnippets,
-    rememberAssistantTurn,
-    rememberManualAssistantSnippet,
+  forgetManualAssistantSnippet,
+  queryAssistantMemorySnippets,
+  rememberAssistantTurn,
+  rememberManualAssistantSnippet,
 } from "@/services/assistant-memory";
 import { askAssistantWithTaskDetection } from "@/services/assistant-orchestrator";
 import {
-    convertCurrencyAmount,
-    formatCurrencyAmount,
+  convertCurrencyAmount,
+  formatCurrencyAmount,
 } from "@/services/localization";
 import {
-    initPersistence,
-    loadPersistedAssistantState,
-    savePersistedAssistantState,
+  initPersistence,
+  loadPersistedAssistantState,
+  savePersistedAssistantState,
 } from "@/services/persistence";
 import {
-    isDictationSupported,
-    startPressHoldDictation,
+  isDictationSupported,
+  startPressHoldDictation,
 } from "@/services/voice";
 import { TaskFrequency } from "@/types/aquapt";
 import {
-    AssistantChatMessage,
-    AssistantConversation,
-    AssistantDetectedAction,
-    AssistantResponseTelemetry,
+  AssistantChatMessage,
+  AssistantConversation,
+  AssistantDetectedAction,
+  AssistantResponseTelemetry,
 } from "@/types/assistant";
 
 /* ── helpers ─────────────────────────────────────────────────────── */
@@ -578,6 +582,12 @@ export default function AssistantScreen() {
   const [activeStreamingMessageId, setActiveStreamingMessageId] = useState<
     string | null
   >(null);
+  const [snackbarMessage, setSnackbarMessage] = useState<string | null>(null);
+  const [messageMenuState, setMessageMenuState] = useState<{
+    x: number;
+    y: number;
+    messageId: string;
+  } | null>(null);
   const [isReviewVisible, setReviewVisible] = useState(false);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [rememberedAssistantMessageIds, setRememberedAssistantMessageIds] =
@@ -585,6 +595,7 @@ export default function AssistantScreen() {
   const [memoryActionBusyMessageIds, setMemoryActionBusyMessageIds] = useState<
     Record<string, boolean>
   >({});
+  const assistantAbortControllerRef = useRef<AbortController | null>(null);
 
   /* ── dictation state ─────────────────────────────────────────── */
   const [dictationPreview, setDictationPreview] = useState("");
@@ -618,6 +629,25 @@ export default function AssistantScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const scrollToBottom = useCallback(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+  }, []);
+
+  const showSnackbar = useCallback((message: string) => {
+    setSnackbarMessage(message);
+  }, []);
+
+  const openMessageMenu = useCallback(
+    (message: AssistantChatMessage, event: GestureResponderEvent) => {
+      setMessageMenuState({
+        x: event.nativeEvent.pageX,
+        y: event.nativeEvent.pageY,
+        messageId: message.id,
+      });
+    },
+    [],
+  );
+
+  const closeMessageMenu = useCallback(() => {
+    setMessageMenuState(null);
   }, []);
 
   /* ── derived state ───────────────────────────────────────────── */
@@ -716,6 +746,15 @@ export default function AssistantScreen() {
   const activeWarnings = useMemo(
     () => activeConversation?.warnings ?? [],
     [activeConversation?.warnings],
+  );
+  const selectedMenuMessage = useMemo(
+    () =>
+      messageMenuState
+        ? (activeMessages.find(
+            (message) => message.id === messageMenuState.messageId,
+          ) ?? null)
+        : null,
+    [activeMessages, messageMenuState],
   );
 
   const hasMultipleAquariums = aquariums.length > 1;
@@ -897,9 +936,11 @@ export default function AssistantScreen() {
 
       const isRetry = !!retryMessageId;
       const userMessageId = retryMessageId ?? nowId("msg");
+      const abortController = new AbortController();
 
       setAsking(true);
       setAssistantError(null);
+      assistantAbortControllerRef.current = abortController;
 
       const userMessage: AssistantChatMessage = {
         id: userMessageId,
@@ -975,6 +1016,7 @@ export default function AssistantScreen() {
           aquariums,
           memorySnippets,
           conversationMessages: conversationMessagesForModel,
+          signal: abortController.signal,
           onAssistantDelta: (snapshot) => {
             updateConversation(activeConversationId, (conversation) => ({
               ...conversation,
@@ -1054,6 +1096,16 @@ export default function AssistantScreen() {
 
         scrollToBottom();
       } catch (error) {
+        const isAborted =
+          error instanceof DOMException
+            ? error.name === "AbortError"
+            : error instanceof Error && error.name === "AbortError";
+
+        if (isAborted) {
+          showSnackbar("Generation stopped.");
+          return;
+        }
+
         const requestErrorMessage =
           error instanceof Error ? error.message : "Assistant request failed.";
 
@@ -1074,6 +1126,9 @@ export default function AssistantScreen() {
           updatedAt: new Date().toISOString(),
         }));
       } finally {
+        if (assistantAbortControllerRef.current === abortController) {
+          assistantAbortControllerRef.current = null;
+        }
         setActiveStreamingMessageId(null);
         setAsking(false);
       }
@@ -1088,10 +1143,32 @@ export default function AssistantScreen() {
       settings.assistantMemoryModel,
       settings.assistantMemoryEnabled,
       settings.openRouterApiKey,
+      showSnackbar,
       scrollToBottom,
       updateConversation,
       withValidation,
     ],
+  );
+
+  const stopAssistantGeneration = useCallback(() => {
+    assistantAbortControllerRef.current?.abort();
+  }, []);
+
+  const copyMessageContent = useCallback(
+    async (message: AssistantChatMessage) => {
+      const content = message.content.trim();
+      if (!content) {
+        return;
+      }
+
+      try {
+        await Clipboard.setStringAsync(content);
+        showSnackbar("Message copied.");
+      } catch {
+        setAssistantError("Could not copy the message right now.");
+      }
+    },
+    [showSnackbar],
   );
 
   const askAssistant = useCallback(async () => {
@@ -1579,7 +1656,13 @@ export default function AssistantScreen() {
                   </View>
                 ) : null}
 
-                <View
+                <Pressable
+                  delayLongPress={250}
+                  onLongPress={
+                    isSystem
+                      ? undefined
+                      : (event) => openMessageMenu(message, event)
+                  }
                   style={[
                     styles.bubble,
                     isUser && {
@@ -1624,22 +1707,40 @@ export default function AssistantScreen() {
 
                   {isUser && message.content.trim() ? (
                     <View style={styles.userMessageActionsRow}>
-                      <Button
-                        compact
-                        mode="text"
+                      <IconButton
+                        icon="content-copy"
+                        size={18}
+                        style={styles.inlineActionIconButton}
+                        onPress={() => {
+                          void copyMessageContent(message);
+                        }}
+                        accessibilityLabel="Copy user message"
+                      />
+                      <IconButton
+                        icon="message-reply-text-outline"
+                        size={18}
+                        style={styles.inlineActionIconButton}
                         onPress={() => {
                           reuseUserMessage(message);
                         }}
-                      >
-                        Reuse in composer
-                      </Button>
+                        accessibilityLabel="Reuse message in composer"
+                      />
                     </View>
                   ) : null}
 
                   {isStreaming ? (
-                    <Text variant="labelSmall" style={styles.streamingLabel}>
-                      Streaming…
-                    </Text>
+                    <View style={styles.streamingActionsRow}>
+                      <Text variant="labelSmall" style={styles.streamingLabel}>
+                        Streaming…
+                      </Text>
+                      <IconButton
+                        icon="stop-circle-outline"
+                        size={18}
+                        style={styles.inlineActionIconButton}
+                        onPress={stopAssistantGeneration}
+                        accessibilityLabel="Stop generating"
+                      />
+                    </View>
                   ) : null}
 
                   {isRetryableFailedUserMessage ? (
@@ -1647,16 +1748,16 @@ export default function AssistantScreen() {
                       <Chip compact icon="alert-circle-outline">
                         Failed to send
                       </Chip>
-                      <Button
-                        compact
-                        mode="text"
+                      <IconButton
+                        icon="refresh"
+                        size={18}
+                        style={styles.inlineActionIconButton}
                         disabled={isAsking}
                         onPress={() => {
                           retryFailedMessage(message);
                         }}
-                      >
-                        Retry
-                      </Button>
+                        accessibilityLabel="Retry message"
+                      />
                     </View>
                   ) : null}
 
@@ -1675,42 +1776,51 @@ export default function AssistantScreen() {
 
                   {isAssistant && !isStreaming && message.content.trim() ? (
                     <View style={styles.memoryActionsRow}>
-                      <Button
-                        compact
-                        mode="text"
+                      <IconButton
+                        icon="content-copy"
+                        size={18}
+                        style={styles.inlineActionIconButton}
+                        onPress={() => {
+                          void copyMessageContent(message);
+                        }}
+                        accessibilityLabel="Copy assistant reply"
+                      />
+                      <IconButton
+                        icon="refresh"
+                        size={18}
+                        style={styles.inlineActionIconButton}
                         disabled={isAsking}
                         onPress={() => {
                           regenerateAssistantReply(message);
                         }}
-                      >
-                        Regenerate
-                      </Button>
+                        accessibilityLabel="Regenerate reply"
+                      />
                       {!rememberedAssistantMessageIds[message.id] ? (
-                        <Button
-                          compact
-                          mode="text"
+                        <IconButton
+                          icon="bookmark-outline"
+                          size={18}
+                          style={styles.inlineActionIconButton}
                           loading={!!memoryActionBusyMessageIds[message.id]}
                           disabled={!!memoryActionBusyMessageIds[message.id]}
                           onPress={() => {
                             void rememberAssistantMessage(message);
                           }}
-                        >
-                          Remember this reply
-                        </Button>
+                          accessibilityLabel="Remember this reply"
+                        />
                       ) : (
                         <>
                           <Chip compact>Saved to memory</Chip>
-                          <Button
-                            compact
-                            mode="text"
+                          <IconButton
+                            icon="bookmark-remove-outline"
+                            size={18}
+                            style={styles.inlineActionIconButton}
                             loading={!!memoryActionBusyMessageIds[message.id]}
                             disabled={!!memoryActionBusyMessageIds[message.id]}
                             onPress={() => {
                               void forgetAssistantMessageMemory(message);
                             }}
-                          >
-                            Forget
-                          </Button>
+                            accessibilityLabel="Forget saved memory"
+                          />
                         </>
                       )}
                     </View>
@@ -1744,7 +1854,7 @@ export default function AssistantScreen() {
                       ))}
                     </View>
                   ) : null}
-                </View>
+                </Pressable>
               </View>
             );
           })}
@@ -1908,6 +2018,126 @@ export default function AssistantScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <Menu
+        visible={!!messageMenuState && !!selectedMenuMessage}
+        onDismiss={closeMessageMenu}
+        anchor={
+          messageMenuState
+            ? { x: messageMenuState.x, y: messageMenuState.y }
+            : { x: 0, y: 0 }
+        }
+      >
+        {selectedMenuMessage?.content.trim() ? (
+          <Menu.Item
+            leadingIcon="content-copy"
+            title="Copy"
+            onPress={() => {
+              const message = selectedMenuMessage;
+              closeMessageMenu();
+              if (message) {
+                void copyMessageContent(message);
+              }
+            }}
+          />
+        ) : null}
+
+        {selectedMenuMessage?.role === "user" ? (
+          <>
+            <Menu.Item
+              leadingIcon="message-reply-text-outline"
+              title="Reuse in composer"
+              onPress={() => {
+                const message = selectedMenuMessage;
+                closeMessageMenu();
+                if (message) {
+                  reuseUserMessage(message);
+                }
+              }}
+            />
+            {selectedMenuMessage.requestFailed ? (
+              <Menu.Item
+                leadingIcon="refresh"
+                title="Retry send"
+                disabled={isAsking}
+                onPress={() => {
+                  const message = selectedMenuMessage;
+                  closeMessageMenu();
+                  if (message) {
+                    retryFailedMessage(message);
+                  }
+                }}
+              />
+            ) : null}
+          </>
+        ) : null}
+
+        {selectedMenuMessage?.role === "assistant" ? (
+          <>
+            {activeStreamingMessageId === selectedMenuMessage.id ? (
+              <Menu.Item
+                leadingIcon="stop-circle-outline"
+                title="Stop generating"
+                onPress={() => {
+                  closeMessageMenu();
+                  stopAssistantGeneration();
+                }}
+              />
+            ) : null}
+            <Menu.Item
+              leadingIcon="refresh"
+              title="Regenerate reply"
+              disabled={isAsking}
+              onPress={() => {
+                const message = selectedMenuMessage;
+                closeMessageMenu();
+                if (message) {
+                  regenerateAssistantReply(message);
+                }
+              }}
+            />
+            <Menu.Item
+              leadingIcon={
+                rememberedAssistantMessageIds[selectedMenuMessage.id]
+                  ? "bookmark-remove-outline"
+                  : "bookmark-outline"
+              }
+              title={
+                rememberedAssistantMessageIds[selectedMenuMessage.id]
+                  ? "Forget saved memory"
+                  : "Remember this reply"
+              }
+              disabled={!!memoryActionBusyMessageIds[selectedMenuMessage.id]}
+              onPress={() => {
+                const message = selectedMenuMessage;
+                closeMessageMenu();
+                if (!message) {
+                  return;
+                }
+
+                if (rememberedAssistantMessageIds[message.id]) {
+                  void forgetAssistantMessageMemory(message);
+                  return;
+                }
+
+                void rememberAssistantMessage(message);
+              }}
+            />
+          </>
+        ) : null}
+      </Menu>
+
+      <Snackbar
+        visible={!!snackbarMessage}
+        onDismiss={() => setSnackbarMessage(null)}
+        duration={2200}
+        action={{
+          label: "Dismiss",
+          onPress: () => setSnackbarMessage(null),
+        }}
+      >
+        {snackbarMessage}
+      </Snackbar>
 
       {!isNearBottom && activeMessages.length > 3 ? (
         <IconButton
@@ -2669,6 +2899,13 @@ const styles = StyleSheet.create({
     marginTop: 6,
     opacity: 0.6,
   },
+  streamingActionsRow: {
+    marginTop: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
   telemetryWrap: {
     marginTop: 8,
     borderRadius: 10,
@@ -2705,6 +2942,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     flexWrap: "wrap",
+  },
+  inlineActionIconButton: {
+    margin: 0,
+    width: 32,
+    height: 32,
   },
   failedMessageError: {
     marginTop: 4,

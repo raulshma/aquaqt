@@ -1,15 +1,15 @@
 import { useMaterial3Theme } from "@pchmn/expo-material3-theme";
 import {
-    DarkTheme,
-    DefaultTheme,
-    ThemeProvider,
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
 } from "@react-navigation/native";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo } from "react";
-import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+
 import { MD3DarkTheme, MD3LightTheme, PaperProvider } from "react-native-paper";
 import { en, registerTranslation } from "react-native-paper-dates";
 import "react-native-reanimated";
@@ -17,15 +17,15 @@ import "react-native-reanimated";
 import { AquaptProvider, useAquapt } from "@/context/aquapt-context";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
-    registerBackupBackgroundTask,
-    unregisterBackupBackgroundTask,
+  registerBackupBackgroundTask,
+  unregisterBackupBackgroundTask,
 } from "@/services/backup-background-task";
 import {
-    clearDailyReminderSchedule,
-    ensureReminderPermissions,
-    registerNotificationResponseHandler,
-    routeFromLastNotification,
-    scheduleDailyReminder,
+  clearDailyReminderSchedule,
+  ensureReminderPermissions,
+  registerNotificationResponseHandler,
+  routeFromLastNotification,
+  scheduleDailyReminder,
 } from "@/services/notifications";
 import { countDueTasks } from "@/services/scheduling";
 
@@ -57,19 +57,6 @@ function ThemedRoot() {
     fallbackSourceColor: KEEP_SOURCE_COLOR,
     colorFidelity: true,
   });
-
-  useEffect(() => {
-    if (!isHydrated) {
-      return;
-    }
-
-    void SplashScreen.hideAsync();
-  }, [isHydrated]);
-
-  if (!isHydrated) {
-    return null;
-  }
-
   const resolvedColorScheme =
     settings.themePreference && settings.themePreference !== "system"
       ? settings.themePreference
@@ -124,6 +111,17 @@ function ThemedRoot() {
       },
     };
   }, [isDark, materialTheme]);
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    void SplashScreen.hideAsync();
+  }, [isHydrated]);
+
+  if (!isHydrated) {
+    return null;
+  }
 
   return (
     <ThemeProvider value={navigationTheme}>
