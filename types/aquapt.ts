@@ -14,7 +14,24 @@ export type TimelineEventType =
   | "asset"
   | "consumable";
 
+export type EntityKind =
+  | "aquarium"
+  | "task"
+  | "livestock"
+  | "asset"
+  | "consumable"
+  | "issue"
+  | "memo"
+  | "dosing"
+  | "parameter-log";
+
 export type AppThemePreference = "system" | "light" | "dark";
+
+export interface EntityRef {
+  kind: EntityKind;
+  id: string;
+  aquariumId?: string;
+}
 
 export interface Aquarium {
   id: string;
@@ -136,6 +153,8 @@ export interface TimelineEvent {
   title: string;
   description?: string;
   photoUri?: string;
+  source?: EntityRef;
+  related?: EntityRef[];
 }
 
 export interface AppSettings {

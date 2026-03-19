@@ -44,10 +44,12 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
+import { createEntityRef, getEntityHref } from "@/services/entity-links";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
   type Aquarium,
+  type EntityRef,
   type Issue,
   IssueStatus,
   type Livestock,
@@ -157,6 +159,7 @@ type AquariumOverviewCardProps = {
   openIssueCount: number;
   nitrateTrend: string;
   onEdit: (aquariumId: string) => void;
+  onOpenDetails: (aquariumId: string) => void;
 };
 
 const AquariumOverviewCard = memo(function AquariumOverviewCard({
@@ -167,12 +170,17 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
   openIssueCount,
   nitrateTrend,
   onEdit,
+  onOpenDetails,
 }: AquariumOverviewCardProps) {
   const theme = useTheme();
   const textColor = getCardTextColorForBackground(theme, backgroundColor);
 
   return (
-    <Card style={[styles.keepCard, { backgroundColor }]} mode="contained">
+    <Card
+      style={[styles.keepCard, { backgroundColor }]}
+      mode="contained"
+      onPress={() => onOpenDetails(aquarium.id)}
+    >
       {aquarium.photoUri ? (
         <Image
           source={{ uri: aquarium.photoUri }}
@@ -212,6 +220,12 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
           <Button mode="contained-tonal" onPress={() => onEdit(aquarium.id)}>
             Edit specs
           </Button>
+          <Button
+            mode="contained-tonal"
+            onPress={() => onOpenDetails(aquarium.id)}
+          >
+            Open hub
+          </Button>
         </View>
       </Card.Content>
     </Card>
@@ -228,6 +242,10 @@ type LivestockCardProps = {
   feedingTaskTitle: string;
   feedingTaskFrequency: TaskFrequency;
   cardBackground: string;
+  parentEntity?: { id: string; name: string; aquariumId: string };
+  offspringEntities: Array<{ id: string; name: string; aquariumId: string }>;
+  feedingTasks: TaskTemplate[];
+  openEntity: (ref: EntityRef) => void;
   setFeedingNoteDraft: Dispatch<SetStateAction<Record<string, string>>>;
   setLivestockStatusDraft: Dispatch<
     SetStateAction<Record<string, NonNullable<Livestock["status"]>>>
@@ -272,6 +290,10 @@ const LivestockCard = memo(function LivestockCard({
   feedingTaskTitle,
   feedingTaskFrequency,
   cardBackground,
+  parentEntity,
+  offspringEntities,
+  feedingTasks,
+  openEntity,
   setFeedingNoteDraft,
   setLivestockStatusDraft,
   setLivestockStatusNoteDraft,
@@ -295,6 +317,7 @@ const LivestockCard = memo(function LivestockCard({
         { backgroundColor: cardBackground },
       ]}
       mode="contained"
+      onPress={() => openEntity(createEntityRef("livestock", item.id, item.aquariumId))}
     >
       <Card.Content>
         <Text variant="titleSmall" style={{ color: textColor }}>
@@ -309,6 +332,58 @@ const LivestockCard = memo(function LivestockCard({
         <View style={styles.summaryRow}>
           <Chip compact>{item.kind}</Chip>
           <Chip compact>{item.status ?? "active"}</Chip>
+          <Chip
+            compact
+            icon="fishbowl"
+            onPress={() =>
+              openEntity(createEntityRef("aquarium", item.aquariumId, item.aquariumId))
+            }
+          >
+            {aquariumName}
+          </Chip>
+          {parentEntity ? (
+            <Chip
+              compact
+              icon="family-tree"
+              onPress={() =>
+                openEntity(
+                  createEntityRef(
+                    "livestock",
+                    parentEntity.id,
+                    parentEntity.aquariumId,
+                  ),
+                )
+              }
+            >
+              Parent: {parentEntity.name}
+            </Chip>
+          ) : null}
+          {offspringEntities.map((offspring) => (
+            <Chip
+              key={offspring.id}
+              compact
+              icon="baby-face-outline"
+              onPress={() =>
+                openEntity(
+                  createEntityRef("livestock", offspring.id, offspring.aquariumId),
+                )
+              }
+            >
+              {offspring.name}
+            </Chip>
+          ))}
+          {feedingTasks.map((task) => (
+            <Chip
+              key={task.id}
+              compact
+              icon="wrench"
+              onPress={() =>
+                openEntity(createEntityRef("task", task.id, item.aquariumId))
+              }
+            >
+              {task.title}
+            </Chip>
+          ))}
         </View>
         {item.photoUri ? (
           <Image
@@ -472,6 +547,7 @@ type IssueCardProps = {
     resolutionNote?: string,
   ) => void;
   backgroundColor: string;
+  onOpenDetails: (issueId: string, aquariumId: string) => void;
 };
 
 const IssueCard = memo(function IssueCard({
@@ -483,6 +559,7 @@ const IssueCard = memo(function IssueCard({
   setResolutionNoteDraft,
   setIssueStatus,
   backgroundColor,
+  onOpenDetails,
 }: IssueCardProps) {
   const theme = useTheme();
   const textColor = getCardTextColorForBackground(theme, backgroundColor);
@@ -496,6 +573,7 @@ const IssueCard = memo(function IssueCard({
         { backgroundColor },
       ]}
       mode="contained"
+      onPress={() => onOpenDetails(issue.id, issue.aquariumId)}
     >
       <Card.Content>
         <Text variant="titleSmall" style={{ color: textColor }}>
@@ -507,6 +585,11 @@ const IssueCard = memo(function IssueCard({
         >
           {aquariumName} • Logged {new Date(issue.createdAt).toLocaleString()}
         </Text>
+        <View style={styles.summaryRow}>
+          <Chip compact icon="fishbowl" onPress={() => onOpenDetails(issue.id, issue.aquariumId)}>
+            Open issue
+          </Chip>
+        </View>
 
         <ScrollableSegmentedButtons
           value={currentStatus}
@@ -726,6 +809,9 @@ export default function HomeScreen() {
     completeTask,
     setIssueStatus,
   } = useAquapt();
+  const openEntity = (ref: EntityRef) => {
+    router.push(getEntityHref(ref) as never);
+  };
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [isAddAquariumOpen, setAddAquariumOpen] = useState(false);
   const [isAddLivestockOpen, setAddLivestockOpen] = useState(false);
@@ -1769,6 +1855,9 @@ export default function HomeScreen() {
                   openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
                   nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
                   onEdit={openEditAquarium}
+                  onOpenDetails={(aquariumId) =>
+                    openEntity(createEntityRef("aquarium", aquariumId, aquariumId))
+                  }
                 />
               );
             })}
@@ -1793,6 +1882,9 @@ export default function HomeScreen() {
                   openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
                   nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
                   onEdit={openEditAquarium}
+                  onOpenDetails={(aquariumId) =>
+                    openEntity(createEntityRef("aquarium", aquariumId, aquariumId))
+                  }
                 />
               );
             })}
@@ -2088,6 +2180,15 @@ export default function HomeScreen() {
                   livestockStatusDraft[item.id] ?? item.status ?? "active";
                 const livestockStatusNote =
                   livestockStatusNoteDraft[item.id] ?? "";
+                const parentEntity = item.parentId
+                  ? livestock.find((candidate) => candidate.id === item.parentId)
+                  : undefined;
+                const offspringEntities = livestock.filter(
+                  (candidate) => candidate.parentId === item.id,
+                );
+                const feedingTasks = taskTemplates.filter(
+                  (task) => task.livestockId === item.id,
+                );
 
                 const cardBackground =
                   index % 2 === 0
@@ -2110,6 +2211,22 @@ export default function HomeScreen() {
                       feedingTaskFrequencyDraft[item.id] ?? "daily"
                     }
                     cardBackground={cardBackground}
+                    parentEntity={
+                      parentEntity
+                        ? {
+                            id: parentEntity.id,
+                            name: parentEntity.name,
+                            aquariumId: parentEntity.aquariumId,
+                          }
+                        : undefined
+                    }
+                    offspringEntities={offspringEntities.map((offspring) => ({
+                      id: offspring.id,
+                      name: offspring.name,
+                      aquariumId: offspring.aquariumId,
+                    }))}
+                    feedingTasks={feedingTasks}
+                    openEntity={openEntity}
                     setFeedingNoteDraft={setFeedingNoteDraft}
                     setLivestockStatusDraft={setLivestockStatusDraft}
                     setLivestockStatusNoteDraft={setLivestockStatusNoteDraft}
@@ -2175,6 +2292,9 @@ export default function HomeScreen() {
                       { backgroundColor: theme.colors.secondaryContainer },
                     ]}
                     mode="contained"
+                    onPress={() =>
+                      openEntity(createEntityRef("asset", asset.id, asset.aquariumId))
+                    }
                   >
                     <Card.Content>
                       {asset.photoUri ? (
@@ -2194,10 +2314,27 @@ export default function HomeScreen() {
                         {asset.price !== undefined ? ` • $${asset.price}` : ""}
                       </Text>
                       {asset.maintenanceTaskTemplateIds?.length ? (
-                        <Text variant="bodySmall" style={styles.issueMeta}>
-                          Linked maintenance tasks:{" "}
-                          {asset.maintenanceTaskTemplateIds.length}
-                        </Text>
+                        <View style={styles.summaryRow}>
+                          {asset.maintenanceTaskTemplateIds
+                            .map((taskId) =>
+                              taskTemplates.find((task) => task.id === taskId),
+                            )
+                            .filter((task): task is TaskTemplate => !!task)
+                            .map((task) => (
+                              <Chip
+                                key={task.id}
+                                compact
+                                icon="wrench"
+                                onPress={() =>
+                                  openEntity(
+                                    createEntityRef("task", task.id, asset.aquariumId),
+                                  )
+                                }
+                              >
+                                {task.title}
+                              </Chip>
+                            ))}
+                        </View>
                       ) : null}
                     </Card.Content>
                   </Card>
@@ -2239,6 +2376,15 @@ export default function HomeScreen() {
                         { backgroundColor: theme.colors.primaryContainer },
                       ]}
                       mode="contained"
+                      onPress={() =>
+                        openEntity(
+                          createEntityRef(
+                            "consumable",
+                            consumable.id,
+                            consumable.aquariumId,
+                          ),
+                        )
+                      }
                     >
                       <Card.Content>
                         {consumable.photoUri ? (
@@ -2326,6 +2472,9 @@ export default function HomeScreen() {
                     setResolutionNoteDraft={setResolutionNoteDraft}
                     setIssueStatus={setIssueStatus}
                     backgroundColor={theme.colors.surfaceVariant}
+                    onOpenDetails={(issueId, aquariumId) =>
+                      openEntity(createEntityRef("issue", issueId, aquariumId))
+                    }
                   />
                 );
               })}

@@ -16,6 +16,11 @@ import {
     savePersistedState,
 } from "@/services/persistence";
 import {
+    createEntityRef,
+    entityRefEquals,
+    normalizeTimelineEvents,
+} from "@/services/entity-links";
+import {
     AppThemePreference,
     AppSettings,
     Aquarium,
@@ -35,6 +40,23 @@ import {
 
 const nowId = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const dedupeEntityRefs = (...refs: Array<ReturnType<typeof createEntityRef> | undefined>) =>
+  refs.filter((ref): ref is ReturnType<typeof createEntityRef> => !!ref).reduce<
+    ReturnType<typeof createEntityRef>[]
+  >((acc, ref) => {
+    if (acc.some((entry) => entityRefEquals(entry, ref))) {
+      return acc;
+    }
+
+    acc.push(ref);
+    return acc;
+  }, []);
+
+const aquariumRelatedRefs = (
+  aquariumId: string,
+  ...refs: Array<ReturnType<typeof createEntityRef> | undefined>
+) => dedupeEntityRefs(createEntityRef("aquarium", aquariumId, aquariumId), ...refs);
 
 interface AquaptContextValue {
   isHydrated: boolean;
@@ -187,7 +209,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         setParameterLogs(persisted.parameterLogs ?? []);
         setIssues(persisted.issues ?? []);
         setMemos(persisted.memos ?? []);
-        setTimeline(persisted.timeline ?? []);
+        setTimeline(normalizeTimelineEvents(persisted.timeline ?? []));
         setSettings({
           openRouterApiKey: persisted.settings?.openRouterApiKey ?? "",
           aiModel: persisted.settings?.aiModel ?? "openai/gpt-4o-mini",
@@ -359,9 +381,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         note,
       };
 
-      const taskName =
-        taskTemplates.find((task) => task.id === taskTemplateId)?.title ??
-        "Task";
+      const taskTemplate = taskTemplates.find((task) => task.id === taskTemplateId);
+      const taskName = taskTemplate?.title ?? "Task";
 
       setTaskExecutions((prev) => [execution, ...prev]);
       setTimeline((prev) => [
@@ -372,6 +393,13 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           createdAt: execution.completedAt,
           title: `${taskName} completed`,
           description: note,
+          source: createEntityRef("task", taskTemplateId, aquariumId),
+          related: aquariumRelatedRefs(
+            aquariumId,
+            taskTemplate?.livestockId
+              ? createEntityRef("livestock", taskTemplate.livestockId, aquariumId)
+              : undefined,
+          ),
         },
         ...prev,
       ]);
@@ -404,6 +432,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           createdAt,
           title: `Dosed ${dosing.product}`,
           description: `${amountMl}ml${note ? ` • ${note}` : ""}`,
+          source: createEntityRef("dosing", dosing.id, aquariumId),
+          related: aquariumRelatedRefs(aquariumId),
         },
         ...prev,
       ]);
@@ -442,6 +472,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           createdAt,
           title: "Water parameters logged",
           description: summary,
+          source: createEntityRef("parameter-log", log.id, aquariumId),
+          related: aquariumRelatedRefs(aquariumId),
         },
         ...prev,
       ]);
@@ -468,6 +500,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         createdAt,
         title: "Issue reported",
         description: title,
+        source: createEntityRef("issue", issue.id, aquariumId),
+        related: aquariumRelatedRefs(aquariumId),
       },
       ...prev,
     ]);
@@ -501,6 +535,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             createdAt: new Date().toISOString(),
             title: `Issue moved to ${status}`,
             description: resolutionNote,
+            source: createEntityRef("issue", issueId, affectedAquariumId),
+            related: aquariumRelatedRefs(affectedAquariumId),
           },
           ...prev,
         ]);
@@ -535,6 +571,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           title: "Memo added",
           description: content,
           photoUri,
+          source: createEntityRef("memo", memo.id, aquariumId),
+          related: aquariumRelatedRefs(aquariumId),
         },
         ...prev,
       ]);
@@ -588,6 +626,12 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         title: "Livestock added",
         description: `${livestockItem.name} (${livestockItem.quantity})`,
         photoUri: livestockItem.photoUri,
+        source: createEntityRef(
+          "livestock",
+          livestockItem.id,
+          livestockItem.aquariumId,
+        ),
+        related: aquariumRelatedRefs(livestockItem.aquariumId),
       },
       ...prev,
     ]);
@@ -628,6 +672,13 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             title: `Transferred out ${moved?.name}`,
             description: `Moved to ${targetAquariumName}${note ? ` • ${note}` : ""}`,
             photoUri: moved?.photoUri,
+            source: moved
+              ? createEntityRef("livestock", moved.id, sourceAquariumId)
+              : undefined,
+            related: aquariumRelatedRefs(
+              sourceAquariumId,
+              createEntityRef("aquarium", targetAquariumId, targetAquariumId),
+            ),
           },
           {
             id: nowId("event"),
@@ -637,6 +688,13 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             title: `Transferred ${moved?.name}`,
             description: `From ${sourceAquariumName}${note ? ` • ${note}` : ""}`,
             photoUri: moved?.photoUri,
+            source: moved
+              ? createEntityRef("livestock", moved.id, targetAquariumId)
+              : undefined,
+            related: aquariumRelatedRefs(
+              targetAquariumId,
+              createEntityRef("aquarium", sourceAquariumId, sourceAquariumId),
+            ),
           },
           ...prev,
         ]);
@@ -676,6 +734,11 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           title: "Offspring linked",
           description: `${offspring.name} linked to ${parent.name}`,
           photoUri: offspring.photoUri,
+          source: createEntityRef("livestock", offspring.id, offspring.aquariumId),
+          related: aquariumRelatedRefs(
+            offspring.aquariumId,
+            createEntityRef("livestock", parent.id, parent.aquariumId),
+          ),
         },
         ...prev,
       ]);
@@ -727,6 +790,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             title: `${updatedName} status: ${status}`,
             description: note,
             photoUri: updatedPhotoUri || undefined,
+            source: createEntityRef("livestock", livestockId, updatedAquariumId),
+            related: aquariumRelatedRefs(updatedAquariumId),
           },
           ...prev,
         ]);
@@ -747,6 +812,13 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         title: "Asset registered",
         description: created.brandModel,
         photoUri: created.photoUri,
+        source: createEntityRef("asset", created.id, created.aquariumId),
+        related: aquariumRelatedRefs(
+          created.aquariumId,
+          ...(created.maintenanceTaskTemplateIds ?? []).map((taskTemplateId) =>
+            createEntityRef("task", taskTemplateId, created.aquariumId),
+          ),
+        ),
       },
       ...prev,
     ]);
@@ -771,6 +843,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           title: "Consumable tracked",
           description: `${created.name} (${created.remaining}${created.unit})`,
           photoUri: created.photoUri,
+          source: createEntityRef("consumable", created.id, created.aquariumId),
+          related: aquariumRelatedRefs(created.aquariumId),
         },
         ...prev,
       ]);
@@ -815,6 +889,12 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             title: `Used ${consumed.name}`,
             description: `${amountUsed}${consumed.unit}${note ? ` • ${note}` : ""}`,
             photoUri: updatedPhotoUri || undefined,
+            source: createEntityRef(
+              "consumable",
+              consumed.id,
+              consumed.aquariumId,
+            ),
+            related: aquariumRelatedRefs(consumed.aquariumId),
           },
           ...prev,
         ]);
@@ -883,7 +963,9 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           : [],
         issues: Array.isArray(parsed.issues) ? parsed.issues : [],
         memos: Array.isArray(parsed.memos) ? parsed.memos : [],
-        timeline: Array.isArray(parsed.timeline) ? parsed.timeline : [],
+        timeline: Array.isArray(parsed.timeline)
+          ? normalizeTimelineEvents(parsed.timeline)
+          : [],
         settings:
           parsed.settings && typeof parsed.settings === "object"
             ? {
@@ -923,7 +1005,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       setParameterLogs(nextState.parameterLogs);
       setIssues(nextState.issues);
       setMemos(nextState.memos);
-      setTimeline(nextState.timeline);
+      setTimeline(normalizeTimelineEvents(nextState.timeline));
       setSettings(nextState.settings);
 
       return {

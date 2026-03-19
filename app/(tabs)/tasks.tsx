@@ -1,4 +1,5 @@
 import { useForm } from "@tanstack/react-form";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import {
@@ -21,10 +22,12 @@ import {
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
+import { createEntityRef, getEntityHref } from "@/services/entity-links";
 import { isTaskDue } from "@/services/scheduling";
 import { TaskFrequency } from "@/types/aquapt";
 
 export default function TasksScreen() {
+  const router = useRouter();
   const theme = useTheme();
   const {
     aquariums,
@@ -263,6 +266,11 @@ export default function TasksScreen() {
                 key={key}
                 style={[styles.card, { backgroundColor }]}
                 mode="contained"
+                onPress={() =>
+                  router.push(
+                    getEntityHref(createEntityRef("task", task.id, aquariumId)) as never,
+                  )
+                }
               >
                 <Card.Content>
                   <View style={styles.titleRow}>
@@ -277,6 +285,40 @@ export default function TasksScreen() {
                   >
                     {getAquariumName(aquariumId)}
                   </Text>
+                  <View style={styles.metaChipRow}>
+                    <Chip
+                      compact
+                      icon="fishbowl"
+                      onPress={() =>
+                        router.push(
+                          getEntityHref(
+                            createEntityRef("aquarium", aquariumId, aquariumId),
+                          ) as never,
+                        )
+                      }
+                    >
+                      Aquarium
+                    </Chip>
+                    {targetLivestock ? (
+                      <Chip
+                        compact
+                        icon="fish"
+                        onPress={() =>
+                          router.push(
+                            getEntityHref(
+                              createEntityRef(
+                                "livestock",
+                                targetLivestock.id,
+                                aquariumId,
+                              ),
+                            ) as never,
+                          )
+                        }
+                      >
+                        {targetLivestock.name}
+                      </Chip>
+                    ) : null}
+                  </View>
                   {targetLivestock ? (
                     <Text
                       variant="bodySmall"
@@ -366,6 +408,13 @@ export default function TasksScreen() {
                 key={aquarium.id}
                 style={[styles.card, { backgroundColor }]}
                 mode="contained"
+                onPress={() =>
+                  router.push(
+                    getEntityHref(
+                      createEntityRef("aquarium", aquarium.id, aquarium.id),
+                    ) as never,
+                  )
+                }
               >
                 <Card.Title
                   title={aquarium.name}
@@ -419,6 +468,19 @@ export default function TasksScreen() {
                   key={execution.id}
                   style={[styles.card, { backgroundColor }]}
                   mode="contained"
+                  onPress={() =>
+                    task
+                      ? router.push(
+                          getEntityHref(
+                            createEntityRef(
+                              "task",
+                              task.id,
+                              execution.aquariumId,
+                            ),
+                          ) as never,
+                        )
+                      : undefined
+                  }
                 >
                   <Card.Content>
                     <Text variant="titleSmall" style={{ color: textColor }}>
@@ -431,6 +493,44 @@ export default function TasksScreen() {
                       {getAquariumName(execution.aquariumId)} •{" "}
                       {new Date(execution.completedAt).toLocaleString()}
                     </Text>
+                    <View style={styles.metaChipRow}>
+                      <Chip
+                        compact
+                        icon="fishbowl"
+                        onPress={() =>
+                          router.push(
+                            getEntityHref(
+                              createEntityRef(
+                                "aquarium",
+                                execution.aquariumId,
+                                execution.aquariumId,
+                              ),
+                            ) as never,
+                          )
+                        }
+                      >
+                        Aquarium
+                      </Chip>
+                      {targetLivestock ? (
+                        <Chip
+                          compact
+                          icon="fish"
+                          onPress={() =>
+                            router.push(
+                              getEntityHref(
+                                createEntityRef(
+                                  "livestock",
+                                  targetLivestock.id,
+                                  execution.aquariumId,
+                                ),
+                              ) as never,
+                            )
+                          }
+                        >
+                          {targetLivestock.name}
+                        </Chip>
+                      ) : null}
+                    </View>
                     {execution.note ? (
                       <Text variant="bodyMedium" style={{ color: textColor }}>
                         {execution.note}
@@ -696,6 +796,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  metaChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 8,
   },
   fab: {
     position: "absolute",

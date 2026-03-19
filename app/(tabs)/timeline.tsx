@@ -2,6 +2,7 @@ import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 import {
@@ -24,6 +25,10 @@ import {
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
+import {
+  getEntityHref,
+  getTimelineEventTarget,
+} from "@/services/entity-links";
 import { isTaskDue } from "@/services/scheduling";
 import { TimelineEventType } from "@/types/aquapt";
 
@@ -51,6 +56,7 @@ const EVENT_LABELS: Record<TimelineEventType, string> = {
 };
 
 export default function TimelineScreen() {
+  const router = useRouter();
   const theme = useTheme();
   const {
     timeline,
@@ -406,12 +412,16 @@ export default function TimelineScreen() {
               theme,
               cardBackground,
             );
+            const sourceTarget = getTimelineEventTarget(event);
 
             return (
               <Card
                 key={event.id}
                 style={[styles.eventCard, { backgroundColor: cardBackground }]}
                 mode="contained"
+                onPress={() =>
+                  router.push(getEntityHref(sourceTarget) as never)
+                }
               >
                 {eventImageUri ? (
                   <View style={styles.eventPhotoShell}>
@@ -495,6 +505,19 @@ export default function TimelineScreen() {
                       {event.description}
                     </Text>
                   ) : null}
+                  <View style={styles.eventFooter}>
+                    <Chip
+                      compact
+                      icon="arrow-top-right"
+                      onPress={() =>
+                        router.push(getEntityHref(sourceTarget) as never)
+                      }
+                    >
+                      {sourceTarget.kind === "aquarium"
+                        ? "Open aquarium"
+                        : "Open linked record"}
+                    </Chip>
+                  </View>
                 </Card.Content>
               </Card>
             );
@@ -870,6 +893,12 @@ const styles = StyleSheet.create({
   aquariumName: {
     opacity: 0.75,
     marginBottom: 8,
+  },
+  eventFooter: {
+    marginTop: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
   fab: {
     position: "absolute",
