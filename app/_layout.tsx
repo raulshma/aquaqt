@@ -17,6 +17,10 @@ import "react-native-reanimated";
 import { AquaptProvider, useAquapt } from "@/context/aquapt-context";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
+    registerBackupBackgroundTask,
+    unregisterBackupBackgroundTask,
+} from "@/services/backup-background-task";
+import {
     clearDailyReminderSchedule,
     ensureReminderPermissions,
     registerNotificationResponseHandler,
@@ -133,7 +137,8 @@ function ThemedRoot() {
 
 function AppShell() {
   const router = useRouter();
-  const { settings, taskTemplates, taskExecutions } = useAquapt();
+  const { settings, taskTemplates, taskExecutions, runAutoBackupSyncIfDue } =
+    useAquapt();
 
   useEffect(() => {
     const removeListener = registerNotificationResponseHandler((route) => {
@@ -172,6 +177,27 @@ function AppShell() {
     taskTemplates,
     taskExecutions,
   ]);
+
+  useEffect(() => {
+    void runAutoBackupSyncIfDue();
+  }, [
+    runAutoBackupSyncIfDue,
+    settings.backupSyncEnabled,
+    settings.backupSyncHour,
+    settings.backupLastAutoSyncDate,
+  ]);
+
+  useEffect(() => {
+    const syncBackgroundTask = async () => {
+      if (settings.backupSyncEnabled) {
+        await registerBackupBackgroundTask(60);
+      } else {
+        await unregisterBackupBackgroundTask();
+      }
+    };
+
+    void syncBackgroundTask();
+  }, [settings.backupSyncEnabled]);
 
   return (
     <Stack>

@@ -114,6 +114,11 @@ export default function SettingsScreen() {
     exportAppState,
     importAppStateFromJson,
     saveReminderSettings,
+    saveBackupSyncSettings,
+    saveBackupMasterKey,
+    saveBackupS3Credentials,
+    runManualBackupSync,
+    restoreLatestCloudBackup,
     saveApiKey,
     saveAiModel,
     saveAssistantMemoryEnabled,
@@ -159,6 +164,38 @@ export default function SettingsScreen() {
   );
   const [backupPayload, setBackupPayload] = useState("");
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [backupSyncEnabled, setBackupSyncEnabled] = useState(
+    settings.backupSyncEnabled ?? false,
+  );
+  const [backupSyncHour, setBackupSyncHour] = useState(
+    settings.backupSyncHour ?? 3,
+  );
+  const [backupEndpoint, setBackupEndpoint] = useState(
+    settings.backupS3Endpoint ?? "",
+  );
+  const [backupRegion, setBackupRegion] = useState(
+    settings.backupS3Region ?? "us-east-1",
+  );
+  const [backupBucket, setBackupBucket] = useState(
+    settings.backupS3Bucket ?? "",
+  );
+  const [backupObjectKey, setBackupObjectKey] = useState(
+    settings.backupS3ObjectKey ?? "aquapt/backups/latest.enc.json",
+  );
+  const [backupForcePathStyle, setBackupForcePathStyle] = useState(
+    settings.backupS3ForcePathStyle ?? true,
+  );
+  const [backupUseVersionedKeys, setBackupUseVersionedKeys] = useState(
+    settings.backupUseVersionedKeys ?? true,
+  );
+  const [backupRetentionDays, setBackupRetentionDays] = useState(
+    String(settings.backupRetentionDays ?? 30),
+  );
+  const [backupAccessKeyId, setBackupAccessKeyId] = useState("");
+  const [backupSecretAccessKey, setBackupSecretAccessKey] = useState("");
+  const [backupMasterKeyInput, setBackupMasterKeyInput] = useState("");
+  const [backupSyncStatus, setBackupSyncStatus] = useState<string | null>(null);
+  const [isBackupSyncing, setIsBackupSyncing] = useState(false);
   const [remindersEnabled, setRemindersEnabled] = useState(
     settings.notificationsEnabled ?? false,
   );
@@ -293,6 +330,30 @@ export default function SettingsScreen() {
     settings.assistantMemoryEnabled,
     settings.notificationsEnabled,
     settings.reminderHour,
+  ]);
+
+  useEffect(() => {
+    setBackupSyncEnabled(settings.backupSyncEnabled ?? false);
+    setBackupSyncHour(settings.backupSyncHour ?? 3);
+    setBackupEndpoint(settings.backupS3Endpoint ?? "");
+    setBackupRegion(settings.backupS3Region ?? "us-east-1");
+    setBackupBucket(settings.backupS3Bucket ?? "");
+    setBackupObjectKey(
+      settings.backupS3ObjectKey ?? "aquapt/backups/latest.enc.json",
+    );
+    setBackupForcePathStyle(settings.backupS3ForcePathStyle ?? true);
+    setBackupUseVersionedKeys(settings.backupUseVersionedKeys ?? true);
+    setBackupRetentionDays(String(settings.backupRetentionDays ?? 30));
+  }, [
+    settings.backupRetentionDays,
+    settings.backupS3Bucket,
+    settings.backupS3Endpoint,
+    settings.backupS3ForcePathStyle,
+    settings.backupS3ObjectKey,
+    settings.backupS3Region,
+    settings.backupSyncEnabled,
+    settings.backupSyncHour,
+    settings.backupUseVersionedKeys,
   ]);
 
   useEffect(() => {
@@ -575,6 +636,71 @@ export default function SettingsScreen() {
       notificationsEnabled: remindersEnabled,
       reminderHour: normalizedHour,
     });
+  };
+
+  const saveBackupConfiguration = () => {
+    const result = saveBackupSyncSettings({
+      backupSyncEnabled,
+      backupSyncHour,
+      backupS3Endpoint: backupEndpoint,
+      backupS3Region: backupRegion,
+      backupS3Bucket: backupBucket,
+      backupS3ObjectKey: backupObjectKey,
+      backupS3ForcePathStyle: backupForcePathStyle,
+      backupUseVersionedKeys,
+      backupRetentionDays: Number.parseInt(backupRetentionDays.trim(), 10),
+    });
+
+    setBackupSyncStatus(result.message);
+  };
+
+  const saveBackupMasterKeyPreference = async () => {
+    const result = await saveBackupMasterKey(backupMasterKeyInput);
+    setBackupSyncStatus(result.message);
+
+    if (result.ok && backupMasterKeyInput.trim()) {
+      setBackupMasterKeyInput("");
+    }
+  };
+
+  const saveBackupCredentialsPreference = async () => {
+    const result = await saveBackupS3Credentials({
+      accessKeyId: backupAccessKeyId,
+      secretAccessKey: backupSecretAccessKey,
+    });
+
+    setBackupSyncStatus(result.message);
+
+    if (result.ok && backupAccessKeyId.trim() && backupSecretAccessKey.trim()) {
+      setBackupAccessKeyId("");
+      setBackupSecretAccessKey("");
+    }
+  };
+
+  const syncBackupNow = async () => {
+    setIsBackupSyncing(true);
+    try {
+      const result = await runManualBackupSync();
+      setBackupSyncStatus(result.message);
+      if (result.ok) {
+        setSavedAt(new Date().toLocaleString());
+      }
+    } finally {
+      setIsBackupSyncing(false);
+    }
+  };
+
+  const restoreCloudBackupNow = async () => {
+    setIsBackupSyncing(true);
+    try {
+      const result = await restoreLatestCloudBackup();
+      setBackupSyncStatus(result.message);
+      if (result.ok) {
+        setSavedAt(new Date().toLocaleString());
+      }
+    } finally {
+      setIsBackupSyncing(false);
+    }
   };
 
   const handleSaveRegionalPreferences = () => {
@@ -1203,6 +1329,240 @@ export default function SettingsScreen() {
             {reminderStatus ? (
               <Text variant="bodySmall" style={styles.savedAt}>
                 {reminderStatus}
+              </Text>
+            ) : null}
+          </Card.Content>
+        </Card>
+
+        <Card
+          mode="elevated"
+          style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
+        >
+          <Card.Title
+            title="Encrypted S3 backup sync (BYOK)"
+            subtitle="Daily auto backup + manual sync using your S3-compatible storage"
+          />
+          <Card.Content>
+            <View style={styles.modeRow}>
+              <Chip
+                selected={backupSyncEnabled}
+                onPress={() => setBackupSyncEnabled(true)}
+              >
+                Auto-sync enabled
+              </Chip>
+              <Chip
+                selected={!backupSyncEnabled}
+                onPress={() => setBackupSyncEnabled(false)}
+              >
+                Auto-sync disabled
+              </Chip>
+            </View>
+
+            <ScrollableSegmentedButtons
+              value={String(backupSyncHour)}
+              onValueChange={(value) => setBackupSyncHour(Number(value))}
+              buttons={[0, 1, 2, 3, 4, 6, 8, 12, 18, 22].map((hour) => ({
+                label: `${String(hour).padStart(2, "0")}:00`,
+                value: String(hour),
+              }))}
+            />
+
+            <TextInput
+              mode="outlined"
+              label="S3 endpoint"
+              placeholder="https://s3.example.com"
+              value={backupEndpoint}
+              onChangeText={setBackupEndpoint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.modelInput}
+            />
+            <View style={styles.filterRow}>
+              <TextInput
+                mode="outlined"
+                label="Region"
+                value={backupRegion}
+                onChangeText={setBackupRegion}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.filterInput}
+              />
+              <TextInput
+                mode="outlined"
+                label="Bucket"
+                value={backupBucket}
+                onChangeText={setBackupBucket}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.filterInput}
+              />
+            </View>
+            <TextInput
+              mode="outlined"
+              label="Object key"
+              value={backupObjectKey}
+              onChangeText={setBackupObjectKey}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.modelInput}
+            />
+
+            <View style={styles.modeRow}>
+              <Chip
+                selected={backupForcePathStyle}
+                onPress={() => setBackupForcePathStyle(true)}
+              >
+                Path-style
+              </Chip>
+              <Chip
+                selected={!backupForcePathStyle}
+                onPress={() => setBackupForcePathStyle(false)}
+              >
+                Virtual-host
+              </Chip>
+            </View>
+
+            <View style={styles.modeRow}>
+              <Chip
+                selected={backupUseVersionedKeys}
+                onPress={() => setBackupUseVersionedKeys(true)}
+              >
+                Versioned daily backups
+              </Chip>
+              <Chip
+                selected={!backupUseVersionedKeys}
+                onPress={() => setBackupUseVersionedKeys(false)}
+              >
+                Single latest object only
+              </Chip>
+            </View>
+
+            <TextInput
+              mode="outlined"
+              label="Retention (days)"
+              value={backupRetentionDays}
+              onChangeText={setBackupRetentionDays}
+              keyboardType="number-pad"
+              style={styles.modelInput}
+            />
+
+            <TextInput
+              mode="outlined"
+              label="Master key"
+              placeholder="At least 12 characters"
+              value={backupMasterKeyInput}
+              onChangeText={setBackupMasterKeyInput}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.modelInput}
+            />
+
+            <View style={styles.filterRow}>
+              <TextInput
+                mode="outlined"
+                label="S3 Access key ID"
+                value={backupAccessKeyId}
+                onChangeText={setBackupAccessKeyId}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.filterInput}
+              />
+              <TextInput
+                mode="outlined"
+                label="S3 Secret access key"
+                value={backupSecretAccessKey}
+                onChangeText={setBackupSecretAccessKey}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.filterInput}
+              />
+            </View>
+
+            <View style={styles.modeRow}>
+              <Button mode="contained-tonal" onPress={saveBackupConfiguration}>
+                Save backup config
+              </Button>
+              <Button
+                mode="contained-tonal"
+                onPress={() => {
+                  void saveBackupMasterKeyPreference();
+                }}
+              >
+                Save master key
+              </Button>
+              <Button
+                mode="contained-tonal"
+                onPress={() => {
+                  void saveBackupCredentialsPreference();
+                }}
+              >
+                Save S3 credentials
+              </Button>
+            </View>
+
+            <Button
+              mode="contained"
+              icon="cloud-sync"
+              onPress={() => {
+                void syncBackupNow();
+              }}
+              disabled={isBackupSyncing}
+              style={styles.saveButton}
+            >
+              {isBackupSyncing ? "Syncing..." : "Manual sync now"}
+            </Button>
+
+            <Button
+              mode="outlined"
+              icon="cloud-download"
+              onPress={() => {
+                void restoreCloudBackupNow();
+              }}
+              disabled={isBackupSyncing}
+              style={styles.saveButton}
+            >
+              Restore latest cloud backup
+            </Button>
+
+            <View style={styles.modeRow}>
+              <Chip compact icon="shield-lock">
+                {settings.backupMasterKeySet
+                  ? "Master key set"
+                  : "Master key missing"}
+              </Chip>
+              <Chip compact icon="key-chain-variant">
+                {settings.backupS3CredentialsSet
+                  ? "S3 credentials set"
+                  : "S3 credentials missing"}
+              </Chip>
+            </View>
+
+            <Text variant="bodySmall" style={styles.helperText}>
+              Encryption: AES-256-GCM with PBKDF2-HMAC-SHA256 key derivation.
+              Master key and S3 credentials are stored securely on-device.
+            </Text>
+            <Text variant="bodySmall" style={styles.helperText}>
+              Last cloud sync:{" "}
+              {settings.backupLastSyncedAt
+                ? new Date(settings.backupLastSyncedAt).toLocaleString()
+                : "never"}
+            </Text>
+            <Text variant="bodySmall" style={styles.helperText}>
+              Last cloud restore:{" "}
+              {settings.backupLastRestoredAt
+                ? new Date(settings.backupLastRestoredAt).toLocaleString()
+                : "never"}
+            </Text>
+            {settings.backupLastError ? (
+              <Text variant="bodySmall" style={styles.errorText}>
+                {settings.backupLastError}
+              </Text>
+            ) : null}
+            {backupSyncStatus ? (
+              <Text variant="bodySmall" style={styles.savedAt}>
+                {backupSyncStatus}
               </Text>
             ) : null}
           </Card.Content>

@@ -10,23 +10,39 @@ import {
 } from "react";
 
 import {
-    initPersistence,
-    loadPersistedState,
-    PersistedAppState,
-    savePersistedState,
-} from "@/services/persistence";
+    loadBackupMasterKey,
+    loadBackupS3Credentials,
+    saveBackupMasterKey,
+    saveBackupS3Credentials,
+} from "@/services/backup-secrets";
+import {
+    buildVersionedBackupObjectKey,
+    cleanupVersionedBackups,
+    createBackupEnvelope,
+    decryptBackupEnvelope,
+    downloadEncryptedBackupFromS3,
+    encryptBackupEnvelope,
+    getBackupDateStamp,
+    uploadEncryptedBackupToS3,
+} from "@/services/backup-sync";
 import {
     createEntityRef,
     entityRefEquals,
     normalizeTimelineEvents,
 } from "@/services/entity-links";
 import {
-  applyRegionalDefaults,
-  resolveManualRegionalSettings,
+    applyRegionalDefaults,
+    resolveManualRegionalSettings,
 } from "@/services/localization";
 import {
-    AppThemePreference,
+    initPersistence,
+    loadPersistedState,
+    PersistedAppState,
+    savePersistedState,
+} from "@/services/persistence";
+import {
     AppSettings,
+    AppThemePreference,
     Aquarium,
     Asset,
     Consumable,
@@ -45,22 +61,28 @@ import {
 const nowId = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-const dedupeEntityRefs = (...refs: Array<ReturnType<typeof createEntityRef> | undefined>) =>
-  refs.filter((ref): ref is ReturnType<typeof createEntityRef> => !!ref).reduce<
-    ReturnType<typeof createEntityRef>[]
-  >((acc, ref) => {
-    if (acc.some((entry) => entityRefEquals(entry, ref))) {
-      return acc;
-    }
+const dedupeEntityRefs = (
+  ...refs: Array<ReturnType<typeof createEntityRef> | undefined>
+) =>
+  refs
+    .filter((ref): ref is ReturnType<typeof createEntityRef> => !!ref)
+    .reduce<ReturnType<typeof createEntityRef>[]>((acc, ref) => {
+      if (acc.some((entry) => entityRefEquals(entry, ref))) {
+        return acc;
+      }
 
-    acc.push(ref);
-    return acc;
-  }, []);
+      acc.push(ref);
+      return acc;
+    }, []);
 
 const aquariumRelatedRefs = (
   aquariumId: string,
   ...refs: Array<ReturnType<typeof createEntityRef> | undefined>
-) => dedupeEntityRefs(createEntityRef("aquarium", aquariumId, aquariumId), ...refs);
+) =>
+  dedupeEntityRefs(
+    createEntityRef("aquarium", aquariumId, aquariumId),
+    ...refs,
+  );
 
 const createDefaultSettings = (): AppSettings =>
   applyRegionalDefaults({
@@ -69,17 +91,46 @@ const createDefaultSettings = (): AppSettings =>
     notificationsEnabled: false,
     reminderHour: 8,
     assistantMemoryEnabled: true,
+    backupSyncEnabled: false,
+    backupSyncHour: 3,
+    backupS3Endpoint: "",
+    backupS3Region: "us-east-1",
+    backupS3Bucket: "",
+    backupS3ObjectKey: "aquapt/backups/latest.enc.json",
+    backupS3ForcePathStyle: true,
+    backupUseVersionedKeys: true,
+    backupRetentionDays: 30,
+    backupMasterKeySet: false,
+    backupS3CredentialsSet: false,
+    backupLastSyncedAt: undefined,
+    backupLastAutoSyncDate: undefined,
+    backupLastError: undefined,
     themePreference: "system",
   });
 
 const buildAppSettings = (persisted?: Partial<AppSettings>): AppSettings =>
   applyRegionalDefaults({
     openRouterApiKey: persisted?.openRouterApiKey ?? "",
-    aiModel:
-      persisted?.aiModel ?? "nvidia/nemotron-3-super-120b-a12b:free",
+    aiModel: persisted?.aiModel ?? "nvidia/nemotron-3-super-120b-a12b:free",
     notificationsEnabled: persisted?.notificationsEnabled ?? false,
     reminderHour: persisted?.reminderHour ?? 8,
     assistantMemoryEnabled: persisted?.assistantMemoryEnabled ?? true,
+    backupSyncEnabled: persisted?.backupSyncEnabled ?? false,
+    backupSyncHour: persisted?.backupSyncHour ?? 3,
+    backupS3Endpoint: persisted?.backupS3Endpoint ?? "",
+    backupS3Region: persisted?.backupS3Region ?? "us-east-1",
+    backupS3Bucket: persisted?.backupS3Bucket ?? "",
+    backupS3ObjectKey:
+      persisted?.backupS3ObjectKey ?? "aquapt/backups/latest.enc.json",
+    backupS3ForcePathStyle: persisted?.backupS3ForcePathStyle ?? true,
+    backupUseVersionedKeys: persisted?.backupUseVersionedKeys ?? true,
+    backupRetentionDays: persisted?.backupRetentionDays ?? 30,
+    backupMasterKeySet: persisted?.backupMasterKeySet ?? false,
+    backupS3CredentialsSet: persisted?.backupS3CredentialsSet ?? false,
+    backupLastSyncedAt: persisted?.backupLastSyncedAt,
+    backupLastRestoredAt: persisted?.backupLastRestoredAt,
+    backupLastAutoSyncDate: persisted?.backupLastAutoSyncDate,
+    backupLastError: persisted?.backupLastError,
     themePreference: persisted?.themePreference ?? "system",
     regionalPreferencesMode: persisted?.regionalPreferencesMode,
     defaultLocale: persisted?.defaultLocale,
@@ -182,14 +233,49 @@ interface AquaptContextValue {
     notificationsEnabled: boolean;
     reminderHour: number;
   }) => void;
+  saveBackupSyncSettings: (input: {
+    backupSyncEnabled: boolean;
+    backupSyncHour: number;
+    backupS3Endpoint: string;
+    backupS3Region: string;
+    backupS3Bucket: string;
+    backupS3ObjectKey: string;
+    backupS3ForcePathStyle: boolean;
+    backupUseVersionedKeys: boolean;
+    backupRetentionDays: number;
+  }) => {
+    ok: boolean;
+    message: string;
+  };
+  saveBackupMasterKey: (masterKey: string) => Promise<{
+    ok: boolean;
+    message: string;
+  }>;
+  saveBackupS3Credentials: (input: {
+    accessKeyId: string;
+    secretAccessKey: string;
+  }) => Promise<{
+    ok: boolean;
+    message: string;
+  }>;
+  runManualBackupSync: () => Promise<{
+    ok: boolean;
+    message: string;
+  }>;
+  restoreLatestCloudBackup: () => Promise<{
+    ok: boolean;
+    message: string;
+  }>;
+  runAutoBackupSyncIfDue: () => Promise<{
+    ok: boolean;
+    skipped: boolean;
+    message: string;
+  }>;
   saveApiKey: (value: string) => void;
   saveAiModel: (value: string) => void;
   saveAssistantMemoryEnabled: (value: boolean) => void;
   saveThemePreference: (value: AppThemePreference) => void;
-  saveRegionalPreferences: (input: {
-    country: string;
-    currency: string;
-  }) => {
+  saveRegionalPreferences: (input: { country: string; currency: string }) => {
     ok: boolean;
     message: string;
   };
@@ -222,12 +308,21 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       try {
         await initPersistence();
         const persisted = await loadPersistedState();
+        const [masterKey, s3Credentials] = await Promise.all([
+          loadBackupMasterKey(),
+          loadBackupS3Credentials(),
+        ]);
 
         if (!isMounted) {
           return;
         }
 
         if (!persisted) {
+          setSettings((prev) => ({
+            ...prev,
+            backupMasterKeySet: masterKey.length > 0,
+            backupS3CredentialsSet: !!s3Credentials,
+          }));
           return;
         }
 
@@ -242,7 +337,11 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         setIssues(persisted.issues ?? []);
         setMemos(persisted.memos ?? []);
         setTimeline(normalizeTimelineEvents(persisted.timeline ?? []));
-        setSettings(buildAppSettings(persisted.settings));
+        setSettings({
+          ...buildAppSettings(persisted.settings),
+          backupMasterKeySet: masterKey.length > 0,
+          backupS3CredentialsSet: !!s3Credentials,
+        });
       } catch (error) {
         console.warn("Persistence bootstrap failed", error);
       } finally {
@@ -404,7 +503,9 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         note,
       };
 
-      const taskTemplate = taskTemplates.find((task) => task.id === taskTemplateId);
+      const taskTemplate = taskTemplates.find(
+        (task) => task.id === taskTemplateId,
+      );
       const taskName = taskTemplate?.title ?? "Task";
 
       setTaskExecutions((prev) => [execution, ...prev]);
@@ -420,7 +521,11 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           related: aquariumRelatedRefs(
             aquariumId,
             taskTemplate?.livestockId
-              ? createEntityRef("livestock", taskTemplate.livestockId, aquariumId)
+              ? createEntityRef(
+                  "livestock",
+                  taskTemplate.livestockId,
+                  aquariumId,
+                )
               : undefined,
           ),
         },
@@ -624,6 +729,463 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const saveBackupSyncSettings = useCallback(
+    (input: {
+      backupSyncEnabled: boolean;
+      backupSyncHour: number;
+      backupS3Endpoint: string;
+      backupS3Region: string;
+      backupS3Bucket: string;
+      backupS3ObjectKey: string;
+      backupS3ForcePathStyle: boolean;
+      backupUseVersionedKeys: boolean;
+      backupRetentionDays: number;
+    }) => {
+      const normalizedHour = Math.min(23, Math.max(0, input.backupSyncHour));
+      const normalizedRetentionDays = Math.min(
+        3650,
+        Math.max(1, Math.round(input.backupRetentionDays)),
+      );
+      const normalizedSettings = {
+        backupSyncEnabled: input.backupSyncEnabled,
+        backupSyncHour: normalizedHour,
+        backupS3Endpoint: input.backupS3Endpoint.trim(),
+        backupS3Region: input.backupS3Region.trim(),
+        backupS3Bucket: input.backupS3Bucket.trim(),
+        backupS3ObjectKey:
+          input.backupS3ObjectKey.trim() || "aquapt/backups/latest.enc.json",
+        backupS3ForcePathStyle: input.backupS3ForcePathStyle,
+        backupUseVersionedKeys: input.backupUseVersionedKeys,
+        backupRetentionDays: normalizedRetentionDays,
+      };
+
+      if (normalizedSettings.backupSyncEnabled) {
+        if (!normalizedSettings.backupS3Endpoint) {
+          return { ok: false, message: "S3 endpoint is required." };
+        }
+        if (!normalizedSettings.backupS3Region) {
+          return { ok: false, message: "S3 region is required." };
+        }
+        if (!normalizedSettings.backupS3Bucket) {
+          return { ok: false, message: "S3 bucket is required." };
+        }
+      }
+
+      setSettings((prev) => ({
+        ...prev,
+        ...normalizedSettings,
+        backupLastError: undefined,
+      }));
+
+      return {
+        ok: true,
+        message: `Backup sync settings saved${normalizedSettings.backupSyncEnabled ? ` (${String(normalizedHour).padStart(2, "0")}:00 daily, retain ${normalizedRetentionDays} days)` : " (disabled)"}.`,
+      };
+    },
+    [],
+  );
+
+  const saveBackupMasterKeySetting = useCallback(async (masterKey: string) => {
+    const normalized = masterKey.trim();
+    if (normalized.length > 0 && normalized.length < 12) {
+      return {
+        ok: false,
+        message: "Master key must be at least 12 characters.",
+      };
+    }
+
+    try {
+      await saveBackupMasterKey(normalized);
+      setSettings((prev) => ({
+        ...prev,
+        backupMasterKeySet: normalized.length > 0,
+        backupLastError: undefined,
+      }));
+
+      return {
+        ok: true,
+        message:
+          normalized.length > 0
+            ? "Master key saved securely on this device."
+            : "Master key removed.",
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to store master key.",
+      };
+    }
+  }, []);
+
+  const saveBackupS3CredentialsSetting = useCallback(
+    async (input: { accessKeyId: string; secretAccessKey: string }) => {
+      const accessKeyId = input.accessKeyId.trim();
+      const secretAccessKey = input.secretAccessKey.trim();
+
+      if (
+        (accessKeyId && !secretAccessKey) ||
+        (!accessKeyId && secretAccessKey)
+      ) {
+        return {
+          ok: false,
+          message: "Provide both access key ID and secret access key.",
+        };
+      }
+
+      try {
+        await saveBackupS3Credentials({ accessKeyId, secretAccessKey });
+        setSettings((prev) => ({
+          ...prev,
+          backupS3CredentialsSet: !!(accessKeyId && secretAccessKey),
+          backupLastError: undefined,
+        }));
+
+        return {
+          ok: true,
+          message:
+            accessKeyId && secretAccessKey
+              ? "S3 credentials saved securely on this device."
+              : "S3 credentials removed.",
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to store S3 credentials.",
+        };
+      }
+    },
+    [],
+  );
+
+  const runBackupSyncUpload = useCallback(async () => {
+    const endpoint = settings.backupS3Endpoint?.trim() ?? "";
+    const region = settings.backupS3Region?.trim() ?? "";
+    const bucket = settings.backupS3Bucket?.trim() ?? "";
+    const objectKey =
+      settings.backupS3ObjectKey?.trim() || "aquapt/backups/latest.enc.json";
+    const useVersionedKeys = settings.backupUseVersionedKeys ?? true;
+    const retentionDays = Math.max(1, settings.backupRetentionDays ?? 30);
+
+    const [masterKey, s3Credentials] = await Promise.all([
+      loadBackupMasterKey(),
+      loadBackupS3Credentials(),
+    ]);
+
+    if (!masterKey) {
+      return {
+        ok: false,
+        message: "Set a backup master key first.",
+      };
+    }
+
+    if (!s3Credentials) {
+      return {
+        ok: false,
+        message: "Set S3 credentials first.",
+      };
+    }
+
+    if (!endpoint || !region || !bucket || !objectKey) {
+      return {
+        ok: false,
+        message: "Backup sync destination settings are incomplete.",
+      };
+    }
+
+    const cloudConfig = {
+      endpoint,
+      region,
+      bucket,
+      objectKey,
+      forcePathStyle: settings.backupS3ForcePathStyle ?? true,
+      accessKeyId: s3Credentials.accessKeyId,
+      secretAccessKey: s3Credentials.secretAccessKey,
+    };
+
+    try {
+      const currentSnapshot: PersistedAppState = {
+        aquariums,
+        livestock,
+        taskTemplates,
+        taskExecutions,
+        dosingLogs,
+        assets,
+        consumables,
+        parameterLogs,
+        issues,
+        memos,
+        timeline,
+        settings,
+      };
+
+      const envelope = createBackupEnvelope(currentSnapshot);
+      const encryptedPayload = encryptBackupEnvelope(envelope, masterKey);
+      const upload = await uploadEncryptedBackupToS3(
+        cloudConfig,
+        encryptedPayload,
+      );
+
+      let deletedCount = 0;
+      if (useVersionedKeys) {
+        const versionedKey = buildVersionedBackupObjectKey(
+          objectKey,
+          envelope.exportedAt,
+        );
+
+        if (versionedKey !== objectKey) {
+          await uploadEncryptedBackupToS3(
+            {
+              ...cloudConfig,
+              objectKey: versionedKey,
+            },
+            encryptedPayload,
+          );
+        }
+
+        const cleanup = await cleanupVersionedBackups(
+          cloudConfig,
+          objectKey,
+          retentionDays,
+        );
+        deletedCount = cleanup.deletedKeys.length;
+      }
+
+      setSettings((prev) => ({
+        ...prev,
+        backupLastSyncedAt: upload.uploadedAt,
+        backupLastError: undefined,
+        backupMasterKeySet: masterKey.length > 0,
+        backupS3CredentialsSet: true,
+      }));
+
+      return {
+        ok: true,
+        message: `Backup synced (${Math.max(1, Math.round(upload.payloadBytes / 1024))} KB uploaded${useVersionedKeys ? `, ${deletedCount} old version(s) pruned` : ""}).`,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Backup sync failed.";
+      setSettings((prev) => ({
+        ...prev,
+        backupLastError: errorMessage,
+      }));
+
+      return {
+        ok: false,
+        message: errorMessage,
+      };
+    }
+  }, [
+    aquariums,
+    assets,
+    consumables,
+    dosingLogs,
+    issues,
+    livestock,
+    memos,
+    parameterLogs,
+    settings,
+    taskExecutions,
+    taskTemplates,
+    timeline,
+  ]);
+
+  const runManualBackupSync = useCallback(async () => {
+    return await runBackupSyncUpload();
+  }, [runBackupSyncUpload]);
+
+  const restoreLatestCloudBackup = useCallback(async () => {
+    const endpoint = settings.backupS3Endpoint?.trim() ?? "";
+    const region = settings.backupS3Region?.trim() ?? "";
+    const bucket = settings.backupS3Bucket?.trim() ?? "";
+    const objectKey =
+      settings.backupS3ObjectKey?.trim() || "aquapt/backups/latest.enc.json";
+
+    const [masterKey, s3Credentials] = await Promise.all([
+      loadBackupMasterKey(),
+      loadBackupS3Credentials(),
+    ]);
+
+    if (!masterKey) {
+      return {
+        ok: false,
+        message: "Set a backup master key first.",
+      };
+    }
+
+    if (!s3Credentials) {
+      return {
+        ok: false,
+        message: "Set S3 credentials first.",
+      };
+    }
+
+    if (!endpoint || !region || !bucket || !objectKey) {
+      return {
+        ok: false,
+        message: "Backup sync destination settings are incomplete.",
+      };
+    }
+
+    const cloudConfig = {
+      endpoint,
+      region,
+      bucket,
+      objectKey,
+      forcePathStyle: settings.backupS3ForcePathStyle ?? true,
+      accessKeyId: s3Credentials.accessKeyId,
+      secretAccessKey: s3Credentials.secretAccessKey,
+    };
+
+    try {
+      const encryptedPayload = await downloadEncryptedBackupFromS3(cloudConfig);
+
+      if (!encryptedPayload) {
+        return {
+          ok: false,
+          message: "No cloud backup found at the configured object key.",
+        };
+      }
+
+      const envelope = decryptBackupEnvelope(encryptedPayload, masterKey);
+      const parsed = envelope.appState as Partial<PersistedAppState>;
+      const nextState: PersistedAppState = {
+        aquariums: Array.isArray(parsed.aquariums) ? parsed.aquariums : [],
+        livestock: Array.isArray(parsed.livestock) ? parsed.livestock : [],
+        taskTemplates: Array.isArray(parsed.taskTemplates)
+          ? parsed.taskTemplates
+          : [],
+        taskExecutions: Array.isArray(parsed.taskExecutions)
+          ? parsed.taskExecutions
+          : [],
+        dosingLogs: Array.isArray(parsed.dosingLogs) ? parsed.dosingLogs : [],
+        assets: Array.isArray(parsed.assets) ? parsed.assets : [],
+        consumables: Array.isArray(parsed.consumables)
+          ? parsed.consumables
+          : [],
+        parameterLogs: Array.isArray(parsed.parameterLogs)
+          ? parsed.parameterLogs
+          : [],
+        issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+        memos: Array.isArray(parsed.memos) ? parsed.memos : [],
+        timeline: Array.isArray(parsed.timeline)
+          ? normalizeTimelineEvents(parsed.timeline)
+          : [],
+        settings:
+          parsed.settings && typeof parsed.settings === "object"
+            ? buildAppSettings(parsed.settings as AppSettings)
+            : createDefaultSettings(),
+      };
+
+      setAquariums(nextState.aquariums);
+      setLivestock(nextState.livestock);
+      setTaskTemplates(nextState.taskTemplates);
+      setTaskExecutions(nextState.taskExecutions);
+      setDosingLogs(nextState.dosingLogs);
+      setAssets(nextState.assets);
+      setConsumables(nextState.consumables);
+      setParameterLogs(nextState.parameterLogs);
+      setIssues(nextState.issues);
+      setMemos(nextState.memos);
+      setTimeline(normalizeTimelineEvents(nextState.timeline));
+      setSettings(nextState.settings);
+
+      setSettings((prev) => ({
+        ...prev,
+        backupLastRestoredAt: new Date().toISOString(),
+        backupLastError: undefined,
+      }));
+
+      return {
+        ok: true,
+        message: `Cloud backup restored from ${new Date(envelope.exportedAt).toLocaleString()}.`,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Cloud restore failed.";
+      setSettings((prev) => ({
+        ...prev,
+        backupLastError: errorMessage,
+      }));
+
+      return {
+        ok: false,
+        message: errorMessage,
+      };
+    }
+  }, [
+    settings.backupS3Bucket,
+    settings.backupS3Endpoint,
+    settings.backupS3ForcePathStyle,
+    settings.backupS3ObjectKey,
+    settings.backupS3Region,
+  ]);
+
+  const runAutoBackupSyncIfDue = useCallback(async () => {
+    if (!settings.backupSyncEnabled) {
+      return {
+        ok: true,
+        skipped: true,
+        message: "Backup auto-sync disabled.",
+      };
+    }
+
+    const now = new Date();
+    const today = getBackupDateStamp(now.toISOString());
+    const configuredHour = Math.min(
+      23,
+      Math.max(0, settings.backupSyncHour ?? 3),
+    );
+
+    if (now.getHours() < configuredHour) {
+      return {
+        ok: true,
+        skipped: true,
+        message: "Auto-sync window not reached yet.",
+      };
+    }
+
+    if (settings.backupLastAutoSyncDate === today) {
+      return {
+        ok: true,
+        skipped: true,
+        message: "Auto-sync already completed today.",
+      };
+    }
+
+    const result = await runBackupSyncUpload();
+
+    if (!result.ok) {
+      return {
+        ok: false,
+        skipped: false,
+        message: result.message,
+      };
+    }
+
+    setSettings((prev) => ({
+      ...prev,
+      backupLastAutoSyncDate: today,
+    }));
+
+    return {
+      ok: true,
+      skipped: false,
+      message: `Auto-sync completed for ${today}.`,
+    };
+  }, [
+    runBackupSyncUpload,
+    settings.backupLastAutoSyncDate,
+    settings.backupSyncEnabled,
+    settings.backupSyncHour,
+  ]);
+
   const saveAssistantMemoryEnabled = useCallback((value: boolean) => {
     setSettings((prev) => ({ ...prev, assistantMemoryEnabled: value }));
   }, []);
@@ -794,7 +1356,11 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           title: "Offspring linked",
           description: `${offspring.name} linked to ${parent.name}`,
           photoUri: offspring.photoUri,
-          source: createEntityRef("livestock", offspring.id, offspring.aquariumId),
+          source: createEntityRef(
+            "livestock",
+            offspring.id,
+            offspring.aquariumId,
+          ),
           related: aquariumRelatedRefs(
             offspring.aquariumId,
             createEntityRef("livestock", parent.id, parent.aquariumId),
@@ -850,7 +1416,11 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             title: `${updatedName} status: ${status}`,
             description: note,
             photoUri: updatedPhotoUri || undefined,
-            source: createEntityRef("livestock", livestockId, updatedAquariumId),
+            source: createEntityRef(
+              "livestock",
+              livestockId,
+              updatedAquariumId,
+            ),
             related: aquariumRelatedRefs(updatedAquariumId),
           },
           ...prev,
@@ -995,67 +1565,76 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     settings,
   ]);
 
-  const importAppStateFromJson = useCallback((payload: string) => {
-    const trimmed = payload.trim();
-    if (!trimmed) {
-      return { ok: false, message: "Backup payload is empty." };
-    }
-
-    try {
-      const parsed = JSON.parse(trimmed) as Partial<PersistedAppState>;
-
-      const nextState: PersistedAppState = {
-        aquariums: Array.isArray(parsed.aquariums) ? parsed.aquariums : [],
-        livestock: Array.isArray(parsed.livestock) ? parsed.livestock : [],
-        taskTemplates: Array.isArray(parsed.taskTemplates)
-          ? parsed.taskTemplates
-          : [],
-        taskExecutions: Array.isArray(parsed.taskExecutions)
-          ? parsed.taskExecutions
-          : [],
-        dosingLogs: Array.isArray(parsed.dosingLogs) ? parsed.dosingLogs : [],
-        assets: Array.isArray(parsed.assets) ? parsed.assets : [],
-        consumables: Array.isArray(parsed.consumables)
-          ? parsed.consumables
-          : [],
-        parameterLogs: Array.isArray(parsed.parameterLogs)
-          ? parsed.parameterLogs
-          : [],
-        issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-        memos: Array.isArray(parsed.memos) ? parsed.memos : [],
-        timeline: Array.isArray(parsed.timeline)
-          ? normalizeTimelineEvents(parsed.timeline)
-          : [],
-        settings:
-          parsed.settings && typeof parsed.settings === "object"
-            ? buildAppSettings(parsed.settings as AppSettings)
-            : createDefaultSettings(),
-      };
-
-      setAquariums(nextState.aquariums);
-      setLivestock(nextState.livestock);
-      setTaskTemplates(nextState.taskTemplates);
-      setTaskExecutions(nextState.taskExecutions);
-      setDosingLogs(nextState.dosingLogs);
-      setAssets(nextState.assets);
-      setConsumables(nextState.consumables);
-      setParameterLogs(nextState.parameterLogs);
-      setIssues(nextState.issues);
-      setMemos(nextState.memos);
-      setTimeline(normalizeTimelineEvents(nextState.timeline));
-      setSettings(nextState.settings);
-
-      return {
-        ok: true,
-        message: "Backup imported successfully. App state has been restored.",
-      };
-    } catch {
-      return {
-        ok: false,
-        message: "Invalid JSON backup payload. Please check and try again.",
-      };
-    }
+  const applyImportedState = useCallback((nextState: PersistedAppState) => {
+    setAquariums(nextState.aquariums);
+    setLivestock(nextState.livestock);
+    setTaskTemplates(nextState.taskTemplates);
+    setTaskExecutions(nextState.taskExecutions);
+    setDosingLogs(nextState.dosingLogs);
+    setAssets(nextState.assets);
+    setConsumables(nextState.consumables);
+    setParameterLogs(nextState.parameterLogs);
+    setIssues(nextState.issues);
+    setMemos(nextState.memos);
+    setTimeline(normalizeTimelineEvents(nextState.timeline));
+    setSettings(nextState.settings);
   }, []);
+
+  const normalizeImportedState = useCallback(
+    (parsed: Partial<PersistedAppState>): PersistedAppState => ({
+      aquariums: Array.isArray(parsed.aquariums) ? parsed.aquariums : [],
+      livestock: Array.isArray(parsed.livestock) ? parsed.livestock : [],
+      taskTemplates: Array.isArray(parsed.taskTemplates)
+        ? parsed.taskTemplates
+        : [],
+      taskExecutions: Array.isArray(parsed.taskExecutions)
+        ? parsed.taskExecutions
+        : [],
+      dosingLogs: Array.isArray(parsed.dosingLogs) ? parsed.dosingLogs : [],
+      assets: Array.isArray(parsed.assets) ? parsed.assets : [],
+      consumables: Array.isArray(parsed.consumables) ? parsed.consumables : [],
+      parameterLogs: Array.isArray(parsed.parameterLogs)
+        ? parsed.parameterLogs
+        : [],
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+      memos: Array.isArray(parsed.memos) ? parsed.memos : [],
+      timeline: Array.isArray(parsed.timeline)
+        ? normalizeTimelineEvents(parsed.timeline)
+        : [],
+      settings:
+        parsed.settings && typeof parsed.settings === "object"
+          ? buildAppSettings(parsed.settings as AppSettings)
+          : createDefaultSettings(),
+    }),
+    [],
+  );
+
+  const importAppStateFromJson = useCallback(
+    (payload: string) => {
+      const trimmed = payload.trim();
+      if (!trimmed) {
+        return { ok: false, message: "Backup payload is empty." };
+      }
+
+      try {
+        const parsed = JSON.parse(trimmed) as Partial<PersistedAppState>;
+        const nextState = normalizeImportedState(parsed);
+
+        applyImportedState(nextState);
+
+        return {
+          ok: true,
+          message: "Backup imported successfully. App state has been restored.",
+        };
+      } catch {
+        return {
+          ok: false,
+          message: "Invalid JSON backup payload. Please check and try again.",
+        };
+      }
+    },
+    [applyImportedState, normalizeImportedState],
+  );
 
   const value = useMemo<AquaptContextValue>(
     () => ({
@@ -1095,6 +1674,12 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       exportAppState,
       importAppStateFromJson,
       saveReminderSettings,
+      saveBackupSyncSettings,
+      saveBackupMasterKey: saveBackupMasterKeySetting,
+      saveBackupS3Credentials: saveBackupS3CredentialsSetting,
+      runManualBackupSync,
+      restoreLatestCloudBackup,
+      runAutoBackupSyncIfDue,
       saveApiKey,
       saveAiModel,
       saveAssistantMemoryEnabled,
@@ -1139,6 +1724,12 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       exportAppState,
       importAppStateFromJson,
       saveReminderSettings,
+      saveBackupSyncSettings,
+      saveBackupMasterKeySetting,
+      saveBackupS3CredentialsSetting,
+      runManualBackupSync,
+      restoreLatestCloudBackup,
+      runAutoBackupSyncIfDue,
       saveApiKey,
       saveAiModel,
       saveAssistantMemoryEnabled,

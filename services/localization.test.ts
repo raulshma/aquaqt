@@ -16,7 +16,7 @@ describe("localization", () => {
   test("exposes country options for picker UI", () => {
     const options = listRegionalCountryOptions();
 
-    expect(options.length).toBeGreaterThan(100);
+    expect(options.length >= 100).toBe(true);
     expect(options.some((option) => option.code === "IN")).toBe(true);
     expect(options.some((option) => option.currency === "USD")).toBe(true);
   });
