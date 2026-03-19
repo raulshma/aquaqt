@@ -26,6 +26,7 @@ export type EntityKind =
   | "parameter-log";
 
 export type AppThemePreference = "system" | "light" | "dark";
+export type RegionalPreferencesMode = "auto" | "manual";
 
 export interface EntityRef {
   kind: EntityKind;
@@ -164,4 +165,10 @@ export interface AppSettings {
   reminderHour?: number;
   assistantMemoryEnabled?: boolean;
   themePreference?: AppThemePreference;
+  regionalPreferencesMode?: RegionalPreferencesMode;
+  defaultLocale?: string;
+  defaultTimezone?: string;
+  defaultCountryCode?: string;
+  defaultCountryName?: string;
+  defaultCurrency?: string;
 }

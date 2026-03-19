@@ -2,22 +2,22 @@ import { useForm } from "@tanstack/react-form";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 import {
-  ActivityIndicator,
-  Button,
-  Card,
-  Chip,
-  Divider,
-  Text,
-  TextInput,
-  useTheme,
+    ActivityIndicator,
+    Button,
+    Card,
+    Chip,
+    Divider,
+    Text,
+    TextInput,
+    useTheme,
 } from "react-native-paper";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import {
-  DashboardHero,
-  DashboardScrollView,
-} from "@/components/ui/dashboard-shell";
 import { getCardTone } from "@/components/ui/card-tone";
+import {
+    DashboardHero,
+    DashboardScrollView,
+} from "@/components/ui/dashboard-shell";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { requestOpenRouterCompletion } from "@/services/assistant-ai";
@@ -33,13 +33,20 @@ import {
     AssistantMode,
 } from "@/services/assistant-prompts";
 import {
-  clearDailyReminderSchedule,
-  ensureReminderPermissions,
-  scheduleDailyReminder,
+    convertCurrencyAmount,
+    findCountry,
+    formatCurrencyAmount,
+    listRegionalCountryOptions,
+    listSupportedCurrencyCodes,
+} from "@/services/localization";
+import {
+    clearDailyReminderSchedule,
+    ensureReminderPermissions,
+    scheduleDailyReminder,
 } from "@/services/notifications";
 import { countDueTasks } from "@/services/scheduling";
-import { AssistantMemorySnippet } from "@/types/assistant";
 import { AppThemePreference } from "@/types/aquapt";
+import { AssistantMemorySnippet } from "@/types/assistant";
 
 type OpenRouterModel = {
   id: string;
@@ -111,6 +118,8 @@ export default function SettingsScreen() {
     saveAiModel,
     saveAssistantMemoryEnabled,
     saveThemePreference,
+    saveRegionalPreferences,
+    resetRegionalPreferences,
   } = useAquapt();
   const settingsForm = useForm({
     defaultValues: {
@@ -163,6 +172,18 @@ export default function SettingsScreen() {
   const [isLoadingMemory, setIsLoadingMemory] = useState(false);
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [reminderStatus, setReminderStatus] = useState<string | null>(null);
+  const [regionalStatus, setRegionalStatus] = useState<string | null>(null);
+  const [countryOverride, setCountryOverride] = useState(
+    settings.defaultCountryName ?? settings.defaultCountryCode ?? "",
+  );
+  const [currencyOverride, setCurrencyOverride] = useState(
+    settings.defaultCurrency ?? "USD",
+  );
+  const [exchangeRatePreview, setExchangeRatePreview] = useState("Loading...");
+  const [countryPickerQuery, setCountryPickerQuery] = useState("");
+  const [currencyPickerQuery, setCurrencyPickerQuery] = useState("");
+  const [isCountrySheetVisible, setCountrySheetVisible] = useState(false);
+  const [isCurrencySheetVisible, setCurrencySheetVisible] = useState(false);
   const [diagnosticAnswer, setDiagnosticAnswer] = useState("");
   const [compatibilityAnswer, setCompatibilityAnswer] = useState("");
   const [models, setModels] = useState<OpenRouterModel[]>([]);
@@ -178,6 +199,56 @@ export default function SettingsScreen() {
   const [isModelSheetVisible, setModelSheetVisible] = useState(false);
   const askRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
+
+  const countryOptions = useMemo(() => listRegionalCountryOptions(), []);
+  const currencyOptions = useMemo(() => listSupportedCurrencyCodes(), []);
+
+  const selectedCountry = useMemo(() => {
+    return (
+      findCountry(countryOverride) ??
+      findCountry(settings.defaultCountryCode) ??
+      null
+    );
+  }, [countryOverride, settings.defaultCountryCode]);
+
+  const selectedCountryLabel = selectedCountry
+    ? `${selectedCountry.name} (${selectedCountry.id})`
+    : "Select country";
+
+  const selectedCurrencyLabel = useMemo(() => {
+    const selected = currencyOverride.trim().toUpperCase();
+    if (!selected) {
+      return "Select currency";
+    }
+
+    if (currencyOptions.includes(selected)) {
+      return selected;
+    }
+
+    return `${selected} (custom)`;
+  }, [currencyOptions, currencyOverride]);
+
+  const filteredCountryOptions = useMemo(() => {
+    const query = countryPickerQuery.trim().toLowerCase();
+    if (!query) {
+      return countryOptions;
+    }
+
+    return countryOptions.filter((option) => {
+      const haystack =
+        `${option.name} ${option.code} ${option.currency}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [countryOptions, countryPickerQuery]);
+
+  const filteredCurrencyOptions = useMemo(() => {
+    const query = currencyPickerQuery.trim().toLowerCase();
+    if (!query) {
+      return currencyOptions;
+    }
+
+    return currencyOptions.filter((code) => code.toLowerCase().includes(query));
+  }, [currencyOptions, currencyPickerQuery]);
 
   const loadOpenRouterModels = useCallback(async () => {
     setIsLoadingModels(true);
@@ -225,6 +296,17 @@ export default function SettingsScreen() {
   ]);
 
   useEffect(() => {
+    setCountryOverride(
+      settings.defaultCountryName ?? settings.defaultCountryCode ?? "",
+    );
+    setCurrencyOverride(settings.defaultCurrency ?? "USD");
+  }, [
+    settings.defaultCountryCode,
+    settings.defaultCountryName,
+    settings.defaultCurrency,
+  ]);
+
+  useEffect(() => {
     const diagnosticValues = diagnosticForm.state.values;
     const compatibilityValues = compatibilityForm.state.values;
 
@@ -246,6 +328,45 @@ export default function SettingsScreen() {
   useEffect(() => {
     void loadOpenRouterModels();
   }, [loadOpenRouterModels]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const currencyCode = settings.defaultCurrency ?? "USD";
+    const locale = settings.defaultLocale;
+
+    const formatRate = (value: number, targetCurrencyCode: string) =>
+      formatCurrencyAmount(value, targetCurrencyCode, locale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4,
+      });
+
+    if (currencyCode === "USD") {
+      setExchangeRatePreview(`1 USD = ${formatRate(1, "USD")}`);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    setExchangeRatePreview("Loading...");
+
+    void convertCurrencyAmount(1, "USD", currencyCode)
+      .then((convertedValue) => {
+        if (!isCancelled) {
+          setExchangeRatePreview(
+            `1 USD ~= ${formatRate(convertedValue, currencyCode)}`,
+          );
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setExchangeRatePreview("Live exchange rate unavailable");
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [settings.defaultCurrency, settings.defaultLocale]);
 
   const aquariumSummary = useMemo(() => {
     return aquariums
@@ -270,6 +391,12 @@ export default function SettingsScreen() {
   const assistantContext = useMemo(() => {
     return {
       aquariumSummary,
+      userLocale: {
+        locale: settings.defaultLocale,
+        timezone: settings.defaultTimezone,
+        country: settings.defaultCountryName,
+        currency: settings.defaultCurrency,
+      },
       livestock: livestock.slice(0, 40),
       recentParameterLogs: parameterLogs.slice(0, 60),
       openIssues: issues.filter((issue) => issue.status !== "resolved"),
@@ -281,6 +408,10 @@ export default function SettingsScreen() {
     issues,
     livestock,
     parameterLogs,
+    settings.defaultCountryName,
+    settings.defaultCurrency,
+    settings.defaultLocale,
+    settings.defaultTimezone,
     taskExecutions,
     taskTemplates,
   ]);
@@ -370,6 +501,15 @@ export default function SettingsScreen() {
     () => filteredModels.filter((candidate) => !isFreeModel(candidate)),
     [filteredModels],
   );
+  const currencyFormatPreview = useMemo(
+    () =>
+      formatCurrencyAmount(
+        1234.56,
+        settings.defaultCurrency ?? "USD",
+        settings.defaultLocale,
+      ),
+    [settings.defaultCurrency, settings.defaultLocale],
+  );
 
   const handleSave = () => {
     const values = settingsForm.state.values;
@@ -424,6 +564,27 @@ export default function SettingsScreen() {
       notificationsEnabled: remindersEnabled,
       reminderHour: normalizedHour,
     });
+  };
+
+  const handleSaveRegionalPreferences = () => {
+    const result = saveRegionalPreferences({
+      country: countryOverride,
+      currency: currencyOverride,
+    });
+
+    setRegionalStatus(result.message);
+
+    if (!result.ok) {
+      return;
+    }
+
+    setSavedAt(new Date().toLocaleString());
+  };
+
+  const handleResetRegionalPreferences = () => {
+    resetRegionalPreferences();
+    setRegionalStatus("Regional settings reset to your device defaults.");
+    setSavedAt(new Date().toLocaleString());
   };
 
   const requestAssistantCompletion = useCallback(
@@ -672,7 +833,9 @@ export default function SettingsScreen() {
           tone="primary"
           chips={
             <>
-              <Chip compact icon="fish">{aquariums.length} tanks</Chip>
+              <Chip compact icon="fish">
+                {aquariums.length} tanks
+              </Chip>
               <Chip compact icon="calendar-clock">
                 {countDueTasks(taskTemplates, taskExecutions)} due tasks
               </Chip>
@@ -691,19 +854,102 @@ export default function SettingsScreen() {
           style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
         >
           <Card.Title
+            title="Regional defaults"
+            subtitle={
+              settings.regionalPreferencesMode === "manual"
+                ? "Manual override is active for country/currency."
+                : "Detected from your device timezone and used for money formatting."
+            }
+          />
+          <Card.Content>
+            <Text variant="bodyMedium">
+              Timezone: {settings.defaultTimezone ?? "UTC"}
+            </Text>
+            <Text variant="bodyMedium">
+              Country:{" "}
+              {settings.defaultCountryName ??
+                settings.defaultCountryCode ??
+                "Unknown"}
+            </Text>
+            <Text variant="bodyMedium">
+              Currency: {settings.defaultCurrency ?? "USD"}
+            </Text>
+            <Text variant="bodyMedium">{exchangeRatePreview}</Text>
+            <Text variant="bodySmall" style={styles.helperText}>
+              Format preview: {currencyFormatPreview}
+            </Text>
+            <Text variant="bodySmall" style={styles.helperText}>
+              Tank and asset costs are shown in this currency. AI usage cost is
+              converted from USD using the exchange-api feed.
+            </Text>
+            <Button
+              mode="outlined"
+              icon="earth"
+              onPress={() => setCountrySheetVisible(true)}
+              style={styles.modelInput}
+            >
+              {`Country override: ${selectedCountryLabel}`}
+            </Button>
+            <Button
+              mode="outlined"
+              icon="cash-multiple"
+              onPress={() => setCurrencySheetVisible(true)}
+              style={styles.modelInput}
+            >
+              {`Currency override: ${selectedCurrencyLabel}`}
+            </Button>
+            <Text variant="bodySmall" style={styles.helperText}>
+              Choose from the list to avoid typos. Currency stays editable by
+              selection and is saved as a 3-letter code.
+            </Text>
+            <View style={styles.modeRow}>
+              <Button
+                mode="contained-tonal"
+                onPress={handleSaveRegionalPreferences}
+              >
+                Save regional override
+              </Button>
+              <Button mode="outlined" onPress={handleResetRegionalPreferences}>
+                Use device defaults
+              </Button>
+            </View>
+            {regionalStatus ? (
+              <Text
+                variant="bodySmall"
+                style={
+                  regionalStatus.includes("valid")
+                    ? styles.errorText
+                    : styles.helperText
+                }
+              >
+                {regionalStatus}
+              </Text>
+            ) : null}
+          </Card.Content>
+        </Card>
+
+        <Card
+          mode="elevated"
+          style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
+        >
+          <Card.Title
             title="Appearance"
             subtitle="Choose whether the app follows the system theme or stays in light or dark mode."
           />
           <Card.Content>
             <View style={styles.modeRow}>
-              {([
-                { label: "System", value: "system" },
-                { label: "Light", value: "light" },
-                { label: "Dark", value: "dark" },
-              ] as const).map((option) => (
+              {(
+                [
+                  { label: "System", value: "system" },
+                  { label: "Light", value: "light" },
+                  { label: "Dark", value: "dark" },
+                ] as const
+              ).map((option) => (
                 <Chip
                   key={option.value}
-                  selected={(settings.themePreference ?? "system") === option.value}
+                  selected={
+                    (settings.themePreference ?? "system") === option.value
+                  }
                   onPress={() =>
                     saveThemePreference(option.value as AppThemePreference)
                   }
@@ -1309,6 +1555,89 @@ export default function SettingsScreen() {
       </DashboardScrollView>
 
       <BottomSheet
+        visible={isCountrySheetVisible}
+        onDismiss={() => setCountrySheetVisible(false)}
+        title="Choose country override"
+      >
+        <TextInput
+          mode="outlined"
+          label="Search country, code, or default currency"
+          value={countryPickerQuery}
+          onChangeText={setCountryPickerQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <Text variant="bodySmall" style={styles.helperText}>
+          Showing {filteredCountryOptions.length} countries
+        </Text>
+        <View style={styles.modeRow}>
+          {filteredCountryOptions.slice(0, 140).map((option) => (
+            <Button
+              key={option.code}
+              mode={
+                countryOverride === option.code ? "contained-tonal" : "text"
+              }
+              onPress={() => {
+                setCountryOverride(option.code);
+                if (!currencyOverride.trim()) {
+                  setCurrencyOverride(option.currency);
+                }
+                setCountrySheetVisible(false);
+              }}
+              contentStyle={styles.regionOptionRow}
+              style={styles.regionOptionButton}
+            >
+              {`${option.name} (${option.code}) • ${option.currency}`}
+            </Button>
+          ))}
+        </View>
+        {filteredCountryOptions.length > 140 ? (
+          <Text variant="bodySmall" style={styles.helperText}>
+            +{filteredCountryOptions.length - 140} more (refine search)
+          </Text>
+        ) : null}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={isCurrencySheetVisible}
+        onDismiss={() => setCurrencySheetVisible(false)}
+        title="Choose currency override"
+      >
+        <TextInput
+          mode="outlined"
+          label="Search currency code"
+          value={currencyPickerQuery}
+          onChangeText={setCurrencyPickerQuery}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={3}
+        />
+        <Text variant="bodySmall" style={styles.helperText}>
+          Showing {filteredCurrencyOptions.length} currencies
+        </Text>
+        <View style={styles.modeRow}>
+          {filteredCurrencyOptions.map((code) => (
+            <Button
+              key={code}
+              mode={
+                currencyOverride.trim().toUpperCase() === code
+                  ? "contained-tonal"
+                  : "text"
+              }
+              onPress={() => {
+                setCurrencyOverride(code);
+                setCurrencySheetVisible(false);
+              }}
+              contentStyle={styles.regionOptionRow}
+              style={styles.regionOptionButton}
+            >
+              {code}
+            </Button>
+          ))}
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
         visible={isModelSheetVisible}
         onDismiss={() => setModelSheetVisible(false)}
         title="Select OpenRouter model"
@@ -1483,6 +1812,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   modelRowContent: {
+    justifyContent: "flex-start",
+  },
+  regionOptionButton: {
+    alignSelf: "stretch",
+    marginTop: 2,
+  },
+  regionOptionRow: {
     justifyContent: "flex-start",
   },
   savedAt: {

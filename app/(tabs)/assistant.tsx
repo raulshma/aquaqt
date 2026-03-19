@@ -41,6 +41,10 @@ import {
 } from "@/services/assistant-memory";
 import { askAssistantWithTaskDetection } from "@/services/assistant-orchestrator";
 import {
+  convertCurrencyAmount,
+  formatCurrencyAmount,
+} from "@/services/localization";
+import {
   initPersistence,
   loadPersistedAssistantState,
   savePersistedAssistantState,
@@ -105,13 +109,61 @@ function AssistantTelemetry({
 }: {
   telemetry: AssistantResponseTelemetry;
 }) {
+  const { settings } = useAquapt();
+  const [localizedCost, setLocalizedCost] = useState("—");
+
+  useEffect(() => {
+    let isCancelled = false;
+    const currencyCode = settings.defaultCurrency ?? "USD";
+    const locale = settings.defaultLocale;
+
+    if (typeof telemetry.cost !== "number" || !Number.isFinite(telemetry.cost)) {
+      setLocalizedCost("—");
+      return () => {
+        isCancelled = true;
+      };
+    }
+    const cost = telemetry.cost;
+
+    const formatCost = (value: number, targetCurrencyCode: string) =>
+      formatCurrencyAmount(value, targetCurrencyCode, locale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 6,
+      });
+
+    if (currencyCode === "USD") {
+      setLocalizedCost(formatCost(cost, currencyCode));
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    setLocalizedCost(formatCost(cost, "USD"));
+
+    void convertCurrencyAmount(cost, "USD", currencyCode)
+      .then((convertedCost) => {
+        if (!isCancelled) {
+          setLocalizedCost(formatCost(convertedCost, currencyCode));
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setLocalizedCost(formatCost(cost, "USD"));
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [settings.defaultCurrency, settings.defaultLocale, telemetry.cost]);
+
   const rows = [
     `Provider: ${telemetry.providerName ?? "—"}`,
     `Model: ${telemetry.model ?? "—"}`,
     `Tokens: ${formatNumber(telemetry.promptTokens)} in · ${formatNumber(telemetry.completionTokens)} out · ${formatNumber(telemetry.totalTokens)} total`,
     `Throughput: ${formatNumber(telemetry.throughputTokensPerSecond, 1)} tok/s · ${formatNumber(telemetry.throughputCharsPerSecond, 1)} ch/s`,
     `Latency: ${formatMilliseconds(telemetry.latencyMs)} · Elapsed: ${formatMilliseconds(telemetry.elapsedMs)}`,
-    `Cost: ${typeof telemetry.cost === "number" ? `$${telemetry.cost.toFixed(6)}` : "—"} · Finish: ${telemetry.finishReason ?? "—"}`,
+    `Cost: ${localizedCost} · Finish: ${telemetry.finishReason ?? "—"}`,
   ];
 
   return (
@@ -688,6 +740,12 @@ export default function AssistantScreen() {
 
   const assistantContext = useMemo(
     () => ({
+      userLocale: {
+        locale: settings.defaultLocale,
+        timezone: settings.defaultTimezone,
+        country: settings.defaultCountryName,
+        currency: settings.defaultCurrency,
+      },
       aquariums: aquariums.map((aq) => ({
         id: aq.id,
         name: aq.name,
@@ -708,6 +766,10 @@ export default function AssistantScreen() {
       issues,
       livestock,
       parameterLogs,
+      settings.defaultCountryName,
+      settings.defaultCurrency,
+      settings.defaultLocale,
+      settings.defaultTimezone,
       taskExecutions,
       taskTemplates,
     ],

@@ -24,6 +24,7 @@ import {
   parseEntityKind,
   resolveEntityRef,
 } from "@/services/entity-links";
+import { formatCurrencyAmount } from "@/services/localization";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
@@ -159,6 +160,9 @@ export default function EntityDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
   const store = useAquaptStore();
+  const { settings } = useAquapt();
+  const userCurrencyCode = settings.defaultCurrency ?? "USD";
+  const userLocale = settings.defaultLocale;
 
   const kind = parseEntityKind(params.kind);
   const id = typeof params.id === "string" ? params.id : "";
@@ -305,7 +309,7 @@ export default function EntityDetailScreen() {
                 subtitle={asset.category}
                 body={
                   asset.purchasedAt
-                    ? `Purchased ${asset.purchasedAt}${asset.price !== undefined ? ` • $${asset.price}` : ""}`
+                    ? `Purchased ${asset.purchasedAt}${asset.price !== undefined ? ` • ${formatCurrencyAmount(asset.price, userCurrencyCode, userLocale)}` : ""}`
                     : undefined
                 }
                 backgroundColor={theme.colors.surfaceVariant}
@@ -592,7 +596,15 @@ export default function EntityDetailScreen() {
             <MiniCard
               title="Purchase"
               subtitle={assetItem.purchasedAt ?? "Purchase date not set"}
-              body={assetItem.price !== undefined ? `$${assetItem.price}` : "No price saved"}
+              body={
+                assetItem.price !== undefined
+                  ? formatCurrencyAmount(
+                      assetItem.price,
+                      userCurrencyCode,
+                      userLocale,
+                    )
+                  : "No price saved"
+              }
               backgroundColor={theme.colors.surfaceVariant}
             />
             <View style={styles.chipRow}>

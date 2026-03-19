@@ -21,6 +21,10 @@ import {
     normalizeTimelineEvents,
 } from "@/services/entity-links";
 import {
+  applyRegionalDefaults,
+  resolveManualRegionalSettings,
+} from "@/services/localization";
+import {
     AppThemePreference,
     AppSettings,
     Aquarium,
@@ -57,6 +61,33 @@ const aquariumRelatedRefs = (
   aquariumId: string,
   ...refs: Array<ReturnType<typeof createEntityRef> | undefined>
 ) => dedupeEntityRefs(createEntityRef("aquarium", aquariumId, aquariumId), ...refs);
+
+const createDefaultSettings = (): AppSettings =>
+  applyRegionalDefaults({
+    openRouterApiKey: "",
+    aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
+    notificationsEnabled: false,
+    reminderHour: 8,
+    assistantMemoryEnabled: true,
+    themePreference: "system",
+  });
+
+const buildAppSettings = (persisted?: Partial<AppSettings>): AppSettings =>
+  applyRegionalDefaults({
+    openRouterApiKey: persisted?.openRouterApiKey ?? "",
+    aiModel:
+      persisted?.aiModel ?? "nvidia/nemotron-3-super-120b-a12b:free",
+    notificationsEnabled: persisted?.notificationsEnabled ?? false,
+    reminderHour: persisted?.reminderHour ?? 8,
+    assistantMemoryEnabled: persisted?.assistantMemoryEnabled ?? true,
+    themePreference: persisted?.themePreference ?? "system",
+    regionalPreferencesMode: persisted?.regionalPreferencesMode,
+    defaultLocale: persisted?.defaultLocale,
+    defaultTimezone: persisted?.defaultTimezone,
+    defaultCountryCode: persisted?.defaultCountryCode,
+    defaultCountryName: persisted?.defaultCountryName,
+    defaultCurrency: persisted?.defaultCurrency,
+  });
 
 interface AquaptContextValue {
   isHydrated: boolean;
@@ -155,6 +186,14 @@ interface AquaptContextValue {
   saveAiModel: (value: string) => void;
   saveAssistantMemoryEnabled: (value: boolean) => void;
   saveThemePreference: (value: AppThemePreference) => void;
+  saveRegionalPreferences: (input: {
+    country: string;
+    currency: string;
+  }) => {
+    ok: boolean;
+    message: string;
+  };
+  resetRegionalPreferences: () => void;
 }
 
 const AquaptContext = createContext<AquaptContextValue | null>(null);
@@ -172,14 +211,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [memos, setMemos] = useState<Memo[]>([]);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
-  const [settings, setSettings] = useState<AppSettings>({
-    openRouterApiKey: "",
-    aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
-    notificationsEnabled: false,
-    reminderHour: 8,
-    assistantMemoryEnabled: true,
-    themePreference: "system",
-  });
+  const [settings, setSettings] = useState<AppSettings>(createDefaultSettings);
   const hasHydratedOnceRef = useRef(false);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -210,16 +242,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         setIssues(persisted.issues ?? []);
         setMemos(persisted.memos ?? []);
         setTimeline(normalizeTimelineEvents(persisted.timeline ?? []));
-        setSettings({
-          openRouterApiKey: persisted.settings?.openRouterApiKey ?? "",
-          aiModel: persisted.settings?.aiModel ?? "openai/gpt-4o-mini",
-          notificationsEnabled:
-            persisted.settings?.notificationsEnabled ?? false,
-          reminderHour: persisted.settings?.reminderHour ?? 8,
-          assistantMemoryEnabled:
-            persisted.settings?.assistantMemoryEnabled ?? true,
-          themePreference: persisted.settings?.themePreference ?? "system",
-        });
+        setSettings(buildAppSettings(persisted.settings));
       } catch (error) {
         console.warn("Persistence bootstrap failed", error);
       } finally {
@@ -609,6 +632,43 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     setSettings((prev) => ({ ...prev, themePreference: value }));
   }, []);
 
+  const saveRegionalPreferences = useCallback(
+    (input: { country: string; currency: string }) => {
+      const resolved = resolveManualRegionalSettings({
+        country: input.country,
+        currency: input.currency,
+        fallbackCountryCode: settings.defaultCountryCode,
+      });
+
+      if (!resolved.ok) {
+        return resolved;
+      }
+
+      setSettings((prev) =>
+        applyRegionalDefaults({
+          ...prev,
+          ...resolved.value,
+          regionalPreferencesMode: "manual",
+        }),
+      );
+
+      return {
+        ok: true,
+        message: `Regional override saved: ${resolved.value.defaultCountryName} • ${resolved.value.defaultCurrency}.`,
+      };
+    },
+    [settings.defaultCountryCode],
+  );
+
+  const resetRegionalPreferences = useCallback(() => {
+    setSettings((prev) =>
+      applyRegionalDefaults({
+        ...prev,
+        regionalPreferencesMode: "auto",
+      }),
+    );
+  }, []);
+
   const addLivestock = useCallback((input: Omit<Livestock, "id">) => {
     const livestockItem: Livestock = {
       ...input,
@@ -968,31 +1028,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           : [],
         settings:
           parsed.settings && typeof parsed.settings === "object"
-            ? {
-                openRouterApiKey:
-                  (parsed.settings as AppSettings).openRouterApiKey ?? "",
-                aiModel:
-                  (parsed.settings as AppSettings).aiModel ??
-                  "nvidia/nemotron-3-super-120b-a12b:free",
-                notificationsEnabled:
-                  (parsed.settings as AppSettings).notificationsEnabled ??
-                  false,
-                reminderHour:
-                  (parsed.settings as AppSettings).reminderHour ?? 8,
-                assistantMemoryEnabled:
-                  (parsed.settings as AppSettings).assistantMemoryEnabled ??
-                  true,
-                themePreference:
-                  (parsed.settings as AppSettings).themePreference ?? "system",
-              }
-            : {
-                openRouterApiKey: "",
-                aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
-                notificationsEnabled: false,
-                reminderHour: 8,
-                assistantMemoryEnabled: true,
-                themePreference: "system",
-              },
+            ? buildAppSettings(parsed.settings as AppSettings)
+            : createDefaultSettings(),
       };
 
       setAquariums(nextState.aquariums);
@@ -1062,6 +1099,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       saveAiModel,
       saveAssistantMemoryEnabled,
       saveThemePreference,
+      saveRegionalPreferences,
+      resetRegionalPreferences,
     }),
     [
       isHydrated,
@@ -1104,6 +1143,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       saveAiModel,
       saveAssistantMemoryEnabled,
       saveThemePreference,
+      saveRegionalPreferences,
+      resetRegionalPreferences,
     ],
   );
 

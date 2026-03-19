@@ -45,6 +45,7 @@ import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { createEntityRef, getEntityHref } from "@/services/entity-links";
+import { formatCurrencyAmount } from "@/services/localization";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
@@ -155,6 +156,7 @@ type AquariumOverviewCardProps = {
   aquarium: Aquarium;
   backgroundColor: string;
   latestParameterSummary: string;
+  investmentCostText?: string;
   livestockCount: number;
   openIssueCount: number;
   nitrateTrend: string;
@@ -166,6 +168,7 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
   aquarium,
   backgroundColor,
   latestParameterSummary,
+  investmentCostText,
   livestockCount,
   openIssueCount,
   nitrateTrend,
@@ -203,9 +206,7 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
           style={[styles.issueMeta, { color: textColor }]}
         >
           {aquarium.dimensions} • Setup {aquarium.setupDate}
-          {aquarium.investmentCost !== undefined
-            ? ` • $${aquarium.investmentCost}`
-            : ""}
+          {investmentCostText ? ` • ${investmentCostText}` : ""}
         </Text>
         <View style={styles.summaryRow}>
           <Chip compact icon="fish">
@@ -789,6 +790,7 @@ export default function HomeScreen() {
     parameterLogs,
     taskTemplates,
     taskExecutions,
+    settings,
     livestockCountByAquarium,
     openIssuesByAquarium,
     addAquarium,
@@ -809,6 +811,17 @@ export default function HomeScreen() {
     completeTask,
     setIssueStatus,
   } = useAquapt();
+  const userCurrencyCode = settings.defaultCurrency ?? "USD";
+  const userLocale = settings.defaultLocale;
+  const getCurrencyFieldLabel = (baseLabel: string, optional = false) => {
+    if (!settings.defaultCurrency) {
+      return optional ? `${baseLabel} (optional)` : baseLabel;
+    }
+
+    return optional
+      ? `${baseLabel} (${settings.defaultCurrency}, optional)`
+      : `${baseLabel} (${settings.defaultCurrency})`;
+  };
   const openEntity = (ref: EntityRef) => {
     router.push(getEntityHref(ref) as never);
   };
@@ -1851,6 +1864,15 @@ export default function HomeScreen() {
                     insight?.latestParameterSummary ??
                     "No measurements logged yet"
                   }
+                  investmentCostText={
+                    aquarium.investmentCost !== undefined
+                      ? formatCurrencyAmount(
+                          aquarium.investmentCost,
+                          userCurrencyCode,
+                          userLocale,
+                        )
+                      : undefined
+                  }
                   livestockCount={livestockCountByAquarium[aquarium.id] ?? 0}
                   openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
                   nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
@@ -1877,6 +1899,15 @@ export default function HomeScreen() {
                   latestParameterSummary={
                     insight?.latestParameterSummary ??
                     "No measurements logged yet"
+                  }
+                  investmentCostText={
+                    aquarium.investmentCost !== undefined
+                      ? formatCurrencyAmount(
+                          aquarium.investmentCost,
+                          userCurrencyCode,
+                          userLocale,
+                        )
+                      : undefined
                   }
                   livestockCount={livestockCountByAquarium[aquarium.id] ?? 0}
                   openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
@@ -2311,7 +2342,13 @@ export default function HomeScreen() {
                       </Text>
                       <Text variant="bodySmall" style={styles.issueMeta}>
                         Purchased: {asset.purchasedAt ?? "-"}
-                        {asset.price !== undefined ? ` • $${asset.price}` : ""}
+                        {asset.price !== undefined
+                          ? ` • ${formatCurrencyAmount(
+                              asset.price,
+                              userCurrencyCode,
+                              userLocale,
+                            )}`
+                          : ""}
                       </Text>
                       {asset.maintenanceTaskTemplateIds?.length ? (
                         <View style={styles.summaryRow}>
@@ -2553,7 +2590,7 @@ export default function HomeScreen() {
             {(field) => (
               <TextInput
                 mode="outlined"
-                label="Investment cost"
+                label={getCurrencyFieldLabel("Investment cost")}
                 value={field.state.value}
                 onChangeText={field.handleChange}
                 keyboardType="numeric"
@@ -2650,7 +2687,7 @@ export default function HomeScreen() {
             {(field) => (
               <TextInput
                 mode="outlined"
-                label="Investment cost (optional)"
+                label={getCurrencyFieldLabel("Investment cost", true)}
                 value={field.state.value}
                 onChangeText={field.handleChange}
                 keyboardType="numeric"
@@ -2751,7 +2788,7 @@ export default function HomeScreen() {
           />
           <TextInput
             mode="outlined"
-            label="Purchase price (optional)"
+            label={getCurrencyFieldLabel("Purchase price", true)}
             value={newLivestockPrice}
             onChangeText={setNewLivestockPrice}
             keyboardType="numeric"
@@ -2818,7 +2855,7 @@ export default function HomeScreen() {
           />
           <TextInput
             mode="outlined"
-            label="Asset price (optional)"
+            label={getCurrencyFieldLabel("Asset price", true)}
             value={newAssetPrice}
             onChangeText={setNewAssetPrice}
             keyboardType="numeric"
