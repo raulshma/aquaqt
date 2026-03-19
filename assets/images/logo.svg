@@ -1,0 +1,71 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Dark deep sea gradient for the base droplet -->
+    <linearGradient id="dropBack" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0E50B3" />
+      <stop offset="100%" stop-color="#021B45" />
+    </linearGradient>
+
+    <!-- Vibrant cyan gradient for the overlapping wave -->
+    <linearGradient id="dropFront" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="100%" stop-color="#0066FF" />
+    </linearGradient>
+
+    <!-- Bright AI spark gradient -->
+    <linearGradient id="spark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#BEE4FF" />
+    </linearGradient>
+
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#001533" flood-opacity="0.5" />
+    </filter>
+    
+    <filter id="waveShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="-8" dy="-4" stdDeviation="12" flood-color="#000000" flood-opacity="0.3" />
+    </filter>
+
+    <filter id="sparkGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="0" stdDeviation="16" flood-color="#00E5FF" flood-opacity="0.8" />
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#0A111A" />
+
+  <g transform="translate(174, 174) scale(0.66)">
+    
+    <!-- Base Droplet Shape -->
+    <!-- Centered at 512, top tip at 70, bottom curve from 162 to 862 -->
+    <path d="M512 70 
+             C 650 300, 862 450, 862 650 
+             A 350 350 0 0 1 162 650 
+             C 162 450, 374 300, 512 70 Z" 
+          fill="url(#dropBack)" 
+          filter="url(#shadow)" />
+
+    <!-- Overlapping Inner Wave -->
+    <!-- Arcs from bottom right to bottom left, then swerves inside -->
+    <path d="M 862 650
+             A 350 350 0 0 1 162 650
+             C 162 500, 412 550, 512 650
+             C 612 750, 712 500, 512 70
+             C 650 300, 862 450, 862 650 Z" 
+          fill="url(#dropFront)" 
+          filter="url(#waveShadow)" />
+
+    <!-- AI Spark (Central intelligence node) -->
+    <!-- Positioned inside the fat part of the drop -->
+    <g transform="translate(512, 650) scale(1.6)" filter="url(#sparkGlow)">
+      <path d="M 0 -80 
+               C 0 -30, 30 0, 80 0 
+               C 30 0, 0 30, 0 80 
+               C 0 30, -30 0, -80 0 
+               C -30 0, 0 -30, 0 -80 Z" 
+            fill="url(#spark)" />
+      
+      <circle cx="0" cy="0" r="10" fill="#0A111A" />
+    </g>
+  </g>
+</svg>

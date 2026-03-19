@@ -2,8 +2,8 @@ import { Platform } from "react-native";
 
 import { requestOpenRouterCompletion } from "@/services/assistant-ai";
 import {
-    loadPersistedAssistantMemoryState,
-    savePersistedAssistantMemoryState,
+  loadPersistedAssistantMemoryState,
+  savePersistedAssistantMemoryState,
 } from "@/services/persistence";
 import { AssistantMemorySnippet } from "@/types/assistant";
 
@@ -71,10 +71,12 @@ interface RememberManualSnippetParams {
 const MEMORY_VECTOR_STORE_NAME = "assistant-memory-v1";
 const MAX_MEMORY_CHARS = 1200;
 const MANUAL_MEMORY_PREFIX = "manual";
+const COMPACT_MEMORY_PREFIX = "compact";
 
 let depsPromise: Promise<MemoryDependencies | null> | null = null;
 let vectorStorePromise: Promise<MemoryVectorStoreLike | null> | null = null;
 let runtimeStatePromise: Promise<PersistedMemoryRuntimeState> | null = null;
+const backgroundSummaryTasks = new Map<string, Promise<void>>();
 
 async function loadDeps(): Promise<MemoryDependencies | null> {
   if (Platform.OS === "web") {
@@ -159,6 +161,8 @@ const normalizeText = (value: string) =>
 
 const clamp = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, max)}…` : value;
+
+const nowIso = () => new Date().toISOString();
 
 const splitSentences = (text: string) =>
   text
@@ -302,6 +306,174 @@ const toSnippet = (result: QueryResultLike): AssistantMemorySnippet | null => {
 const buildManualMemoryId = (conversationId: string, sourceMessageId: string) =>
   `${MANUAL_MEMORY_PREFIX}:conv:${conversationId}:msg:${sourceMessageId}`;
 
+const buildCompactMemoryId = (index: number) =>
+  `${COMPACT_MEMORY_PREFIX}:fact:${Date.now()}:${index}`;
+
+async function upsertMemoryDocument(
+  store: MemoryVectorStoreLike,
+  params: {
+    id: string;
+    document: string;
+    metadata: Record<string, unknown>;
+  },
+) {
+  try {
+    await store.add(params);
+  } catch {
+    await store.update(params);
+  }
+}
+
+function extractCompactFactCandidates(snippets: AssistantMemorySnippet[]) {
+  const candidates = snippets.flatMap((snippet) =>
+    snippet.content
+      .split(/\n+/)
+      .map((line) =>
+        normalizeText(
+          line
+            .replace(/^\d+[.)]\s*/, "")
+            .replace(/^[-*•]\s*/, "")
+            .replace(/^memory facts:\s*/i, "")
+            .replace(/^source question:\s*/i, "")
+            .replace(/^user asked:\s*/i, "")
+            .replace(/^assistant answered:\s*/i, ""),
+        ),
+      )
+      .filter((line) => line.length >= 12),
+  );
+
+  return Array.from(new Set(candidates));
+}
+
+const coerceCompactedFacts = (raw: string, maxFacts: number) => {
+  const lines = raw
+    .split(/\n+/)
+    .map((line) =>
+      normalizeText(
+        line
+          .replace(/^\d+[.)]\s*/, "")
+          .replace(/^[-*•]\s*/, "")
+          .replace(/^"|"$/g, ""),
+      ),
+    )
+    .filter((line) => line.length >= 8 && !/^NO_MEMORY$/i.test(line));
+
+  return Array.from(new Set(lines)).slice(0, maxFacts);
+};
+
+async function buildCompactedFactsWithAi(params: {
+  snippets: AssistantMemorySnippet[];
+  apiKey?: string;
+  model?: string;
+  maxFacts: number;
+}): Promise<string[] | null> {
+  const trimmedApiKey = params.apiKey?.trim();
+  const trimmedModel = params.model?.trim();
+
+  if (!trimmedApiKey || !trimmedModel) {
+    return null;
+  }
+
+  const inputFacts = extractCompactFactCandidates(params.snippets)
+    .slice(0, 80)
+    .map((fact, index) => `${index + 1}. ${fact}`)
+    .join("\n");
+
+  if (!inputFacts) {
+    return null;
+  }
+
+  const raw = await requestOpenRouterCompletion({
+    apiKey: trimmedApiKey,
+    model: trimmedModel,
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You compact long-term memory for an aquarium assistant. Return plain text only, one fact per line, max 12 lines, each line <= 160 chars. Keep only durable user preferences, stable constraints, and reusable context. Remove duplicates and weak one-off details. If no durable facts exist, return EXACTLY: NO_MEMORY.",
+      },
+      {
+        role: "user",
+        content: `Facts to compact:\n${inputFacts}`,
+      },
+    ],
+  });
+
+  const compacted = coerceCompactedFacts(raw, params.maxFacts);
+  return compacted.length > 0 ? compacted : null;
+}
+
+function buildCompactedFactsHeuristically(params: {
+  snippets: AssistantMemorySnippet[];
+  maxFacts: number;
+}): string[] {
+  return extractCompactFactCandidates(params.snippets)
+    .slice(0, params.maxFacts)
+    .map((fact) => clamp(fact, 180));
+}
+
+async function buildAssistantMemoryCompactionPlan(params: {
+  apiKey?: string;
+  model?: string;
+  enabled?: boolean;
+  maxFacts?: number;
+}): Promise<{ beforeCount: number; facts: string[] }> {
+  if (params.enabled === false) {
+    return { beforeCount: 0, facts: [] };
+  }
+
+  const snippets = await listAssistantMemorySnippets({ limit: 120 });
+  if (snippets.length === 0) {
+    return { beforeCount: 0, facts: [] };
+  }
+
+  const maxFacts = Math.max(1, Math.min(20, params.maxFacts ?? 10));
+
+  let compactedFacts: string[] | null = null;
+  try {
+    compactedFacts = await buildCompactedFactsWithAi({
+      snippets,
+      apiKey: params.apiKey,
+      model: params.model,
+      maxFacts,
+    });
+  } catch (error) {
+    console.warn("Assistant memory compact AI generation failed", error);
+  }
+
+  const facts = (
+    compactedFacts ??
+    buildCompactedFactsHeuristically({
+      snippets,
+      maxFacts,
+    })
+  )
+    .map((fact) => clamp(normalizeText(fact), 220))
+    .filter((fact) => fact.length > 0)
+    .slice(0, maxFacts);
+
+  return {
+    beforeCount: snippets.length,
+    facts: Array.from(new Set(facts)),
+  };
+}
+
+export async function previewAssistantMemoryFactCompaction(params: {
+  apiKey?: string;
+  model?: string;
+  enabled?: boolean;
+  maxFacts?: number;
+}): Promise<{ beforeCount: number; afterCount: number; facts: string[] }> {
+  const plan = await buildAssistantMemoryCompactionPlan(params);
+
+  return {
+    beforeCount: plan.beforeCount,
+    afterCount: plan.facts.length,
+    facts: plan.facts,
+  };
+}
+
 export async function queryAssistantMemorySnippets(params: {
   prompt: string;
   limit?: number;
@@ -343,19 +515,8 @@ export async function rememberAssistantTurn(
     return;
   }
 
-  let doc: string | null = null;
-
-  try {
-    doc = await buildMemoryDocumentWithAi(params);
-  } catch (error) {
-    console.warn("Assistant memory AI generation failed", error);
-  }
-
-  if (!doc) {
-    doc = buildMemoryDocument(params);
-  }
-
-  if (!doc) {
+  const fallbackDoc = buildMemoryDocument(params);
+  if (!fallbackDoc) {
     return;
   }
 
@@ -370,35 +531,57 @@ export async function rememberAssistantTurn(
   }
 
   const memoryId = `conv:${params.conversationId}:msg:${params.userMessageId}`;
+  const createdAt = nowIso();
 
-  try {
-    await store.add({
-      id: memoryId,
-      document: doc,
-      metadata: {
-        conversationId: params.conversationId,
-        userMessageId: params.userMessageId,
-        sourceMessageId: params.userMessageId,
-        category: "conversation_turn",
-        createdAt: new Date().toISOString(),
-      },
-    });
-  } catch {
-    await store.update({
-      id: memoryId,
-      document: doc,
-      metadata: {
-        conversationId: params.conversationId,
-        userMessageId: params.userMessageId,
-        sourceMessageId: params.userMessageId,
-        category: "conversation_turn",
-        createdAt: new Date().toISOString(),
-      },
-    });
-  }
+  await upsertMemoryDocument(store, {
+    id: memoryId,
+    document: fallbackDoc,
+    metadata: {
+      conversationId: params.conversationId,
+      userMessageId: params.userMessageId,
+      sourceMessageId: params.userMessageId,
+      category: "conversation_turn",
+      createdAt,
+    },
+  });
 
   state.indexedMessageIds.add(params.userMessageId);
   await saveRuntimeState(state);
+
+  if (!backgroundSummaryTasks.has(memoryId)) {
+    const task = (async () => {
+      try {
+        const aiDoc = await buildMemoryDocumentWithAi(params);
+        if (!aiDoc || aiDoc === fallbackDoc) {
+          return;
+        }
+
+        const activeStore = await getVectorStore();
+        if (!activeStore) {
+          return;
+        }
+
+        await upsertMemoryDocument(activeStore, {
+          id: memoryId,
+          document: aiDoc,
+          metadata: {
+            conversationId: params.conversationId,
+            userMessageId: params.userMessageId,
+            sourceMessageId: params.userMessageId,
+            category: "conversation_turn",
+            createdAt,
+            summarizedAt: nowIso(),
+          },
+        });
+      } catch (error) {
+        console.warn("Assistant memory background summarization failed", error);
+      } finally {
+        backgroundSummaryTasks.delete(memoryId);
+      }
+    })();
+
+    backgroundSummaryTasks.set(memoryId, task);
+  }
 }
 
 export async function listAssistantMemorySnippets(params?: {
@@ -485,29 +668,16 @@ export async function rememberManualAssistantSnippet(
     params.sourceMessageId,
   );
 
-  try {
-    await store.add({
-      id: memoryId,
-      document: content,
-      metadata: {
-        conversationId: params.conversationId,
-        sourceMessageId: params.sourceMessageId,
-        category: "manual",
-        createdAt: new Date().toISOString(),
-      },
-    });
-  } catch {
-    await store.update({
-      id: memoryId,
-      document: content,
-      metadata: {
-        conversationId: params.conversationId,
-        sourceMessageId: params.sourceMessageId,
-        category: "manual",
-        createdAt: new Date().toISOString(),
-      },
-    });
-  }
+  await upsertMemoryDocument(store, {
+    id: memoryId,
+    document: content,
+    metadata: {
+      conversationId: params.conversationId,
+      sourceMessageId: params.sourceMessageId,
+      category: "manual",
+      createdAt: nowIso(),
+    },
+  });
 
   return memoryId;
 }
@@ -522,4 +692,66 @@ export async function forgetManualAssistantSnippet(params: {
   );
 
   await forgetAssistantMemorySnippet(memoryId);
+}
+
+export async function compactAssistantMemoryFacts(params: {
+  apiKey?: string;
+  model?: string;
+  enabled?: boolean;
+  maxFacts?: number;
+  precomputedFacts?: string[];
+}): Promise<{ beforeCount: number; afterCount: number }> {
+  const plan = await buildAssistantMemoryCompactionPlan(params);
+  if (plan.beforeCount === 0) {
+    return { beforeCount: 0, afterCount: 0 };
+  }
+
+  const maxFacts = Math.max(1, Math.min(20, params.maxFacts ?? 10));
+  const finalFacts = (
+    Array.isArray(params.precomputedFacts) && params.precomputedFacts.length > 0
+      ? params.precomputedFacts
+      : plan.facts
+  )
+    .map((fact) => clamp(normalizeText(fact), 220))
+    .filter((fact) => fact.length > 0)
+    .slice(0, maxFacts);
+
+  if (finalFacts.length === 0) {
+    return { beforeCount: plan.beforeCount, afterCount: 0 };
+  }
+
+  const store = await getVectorStore();
+  if (!store?.delete) {
+    throw new Error(
+      "Assistant memory compaction is not available on this device.",
+    );
+  }
+
+  await store.delete({
+    predicate: () => true,
+  });
+
+  const createdAt = nowIso();
+
+  for (const [index, fact] of finalFacts.entries()) {
+    const normalized = clamp(normalizeText(fact), 220);
+    if (!normalized) {
+      continue;
+    }
+
+    await store.add({
+      id: buildCompactMemoryId(index),
+      document: normalized,
+      metadata: {
+        category: "compacted_fact",
+        createdAt,
+        compactedAt: createdAt,
+      },
+    });
+  }
+
+  return {
+    beforeCount: plan.beforeCount,
+    afterCount: finalFacts.length,
+  };
 }

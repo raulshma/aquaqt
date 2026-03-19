@@ -1,26 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import {
-    ActivityIndicator,
-    Button,
-    Card,
-    Chip,
-    Text,
-    useTheme,
+  ActivityIndicator,
+  Button,
+  Card,
+  Chip,
+  Text,
+  useTheme,
 } from "react-native-paper";
 
 import {
-    DashboardHero,
-    DashboardScrollView,
-    DashboardSection,
+  DashboardHero,
+  DashboardScrollView,
+  DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
 import {
-    clearAssistantMemoryStore,
-    forgetAssistantMemorySnippet,
-    listAssistantMemorySnippets,
+  clearAssistantMemoryStore,
+  compactAssistantMemoryFacts,
+  forgetAssistantMemorySnippet,
+  listAssistantMemorySnippets,
+  previewAssistantMemoryFactCompaction,
 } from "@/services/assistant-memory";
 import { AssistantMemorySnippet } from "@/types/assistant";
+
+interface CompactionPreview {
+  beforeCount: number;
+  afterCount: number;
+  facts: string[];
+}
 
 export default function MemorySettingsScreen() {
   const theme = useTheme();
@@ -33,6 +41,9 @@ export default function MemorySettingsScreen() {
   >([]);
   const [isLoadingMemory, setIsLoadingMemory] = useState(false);
   const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [memoryNotice, setMemoryNotice] = useState<string | null>(null);
+  const [compactionPreview, setCompactionPreview] =
+    useState<CompactionPreview | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -48,6 +59,7 @@ export default function MemorySettingsScreen() {
       const snippets = await listAssistantMemorySnippets({ limit: 20 });
       if (mountedRef.current) {
         setMemorySnippets(snippets);
+        setCompactionPreview(null);
       }
     } catch (error) {
       setMemoryError(
@@ -63,10 +75,13 @@ export default function MemorySettingsScreen() {
   const clearAssistantMemory = useCallback(async () => {
     setIsLoadingMemory(true);
     setMemoryError(null);
+    setMemoryNotice(null);
+    setCompactionPreview(null);
     try {
       await clearAssistantMemoryStore();
       if (mountedRef.current) {
         setMemorySnippets([]);
+        setMemoryNotice("Assistant memory cleared.");
       }
     } catch (error) {
       setMemoryError(
@@ -81,6 +96,8 @@ export default function MemorySettingsScreen() {
 
   const forgetSnippet = useCallback(async (id: string) => {
     setMemoryError(null);
+    setMemoryNotice(null);
+    setCompactionPreview(null);
     try {
       await forgetAssistantMemorySnippet(id);
       setMemorySnippets((prev) => prev.filter((snippet) => snippet.id !== id));
@@ -90,6 +107,98 @@ export default function MemorySettingsScreen() {
       );
     }
   }, []);
+
+  const previewCompactFacts = useCallback(async () => {
+    setIsLoadingMemory(true);
+    setMemoryError(null);
+    setMemoryNotice(null);
+    setCompactionPreview(null);
+
+    try {
+      const preview = await previewAssistantMemoryFactCompaction({
+        apiKey: settings.openRouterApiKey,
+        model: settings.assistantMemoryModel || settings.aiModel,
+        enabled: assistantMemoryEnabled,
+        maxFacts: 10,
+      });
+
+      if (preview.beforeCount === 0) {
+        setMemoryNotice("No memory facts found to compact.");
+      } else if (preview.afterCount === 0) {
+        setMemoryNotice("No durable facts found in current memory snippets.");
+      } else {
+        setCompactionPreview(preview);
+        setMemoryNotice(
+          `Preview ready: ${preview.beforeCount} snippets → ${preview.afterCount} durable fact${preview.afterCount === 1 ? "" : "s"}. Confirm to apply.`,
+        );
+      }
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error
+          ? error.message
+          : "Failed to preview compacted memory facts",
+      );
+    } finally {
+      if (mountedRef.current) {
+        setIsLoadingMemory(false);
+      }
+    }
+  }, [
+    assistantMemoryEnabled,
+    settings.aiModel,
+    settings.assistantMemoryModel,
+    settings.openRouterApiKey,
+  ]);
+
+  const cancelCompactionPreview = useCallback(() => {
+    setCompactionPreview(null);
+    setMemoryNotice("Compaction preview canceled.");
+    setMemoryError(null);
+  }, []);
+
+  const applyCompactionPreview = useCallback(async () => {
+    if (!compactionPreview || compactionPreview.facts.length === 0) {
+      return;
+    }
+
+    setIsLoadingMemory(true);
+    setMemoryError(null);
+    setMemoryNotice(null);
+
+    try {
+      const result = await compactAssistantMemoryFacts({
+        apiKey: settings.openRouterApiKey,
+        model: settings.assistantMemoryModel || settings.aiModel,
+        enabled: assistantMemoryEnabled,
+        maxFacts: Math.max(1, compactionPreview.facts.length),
+        precomputedFacts: compactionPreview.facts,
+      });
+
+      setMemoryNotice(
+        `Compacted ${result.beforeCount} snippets into ${result.afterCount} durable fact${result.afterCount === 1 ? "" : "s"}.`,
+      );
+      setCompactionPreview(null);
+
+      const snippets = await listAssistantMemorySnippets({ limit: 20 });
+      if (mountedRef.current) {
+        setMemorySnippets(snippets);
+      }
+    } catch (error) {
+      setMemoryError(
+        error instanceof Error ? error.message : "Failed to apply compaction",
+      );
+    } finally {
+      if (mountedRef.current) {
+        setIsLoadingMemory(false);
+      }
+    }
+  }, [
+    assistantMemoryEnabled,
+    compactionPreview,
+    settings.aiModel,
+    settings.assistantMemoryModel,
+    settings.openRouterApiKey,
+  ]);
 
   useEffect(() => {
     if (!assistantMemoryEnabled) {
@@ -171,8 +280,73 @@ export default function MemorySettingsScreen() {
           >
             Clear all
           </Button>
+          <Button
+            mode="outlined"
+            onPress={() => {
+              void previewCompactFacts();
+            }}
+            disabled={
+              !assistantMemoryEnabled ||
+              isLoadingMemory ||
+              memorySnippets.length < 2
+            }
+          >
+            Preview compact
+          </Button>
           {isLoadingMemory ? <ActivityIndicator /> : null}
         </View>
+
+        {compactionPreview ? (
+          <Card
+            mode="outlined"
+            style={{
+              marginTop: 12,
+              borderColor: theme.colors.primary,
+            }}
+          >
+            <Card.Content>
+              <Text variant="titleSmall">Compaction preview</Text>
+              <Text variant="bodySmall" style={{ marginTop: 6, opacity: 0.8 }}>
+                {compactionPreview.beforeCount} snippets will become{" "}
+                {compactionPreview.afterCount} durable facts.
+              </Text>
+              {compactionPreview.facts.map((fact, index) => (
+                <Text
+                  key={`preview-fact-${index}`}
+                  variant="bodySmall"
+                  style={{ marginTop: 8 }}
+                >
+                  {index + 1}. {fact}
+                </Text>
+              ))}
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginTop: 12,
+                }}
+              >
+                <Button
+                  mode="contained"
+                  onPress={() => {
+                    void applyCompactionPreview();
+                  }}
+                  disabled={isLoadingMemory}
+                >
+                  Apply compaction
+                </Button>
+                <Button
+                  mode="text"
+                  onPress={cancelCompactionPreview}
+                  disabled={isLoadingMemory}
+                >
+                  Cancel
+                </Button>
+              </View>
+            </Card.Content>
+          </Card>
+        ) : null}
 
         {!assistantMemoryEnabled ? (
           <Text variant="bodySmall" style={{ opacity: 0.75, marginTop: 12 }}>
@@ -188,6 +362,16 @@ export default function MemorySettingsScreen() {
             {memoryError}
           </Text>
         ) : null}
+
+        {memoryNotice ? (
+          <Text
+            variant="bodySmall"
+            style={{ color: theme.colors.primary, marginTop: 12 }}
+          >
+            {memoryNotice}
+          </Text>
+        ) : null}
+
         {assistantMemoryEnabled &&
         memorySnippets.length === 0 &&
         !isLoadingMemory ? (
