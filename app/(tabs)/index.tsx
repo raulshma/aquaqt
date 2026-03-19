@@ -1,7 +1,14 @@
 import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Alert,
   ScrollView,
@@ -33,7 +40,15 @@ import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
-import { IssueStatus, Livestock, TaskFrequency } from "@/types/aquapt";
+import {
+  type Aquarium,
+  type Issue,
+  IssueStatus,
+  type Livestock,
+  TaskFrequency,
+  type TaskTemplate,
+  type WaterParameterLog,
+} from "@/types/aquapt";
 
 const WATER_TYPES = ["freshwater", "marine", "brackish"] as const;
 const LIVESTOCK_KINDS = [
@@ -91,6 +106,407 @@ const parseIsoDate = (value: string) => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
+
+const LIVESTOCK_STATUS_BUTTONS = [
+  { label: "Active", value: "active" },
+  { label: "Ill", value: "ill" },
+  { label: "Deceased", value: "deceased" },
+];
+
+const FEEDING_TASK_FREQUENCY_BUTTONS = [
+  { label: "Daily", value: "daily" },
+  { label: "Weekly", value: "weekly" },
+  { label: "Bi-weekly", value: "bi-weekly" },
+  { label: "Monthly", value: "monthly" },
+];
+
+const ISSUE_STATUS_BUTTONS = [
+  { label: "Open", value: "open" },
+  { label: "Monitoring", value: "monitoring" },
+  { label: "Resolved", value: "resolved" },
+];
+
+type AquariumInsights = {
+  latestParameterSummary: string;
+  nitrateTrend: string;
+  alerts: ReturnType<typeof evaluateParameterAlerts>;
+};
+
+type DueTaskEntry = {
+  taskId: string;
+  taskTitle: string;
+  aquariumId: string;
+};
+
+type AquariumOverviewCardProps = {
+  aquarium: Aquarium;
+  backgroundColor: string;
+  latestParameterSummary: string;
+  livestockCount: number;
+  openIssueCount: number;
+  nitrateTrend: string;
+  onEdit: (aquariumId: string) => void;
+};
+
+const AquariumOverviewCard = memo(function AquariumOverviewCard({
+  aquarium,
+  backgroundColor,
+  latestParameterSummary,
+  livestockCount,
+  openIssueCount,
+  nitrateTrend,
+  onEdit,
+}: AquariumOverviewCardProps) {
+  return (
+    <Card style={[styles.keepCard, { backgroundColor }]} mode="contained">
+      <Card.Title
+        title={aquarium.name}
+        subtitle={`${aquarium.volumeLiters}L • ${aquarium.waterType}`}
+      />
+      <Card.Content>
+        <Text variant="bodyMedium">
+          Latest parameters: {latestParameterSummary}
+        </Text>
+        <Text variant="bodySmall" style={styles.issueMeta}>
+          {aquarium.dimensions} • Setup {aquarium.setupDate}
+          {aquarium.investmentCost !== undefined
+            ? ` • $${aquarium.investmentCost}`
+            : ""}
+        </Text>
+        <View style={styles.summaryRow}>
+          <Chip compact icon="fish">
+            {livestockCount} livestock
+          </Chip>
+          <Chip compact icon="alert-circle">
+            {openIssueCount} issues
+          </Chip>
+          <Chip compact icon="chart-line">NO3 trend: {nitrateTrend}</Chip>
+          <Button mode="contained-tonal" onPress={() => onEdit(aquarium.id)}>
+            Edit specs
+          </Button>
+        </View>
+      </Card.Content>
+    </Card>
+  );
+});
+
+type LivestockCardProps = {
+  item: Livestock;
+  aquariumName: string;
+  fallbackTargetId?: string;
+  feedingNote: string;
+  livestockStatus: NonNullable<Livestock["status"]>;
+  livestockStatusNote: string;
+  feedingTaskTitle: string;
+  feedingTaskFrequency: TaskFrequency;
+  cardBackground: string;
+  setFeedingNoteDraft: Dispatch<SetStateAction<Record<string, string>>>;
+  setLivestockStatusDraft: Dispatch<
+    SetStateAction<Record<string, NonNullable<Livestock["status"]>>>
+  >;
+  setLivestockStatusNoteDraft: Dispatch<
+    SetStateAction<Record<string, string>>
+  >;
+  setFeedingTaskTitleDraft: Dispatch<SetStateAction<Record<string, string>>>;
+  setFeedingTaskFrequencyDraft: Dispatch<
+    SetStateAction<Record<string, TaskFrequency>>
+  >;
+  setLivestockFeedingNotes: (livestockId: string, dietaryNotes: string) => void;
+  setLivestockStatus: (
+    livestockId: string,
+    status: NonNullable<Livestock["status"]>,
+    note?: string,
+  ) => void;
+  transferLivestock: (
+    livestockId: string,
+    targetAquariumId: string,
+    note?: string,
+  ) => void;
+  addOffspring: (
+    parentLivestockId: string,
+    input: Omit<Livestock, "id" | "parentId" | "aquariumId"> & {
+      aquariumId?: string;
+    },
+  ) => void;
+  addLivestockFeedingTask: (input: {
+    livestockId: string;
+    title: string;
+    frequency: TaskFrequency;
+    description?: string;
+  }) => void;
+};
+
+const LivestockCard = memo(function LivestockCard({
+  item,
+  aquariumName,
+  fallbackTargetId,
+  feedingNote,
+  livestockStatus,
+  livestockStatusNote,
+  feedingTaskTitle,
+  feedingTaskFrequency,
+  cardBackground,
+  setFeedingNoteDraft,
+  setLivestockStatusDraft,
+  setLivestockStatusNoteDraft,
+  setFeedingTaskTitleDraft,
+  setFeedingTaskFrequencyDraft,
+  setLivestockFeedingNotes,
+  setLivestockStatus,
+  transferLivestock,
+  addOffspring,
+  addLivestockFeedingTask,
+}: LivestockCardProps) {
+  return (
+    <Card
+      style={[
+        styles.issueCard,
+        styles.sectionItemCard,
+        styles.keepCard,
+        { backgroundColor: cardBackground },
+      ]}
+      mode="contained"
+    >
+      <Card.Content>
+        <Text variant="titleSmall">
+          {item.name} ({item.quantity})
+        </Text>
+        <Text variant="bodySmall" style={styles.issueMeta}>
+          {item.species} • {aquariumName}
+        </Text>
+        <View style={styles.summaryRow}>
+          <Chip compact>{item.kind}</Chip>
+          <Chip compact>{item.status ?? "active"}</Chip>
+        </View>
+        {item.photoUri ? (
+          <Image source={{ uri: item.photoUri }} style={styles.livestockPhoto} />
+        ) : null}
+        <TextInput
+          mode="outlined"
+          label="Feeding notes"
+          value={feedingNote}
+          onChangeText={(value) =>
+            setFeedingNoteDraft((prev) => ({
+              ...prev,
+              [item.id]: value,
+            }))
+          }
+          multiline
+          numberOfLines={2}
+          style={styles.issueResolutionInput}
+        />
+        <ScrollableSegmentedButtons
+          value={livestockStatus}
+          onValueChange={(value) =>
+            setLivestockStatusDraft((prev) => ({
+              ...prev,
+              [item.id]: value as NonNullable<Livestock["status"]>,
+            }))
+          }
+          buttons={LIVESTOCK_STATUS_BUTTONS}
+          style={styles.issueStatusSelector}
+        />
+        <TextInput
+          mode="outlined"
+          label="Status note (optional)"
+          value={livestockStatusNote}
+          onChangeText={(value) =>
+            setLivestockStatusNoteDraft((prev) => ({
+              ...prev,
+              [item.id]: value,
+            }))
+          }
+          multiline
+          numberOfLines={2}
+          style={styles.issueResolutionInput}
+        />
+        <View style={styles.summaryRow}>
+          <Button
+            mode="contained-tonal"
+            onPress={() => setLivestockFeedingNotes(item.id, feedingNote.trim())}
+          >
+            Save feeding
+          </Button>
+          <Button
+            mode="contained-tonal"
+            onPress={() =>
+              setLivestockStatus(
+                item.id,
+                livestockStatus,
+                livestockStatusNote.trim() || undefined,
+              )
+            }
+          >
+            Save status
+          </Button>
+          <Button
+            mode="contained-tonal"
+            disabled={!fallbackTargetId || fallbackTargetId === item.aquariumId}
+            onPress={() =>
+              fallbackTargetId
+                ? transferLivestock(item.id, fallbackTargetId, "Manual transfer")
+                : undefined
+            }
+          >
+            Transfer
+          </Button>
+          <Button
+            mode="contained-tonal"
+            onPress={() =>
+              addOffspring(item.id, {
+                kind: item.kind,
+                name: `${item.name} offspring`,
+                species: item.species,
+                quantity: 1,
+                acquiredAt: new Date().toISOString(),
+                status: "active",
+              })
+            }
+          >
+            Add offspring
+          </Button>
+        </View>
+        <TextInput
+          mode="outlined"
+          label="Feeding task title"
+          value={feedingTaskTitle}
+          onChangeText={(value) =>
+            setFeedingTaskTitleDraft((prev) => ({
+              ...prev,
+              [item.id]: value,
+            }))
+          }
+          style={styles.issueResolutionInput}
+          placeholder={`Feed ${item.name}`}
+        />
+        <ScrollableSegmentedButtons
+          value={feedingTaskFrequency}
+          onValueChange={(value) =>
+            setFeedingTaskFrequencyDraft((prev) => ({
+              ...prev,
+              [item.id]: value as TaskFrequency,
+            }))
+          }
+          buttons={FEEDING_TASK_FREQUENCY_BUTTONS}
+          style={styles.issueStatusSelector}
+        />
+        <Button
+          mode="contained-tonal"
+          style={styles.issueSaveButton}
+          onPress={() => {
+            const customTitle = feedingTaskTitle.trim();
+            addLivestockFeedingTask({
+              livestockId: item.id,
+              title: customTitle || `Feed ${item.name}`,
+              frequency: feedingTaskFrequency,
+              description:
+                feedingNote.trim() ||
+                item.dietaryNotes ||
+                `Targeted feeding regimen for ${item.name}`,
+            });
+
+            setFeedingTaskTitleDraft((prev) => ({
+              ...prev,
+              [item.id]: "",
+            }));
+          }}
+        >
+          Create feeding task
+        </Button>
+      </Card.Content>
+    </Card>
+  );
+});
+
+type IssueCardProps = {
+  issue: Issue;
+  aquariumName: string;
+  currentStatus: IssueStatus;
+  resolutionNote: string;
+  setIssueStatusDraft: Dispatch<SetStateAction<Record<string, IssueStatus>>>;
+  setResolutionNoteDraft: Dispatch<
+    SetStateAction<Record<string, string>>
+  >;
+  setIssueStatus: (
+    issueId: string,
+    status: Issue["status"],
+    resolutionNote?: string,
+  ) => void;
+  backgroundColor: string;
+};
+
+const IssueCard = memo(function IssueCard({
+  issue,
+  aquariumName,
+  currentStatus,
+  resolutionNote,
+  setIssueStatusDraft,
+  setResolutionNoteDraft,
+  setIssueStatus,
+  backgroundColor,
+}: IssueCardProps) {
+  return (
+    <Card
+      style={[
+        styles.issueCard,
+        styles.sectionItemCard,
+        styles.keepCard,
+        { backgroundColor },
+      ]}
+      mode="contained"
+    >
+      <Card.Content>
+        <Text variant="titleSmall">{issue.title}</Text>
+        <Text variant="bodySmall" style={styles.issueMeta}>
+          {aquariumName} • Logged {new Date(issue.createdAt).toLocaleString()}
+        </Text>
+
+        <ScrollableSegmentedButtons
+          value={currentStatus}
+          onValueChange={(value) =>
+            setIssueStatusDraft((prev) => ({
+              ...prev,
+              [issue.id]: value as IssueStatus,
+            }))
+          }
+          buttons={ISSUE_STATUS_BUTTONS}
+          style={styles.issueStatusSelector}
+        />
+
+        {currentStatus === "resolved" ? (
+          <TextInput
+            mode="outlined"
+            label="Resolution note"
+            value={resolutionNote}
+            onChangeText={(value) =>
+              setResolutionNoteDraft((prev) => ({
+                ...prev,
+                [issue.id]: value,
+              }))
+            }
+            multiline
+            numberOfLines={3}
+            style={styles.issueResolutionInput}
+          />
+        ) : null}
+
+        <Button
+          mode="contained"
+          style={styles.issueSaveButton}
+          onPress={() =>
+            setIssueStatus(
+              issue.id,
+              currentStatus,
+              resolutionNote.trim() || undefined,
+            )
+          }
+        >
+          Save issue update
+        </Button>
+      </Card.Content>
+    </Card>
+  );
+});
 
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
@@ -404,70 +820,96 @@ export default function HomeScreen() {
     }
   }, [aquariums, selectedAquariumId]);
 
-  const latestParameterByAquarium = useMemo(() => {
-    return aquariums.reduce<Record<string, string>>((acc, aquarium) => {
-      const latest = parameterLogs
-        .filter((entry) => entry.aquariumId === aquarium.id)
-        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0];
+  const parameterLogsByAquarium = useMemo(() => {
+    const groupedLogs: Record<string, WaterParameterLog[]> = {};
 
-      if (!latest) {
-        acc[aquarium.id] = "No measurements logged yet";
-        return acc;
+    for (const entry of parameterLogs) {
+      if (!groupedLogs[entry.aquariumId]) {
+        groupedLogs[entry.aquariumId] = [];
       }
 
-      const values = latest.values;
-      acc[aquarium.id] =
-        `NO3 ${values.nitrate ?? "-"} • pH ${values.ph ?? "-"} • ${values.temperatureC ?? "-"}°C`;
+      groupedLogs[entry.aquariumId].push(entry);
+    }
 
-      return acc;
-    }, {});
-  }, [aquariums, parameterLogs]);
+    for (const aquariumLogs of Object.values(groupedLogs)) {
+      aquariumLogs.sort(
+        (a, b) => +new Date(a.createdAt) - +new Date(b.createdAt),
+      );
+    }
+
+    return groupedLogs;
+  }, [parameterLogs]);
+
+  const aquariumInsightsById = useMemo<Record<string, AquariumInsights>>(() => {
+    const insights: Record<string, AquariumInsights> = {};
+
+    for (const aquarium of aquariums) {
+      const aquariumLogs = parameterLogsByAquarium[aquarium.id] ?? [];
+      const latestLog = aquariumLogs[aquariumLogs.length - 1];
+
+      const latestParameterSummary = latestLog
+        ? `NO3 ${latestLog.values.nitrate ?? "-"} • pH ${latestLog.values.ph ?? "-"} • ${latestLog.values.temperatureC ?? "-"}°C`
+        : "No measurements logged yet";
+
+      const nitratePoints = aquariumLogs
+        .filter((entry) => entry.values.nitrate !== undefined)
+        .slice(-5)
+        .map((entry) => entry.values.nitrate as number);
+
+      let nitrateTrend = "Not enough data yet";
+      if (nitratePoints.length >= 2) {
+        const first = nitratePoints[0];
+        const last = nitratePoints[nitratePoints.length - 1];
+        const delta = Number((last - first).toFixed(2));
+        const direction = delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
+        nitrateTrend = `${direction} ${delta >= 0 ? "+" : ""}${delta} ppm (last ${nitratePoints.length} logs)`;
+      }
+
+      insights[aquarium.id] = {
+        latestParameterSummary,
+        nitrateTrend,
+        alerts: latestLog
+          ? evaluateParameterAlerts(aquarium, latestLog.values)
+          : [],
+      };
+    }
+
+    return insights;
+  }, [aquariums, parameterLogsByAquarium]);
 
   const handleSubmitQuickAction = () => {
     void quickLogForm.handleSubmit();
   };
 
-  const nitrateTrend = useMemo(() => {
-    return aquariums.reduce<Record<string, string>>((acc, aquarium) => {
-      const points = parameterLogs
-        .filter(
-          (entry) =>
-            entry.aquariumId === aquarium.id &&
-            entry.values.nitrate !== undefined,
-        )
-        .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt))
-        .slice(-5)
-        .map((entry) => entry.values.nitrate as number);
+  const { pendingTasksToday, dueTasksByAquarium } = useMemo(() => {
+    const dueTasks: Record<string, TaskTemplate[]> = {};
+    const pendingEntries: DueTaskEntry[] = [];
+    const now = new Date();
 
-      if (points.length < 2) {
-        acc[aquarium.id] = "Not enough data yet";
-        return acc;
-      }
+    for (const task of taskTemplates) {
+      for (const aquariumId of task.aquariumIds) {
+        if (!isTaskDue(task, aquariumId, taskExecutions, now)) {
+          continue;
+        }
 
-      const first = points[0];
-      const last = points[points.length - 1];
-      const delta = Number((last - first).toFixed(2));
-      const direction = delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
-      acc[aquarium.id] =
-        `${direction} ${delta >= 0 ? "+" : ""}${delta} ppm (last ${points.length} logs)`;
+        if (!dueTasks[aquariumId]) {
+          dueTasks[aquariumId] = [];
+        }
 
-      return acc;
-    }, {});
-  }, [aquariums, parameterLogs]);
-
-  const pendingTasksToday = useMemo(() => {
-    return taskTemplates.flatMap((task) =>
-      task.aquariumIds
-        .filter((aquariumId) =>
-          isTaskDue(task, aquariumId, taskExecutions, new Date()),
-        )
-        .map((aquariumId) => ({
+        dueTasks[aquariumId].push(task);
+        pendingEntries.push({
           taskId: task.id,
           taskTitle: task.title,
           aquariumId,
-        })),
-    );
-  }, [taskTemplates, taskExecutions]);
+        });
+      }
+    }
+
+    return {
+      pendingTasksToday: pendingEntries,
+      dueTasksByAquarium: dueTasks,
+    };
+  }, [taskExecutions, taskTemplates]);
 
   const availableTaskTemplatesForAsset = useMemo(() => {
     if (!selectedAquariumId) {
@@ -479,47 +921,14 @@ export default function HomeScreen() {
     );
   }, [selectedAquariumId, taskTemplates]);
 
-  const parameterAlertsByAquarium = useMemo(() => {
-    return aquariums.reduce<
-      Record<string, ReturnType<typeof evaluateParameterAlerts>>
-    >((acc, aquarium) => {
-      const latest = parameterLogs
-        .filter((entry) => entry.aquariumId === aquarium.id)
-        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0];
-
-      if (!latest) {
-        acc[aquarium.id] = [];
-        return acc;
-      }
-
-      acc[aquarium.id] = evaluateParameterAlerts(aquarium, latest.values);
-      return acc;
-    }, {});
-  }, [aquariums, parameterLogs]);
-
   const totalParameterAlerts = useMemo(
     () =>
-      Object.values(parameterAlertsByAquarium).reduce(
-        (sum, alerts) => sum + alerts.length,
+      Object.values(aquariumInsightsById).reduce(
+        (sum, insight) => sum + insight.alerts.length,
         0,
       ),
-    [parameterAlertsByAquarium],
+    [aquariumInsightsById],
   );
-
-  const dueTasksByAquarium = useMemo(() => {
-    const now = new Date();
-    return aquariums.reduce<Record<string, typeof taskTemplates>>(
-      (acc, aquarium) => {
-        acc[aquarium.id] = taskTemplates.filter(
-          (task) =>
-            task.aquariumIds.includes(aquarium.id) &&
-            isTaskDue(task, aquarium.id, taskExecutions, now),
-        );
-        return acc;
-      },
-      {},
-    );
-  }, [aquariums, taskExecutions, taskTemplates]);
 
   const createLivestock = () => {
     const quantity = Number(newLivestockQty);
@@ -740,9 +1149,28 @@ export default function HomeScreen() {
     setAddConsumableOpen(false);
   };
 
-  const totalOpenIssues = issues.filter(
-    (issue) => issue.status !== "resolved",
-  ).length;
+  const aquariumNameById = useMemo(() => {
+    return aquariums.reduce<Record<string, string>>((acc, aquarium) => {
+      acc[aquarium.id] = aquarium.name;
+      return acc;
+    }, {});
+  }, [aquariums]);
+
+  const aquariumIndexById = useMemo(() => {
+    return aquariums.reduce<Record<string, number>>((acc, aquarium, index) => {
+      acc[aquarium.id] = index;
+      return acc;
+    }, {});
+  }, [aquariums]);
+
+  const totalOpenIssues = useMemo(
+    () =>
+      Object.values(openIssuesByAquarium).reduce(
+        (sum, issueCount) => sum + issueCount,
+        0,
+      ),
+    [openIssuesByAquarium],
+  );
 
   const chartAquariumId = selectedAquariumId || aquariums[0]?.id || "";
   const selectedMetricLabel =
@@ -753,78 +1181,34 @@ export default function HomeScreen() {
       return [];
     }
 
-    return parameterLogs
-      .filter((entry) => {
-        if (entry.aquariumId !== chartAquariumId) {
-          return false;
-        }
-
-        const metricValue = entry.values[selectedMetric];
-        return metricValue !== undefined;
-      })
-      .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt))
+    return (parameterLogsByAquarium[chartAquariumId] ?? [])
+      .filter((entry) => entry.values[selectedMetric] !== undefined)
       .slice(-8)
       .map((entry) => ({
         value: entry.values[selectedMetric] as number,
         label: `${new Date(entry.createdAt).getDate()}`,
       }));
-  }, [chartAquariumId, parameterLogs, selectedMetric]);
+  }, [chartAquariumId, parameterLogsByAquarium, selectedMetric]);
 
-  const renderAquariumCard = (
-    aquarium: (typeof aquariums)[number],
-    cardIndex: number,
-  ) => {
+  const aquariumColumns = useMemo(() => {
+    return aquariums.reduce<[Aquarium[], Aquarium[]]>(
+      (columns, aquarium, index) => {
+        columns[index % 2].push(aquarium);
+        return columns;
+      },
+      [[], []],
+    );
+  }, [aquariums]);
+  const [leftColumnAquariums, rightColumnAquariums] = aquariumColumns;
+
+  const getAquariumCardBackgroundColor = (cardIndex: number) => {
     const keepTones = [
       theme.colors.secondaryContainer,
       theme.colors.tertiaryContainer,
       theme.colors.surfaceVariant,
     ];
-    const backgroundColor = keepTones[cardIndex % keepTones.length];
-
-    return (
-      <Card
-        key={aquarium.id}
-        style={[styles.keepCard, { backgroundColor }]}
-        mode="contained"
-      >
-        <Card.Title
-          title={aquarium.name}
-          subtitle={`${aquarium.volumeLiters}L • ${aquarium.waterType}`}
-        />
-        <Card.Content>
-          <Text variant="bodyMedium">
-            Latest parameters: {latestParameterByAquarium[aquarium.id]}
-          </Text>
-          <Text variant="bodySmall" style={styles.issueMeta}>
-            {aquarium.dimensions} • Setup {aquarium.setupDate}
-            {aquarium.investmentCost !== undefined
-              ? ` • $${aquarium.investmentCost}`
-              : ""}
-          </Text>
-          <View style={styles.summaryRow}>
-            <Chip compact icon="fish">
-              {livestockCountByAquarium[aquarium.id] ?? 0} livestock
-            </Chip>
-            <Chip compact icon="alert-circle">
-              {openIssuesByAquarium[aquarium.id] ?? 0} issues
-            </Chip>
-            <Chip compact icon="chart-line">
-              NO3 trend: {nitrateTrend[aquarium.id]}
-            </Chip>
-            <Button
-              mode="contained-tonal"
-              onPress={() => openEditAquarium(aquarium.id)}
-            >
-              Edit specs
-            </Button>
-          </View>
-        </Card.Content>
-      </Card>
-    );
+    return keepTones[cardIndex % keepTones.length];
   };
-
-  const leftColumnAquariums = aquariums.filter((_, index) => index % 2 === 0);
-  const rightColumnAquariums = aquariums.filter((_, index) => index % 2 === 1);
 
   return (
     <>
@@ -887,7 +1271,7 @@ export default function HomeScreen() {
                 <Card.Content>
                   <View style={styles.summaryRow}>
                     {aquariums.flatMap((aquarium) =>
-                      (parameterAlertsByAquarium[aquarium.id] ?? []).map(
+                      (aquariumInsightsById[aquarium.id]?.alerts ?? []).map(
                         (alert) => (
                           <Chip
                             key={`${aquarium.id}-${alert.key}-${alert.status}`}
@@ -908,9 +1292,24 @@ export default function HomeScreen() {
               </Card>
             ) : null}
 
-            {leftColumnAquariums.map((aquarium, index) =>
-              renderAquariumCard(aquarium, index),
-            )}
+            {leftColumnAquariums.map((aquarium, index) => {
+              const insight = aquariumInsightsById[aquarium.id];
+
+              return (
+                <AquariumOverviewCard
+                  key={aquarium.id}
+                  aquarium={aquarium}
+                  backgroundColor={getAquariumCardBackgroundColor(index)}
+                  latestParameterSummary={
+                    insight?.latestParameterSummary ?? "No measurements logged yet"
+                  }
+                  livestockCount={livestockCountByAquarium[aquarium.id] ?? 0}
+                  openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
+                  nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
+                  onEdit={openEditAquarium}
+                />
+              );
+            })}
           </View>
 
           <View style={styles.keepColumn}>
@@ -936,9 +1335,26 @@ export default function HomeScreen() {
               </Card>
             ) : null}
 
-            {rightColumnAquariums.map((aquarium, index) =>
-              renderAquariumCard(aquarium, index + leftColumnAquariums.length),
-            )}
+            {rightColumnAquariums.map((aquarium, index) => {
+              const insight = aquariumInsightsById[aquarium.id];
+
+              return (
+                <AquariumOverviewCard
+                  key={aquarium.id}
+                  aquarium={aquarium}
+                  backgroundColor={getAquariumCardBackgroundColor(
+                    index + leftColumnAquariums.length,
+                  )}
+                  latestParameterSummary={
+                    insight?.latestParameterSummary ?? "No measurements logged yet"
+                  }
+                  livestockCount={livestockCountByAquarium[aquarium.id] ?? 0}
+                  openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
+                  nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
+                  onEdit={openEditAquarium}
+                />
+              );
+            })}
           </View>
         </View>
 
@@ -1220,9 +1636,7 @@ export default function HomeScreen() {
               ) : null}
 
               {livestock.map((item, index) => {
-                const currentIndex = aquariums.findIndex(
-                  (aq) => aq.id === item.aquariumId,
-                );
+                const currentIndex = aquariumIndexById[item.aquariumId] ?? -1;
                 const fallbackTarget =
                   aquariums[
                     (currentIndex + 1 + aquariums.length) % aquariums.length
@@ -1240,196 +1654,32 @@ export default function HomeScreen() {
                     : theme.colors.secondaryContainer;
 
                 return (
-                  <Card
+                  <LivestockCard
                     key={item.id}
-                    style={[
-                      styles.issueCard,
-                      styles.sectionItemCard,
-                      styles.keepCard,
-                      { backgroundColor: cardBackground },
-                    ]}
-                    mode="contained"
-                  >
-                    <Card.Content>
-                      <Text variant="titleSmall">
-                        {item.name} ({item.quantity})
-                      </Text>
-                      <Text variant="bodySmall" style={styles.issueMeta}>
-                        {item.species} •{" "}
-                        {
-                          aquariums.find((aq) => aq.id === item.aquariumId)
-                            ?.name
-                        }
-                      </Text>
-                      <View style={styles.summaryRow}>
-                        <Chip compact>{item.kind}</Chip>
-                        <Chip compact>{item.status ?? "active"}</Chip>
-                      </View>
-                      {item.photoUri ? (
-                        <Image
-                          source={{ uri: item.photoUri }}
-                          style={styles.livestockPhoto}
-                        />
-                      ) : null}
-                      <TextInput
-                        mode="outlined"
-                        label="Feeding notes"
-                        value={feedingNote}
-                        onChangeText={(value) =>
-                          setFeedingNoteDraft((prev) => ({
-                            ...prev,
-                            [item.id]: value,
-                          }))
-                        }
-                        multiline
-                        numberOfLines={2}
-                        style={styles.issueResolutionInput}
-                      />
-                      <ScrollableSegmentedButtons
-                        value={livestockStatus}
-                        onValueChange={(value) =>
-                          setLivestockStatusDraft((prev) => ({
-                            ...prev,
-                            [item.id]: value as NonNullable<
-                              Livestock["status"]
-                            >,
-                          }))
-                        }
-                        buttons={[
-                          { label: "Active", value: "active" },
-                          { label: "Ill", value: "ill" },
-                          { label: "Deceased", value: "deceased" },
-                        ]}
-                        style={styles.issueStatusSelector}
-                      />
-                      <TextInput
-                        mode="outlined"
-                        label="Status note (optional)"
-                        value={livestockStatusNote}
-                        onChangeText={(value) =>
-                          setLivestockStatusNoteDraft((prev) => ({
-                            ...prev,
-                            [item.id]: value,
-                          }))
-                        }
-                        multiline
-                        numberOfLines={2}
-                        style={styles.issueResolutionInput}
-                      />
-                      <View style={styles.summaryRow}>
-                        <Button
-                          mode="contained-tonal"
-                          onPress={() =>
-                            setLivestockFeedingNotes(
-                              item.id,
-                              feedingNote.trim(),
-                            )
-                          }
-                        >
-                          Save feeding
-                        </Button>
-                        <Button
-                          mode="contained-tonal"
-                          onPress={() =>
-                            setLivestockStatus(
-                              item.id,
-                              livestockStatus,
-                              livestockStatusNote.trim() || undefined,
-                            )
-                          }
-                        >
-                          Save status
-                        </Button>
-                        <Button
-                          mode="contained-tonal"
-                          disabled={
-                            !fallbackTarget ||
-                            fallbackTarget === item.aquariumId
-                          }
-                          onPress={() =>
-                            fallbackTarget
-                              ? transferLivestock(
-                                  item.id,
-                                  fallbackTarget,
-                                  "Manual transfer",
-                                )
-                              : undefined
-                          }
-                        >
-                          Transfer
-                        </Button>
-                        <Button
-                          mode="contained-tonal"
-                          onPress={() =>
-                            addOffspring(item.id, {
-                              kind: item.kind,
-                              name: `${item.name} offspring`,
-                              species: item.species,
-                              quantity: 1,
-                              acquiredAt: new Date().toISOString(),
-                              status: "active",
-                            })
-                          }
-                        >
-                          Add offspring
-                        </Button>
-                      </View>
-                      <TextInput
-                        mode="outlined"
-                        label="Feeding task title"
-                        value={feedingTaskTitleDraft[item.id] ?? ""}
-                        onChangeText={(value) =>
-                          setFeedingTaskTitleDraft((prev) => ({
-                            ...prev,
-                            [item.id]: value,
-                          }))
-                        }
-                        style={styles.issueResolutionInput}
-                        placeholder={`Feed ${item.name}`}
-                      />
-                      <ScrollableSegmentedButtons
-                        value={feedingTaskFrequencyDraft[item.id] ?? "daily"}
-                        onValueChange={(value) =>
-                          setFeedingTaskFrequencyDraft((prev) => ({
-                            ...prev,
-                            [item.id]: value as TaskFrequency,
-                          }))
-                        }
-                        buttons={[
-                          { label: "Daily", value: "daily" },
-                          { label: "Weekly", value: "weekly" },
-                          { label: "Bi-weekly", value: "bi-weekly" },
-                          { label: "Monthly", value: "monthly" },
-                        ]}
-                        style={styles.issueStatusSelector}
-                      />
-                      <Button
-                        mode="contained-tonal"
-                        style={styles.issueSaveButton}
-                        onPress={() => {
-                          const customTitle =
-                            feedingTaskTitleDraft[item.id]?.trim();
-                          addLivestockFeedingTask({
-                            livestockId: item.id,
-                            title: customTitle || `Feed ${item.name}`,
-                            frequency:
-                              feedingTaskFrequencyDraft[item.id] ?? "daily",
-                            description:
-                              feedingNote.trim() ||
-                              item.dietaryNotes ||
-                              `Targeted feeding regimen for ${item.name}`,
-                          });
-
-                          setFeedingTaskTitleDraft((prev) => ({
-                            ...prev,
-                            [item.id]: "",
-                          }));
-                        }}
-                      >
-                        Create feeding task
-                      </Button>
-                    </Card.Content>
-                  </Card>
+                    item={item}
+                    aquariumName={
+                      aquariumNameById[item.aquariumId] ?? "Unknown tank"
+                    }
+                    fallbackTargetId={fallbackTarget}
+                    feedingNote={feedingNote}
+                    livestockStatus={livestockStatus}
+                    livestockStatusNote={livestockStatusNote}
+                    feedingTaskTitle={feedingTaskTitleDraft[item.id] ?? ""}
+                    feedingTaskFrequency={
+                      feedingTaskFrequencyDraft[item.id] ?? "daily"
+                    }
+                    cardBackground={cardBackground}
+                    setFeedingNoteDraft={setFeedingNoteDraft}
+                    setLivestockStatusDraft={setLivestockStatusDraft}
+                    setLivestockStatusNoteDraft={setLivestockStatusNoteDraft}
+                    setFeedingTaskTitleDraft={setFeedingTaskTitleDraft}
+                    setFeedingTaskFrequencyDraft={setFeedingTaskFrequencyDraft}
+                    setLivestockFeedingNotes={setLivestockFeedingNotes}
+                    setLivestockStatus={setLivestockStatus}
+                    transferLivestock={transferLivestock}
+                    addOffspring={addOffspring}
+                    addLivestockFeedingTask={addLivestockFeedingTask}
+                  />
                 );
               })}
             </View>
@@ -1489,10 +1739,7 @@ export default function HomeScreen() {
                       <Text variant="titleSmall">{asset.brandModel}</Text>
                       <Text variant="bodySmall" style={styles.issueMeta}>
                         {asset.category} •{" "}
-                        {
-                          aquariums.find((aq) => aq.id === asset.aquariumId)
-                            ?.name
-                        }
+                        {aquariumNameById[asset.aquariumId] ?? "Unknown tank"}
                       </Text>
                       <Text variant="bodySmall" style={styles.issueMeta}>
                         Purchased: {asset.purchasedAt ?? "-"}
@@ -1612,72 +1859,19 @@ export default function HomeScreen() {
                   resolutionNoteDraft[issue.id] ?? issue.resolutionNote ?? "";
 
                 return (
-                  <Card
+                  <IssueCard
                     key={issue.id}
-                    style={[
-                      styles.issueCard,
-                      styles.sectionItemCard,
-                      styles.keepCard,
-                      { backgroundColor: theme.colors.surfaceVariant },
-                    ]}
-                    mode="contained"
-                  >
-                    <Card.Content>
-                      <Text variant="titleSmall">{issue.title}</Text>
-                      <Text variant="bodySmall" style={styles.issueMeta}>
-                        {aquariums.find((aq) => aq.id === issue.aquariumId)
-                          ?.name ?? "Unknown tank"}{" "}
-                        • Logged {new Date(issue.createdAt).toLocaleString()}
-                      </Text>
-
-                      <ScrollableSegmentedButtons
-                        value={currentStatus}
-                        onValueChange={(value) =>
-                          setIssueStatusDraft((prev) => ({
-                            ...prev,
-                            [issue.id]: value as IssueStatus,
-                          }))
-                        }
-                        buttons={[
-                          { label: "Open", value: "open" },
-                          { label: "Monitoring", value: "monitoring" },
-                          { label: "Resolved", value: "resolved" },
-                        ]}
-                        style={styles.issueStatusSelector}
-                      />
-
-                      {currentStatus === "resolved" ? (
-                        <TextInput
-                          mode="outlined"
-                          label="Resolution note"
-                          value={resolutionNote}
-                          onChangeText={(value) =>
-                            setResolutionNoteDraft((prev) => ({
-                              ...prev,
-                              [issue.id]: value,
-                            }))
-                          }
-                          multiline
-                          numberOfLines={3}
-                          style={styles.issueResolutionInput}
-                        />
-                      ) : null}
-
-                      <Button
-                        mode="contained"
-                        style={styles.issueSaveButton}
-                        onPress={() =>
-                          setIssueStatus(
-                            issue.id,
-                            currentStatus,
-                            resolutionNote.trim() || undefined,
-                          )
-                        }
-                      >
-                        Save issue update
-                      </Button>
-                    </Card.Content>
-                  </Card>
+                    issue={issue}
+                    aquariumName={
+                      aquariumNameById[issue.aquariumId] ?? "Unknown tank"
+                    }
+                    currentStatus={currentStatus}
+                    resolutionNote={resolutionNote}
+                    setIssueStatusDraft={setIssueStatusDraft}
+                    setResolutionNoteDraft={setResolutionNoteDraft}
+                    setIssueStatus={setIssueStatus}
+                    backgroundColor={theme.colors.surfaceVariant}
+                  />
                 );
               })}
             </View>
