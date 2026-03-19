@@ -1,18 +1,22 @@
 import { useForm } from "@tanstack/react-form";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, StyleSheet, View } from "react-native";
 import {
-    ActivityIndicator,
-    Button,
-    Card,
-    Chip,
-    Divider,
-    Text,
-    TextInput,
+  ActivityIndicator,
+  Button,
+  Card,
+  Chip,
+  Divider,
+  Text,
+  TextInput,
+  useTheme,
 } from "react-native-paper";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import {
+  DashboardHero,
+  DashboardScrollView,
+} from "@/components/ui/dashboard-shell";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { requestOpenRouterCompletion } from "@/services/assistant-ai";
@@ -88,7 +92,7 @@ const formatPricingPreview = (pricing?: OpenRouterModel["pricing"]) => {
 };
 
 export default function SettingsScreen() {
-  const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const {
     settings,
     aquariums,
@@ -657,18 +661,34 @@ export default function SettingsScreen() {
 
   return (
     <>
-      <ScrollView
-        contentContainerStyle={[
-          styles.container,
-          { paddingTop: 16 + insets.top },
-        ]}
-      >
-        <Text variant="headlineMedium">Settings</Text>
-        <Text variant="bodyMedium" style={styles.subtitle}>
-          Configure your BYOK AI assistant and app preferences.
-        </Text>
+      <DashboardScrollView>
+        <DashboardHero
+          title="Settings"
+          subtitle="Configure your BYOK assistant, reminders, backups, and workflows with the same dashboard look."
+          tone="primary"
+          chips={
+            <>
+              <Chip compact icon="fish">{aquariums.length} tanks</Chip>
+              <Chip compact icon="calendar-clock">
+                {countDueTasks(taskTemplates, taskExecutions)} due tasks
+              </Chip>
+              <Chip compact icon="brain">
+                {assistantMemoryEnabled ? "Memory on" : "Memory off"}
+              </Chip>
+              <Chip compact icon="robot-outline">
+                {settings.aiModel || "No model"}
+              </Chip>
+            </>
+          }
+        />
 
-        <Card mode="contained">
+        <Card
+          mode="contained"
+          style={[
+            styles.primaryCard,
+            { backgroundColor: theme.colors.primaryContainer },
+          ]}
+        >
           <Card.Title
             title="OpenRouter API Key (BYOK)"
             subtitle="Stored in local encrypted-ish app storage context"
@@ -751,7 +771,10 @@ export default function SettingsScreen() {
           </Card.Content>
         </Card>
 
-        <Card mode="outlined" style={styles.noteCard}>
+        <Card
+          mode="elevated"
+          style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
+        >
           <Card.Title
             title="Task reminders"
             subtitle="Daily notification with deep link to due tasks"
@@ -804,7 +827,10 @@ export default function SettingsScreen() {
           </Card.Content>
         </Card>
 
-        <Card mode="outlined" style={styles.noteCard}>
+        <Card
+          mode="elevated"
+          style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
+        >
           <Card.Title
             title="Data backup & restore"
             subtitle="Export full app JSON snapshot, or import one to restore"
@@ -850,7 +876,10 @@ export default function SettingsScreen() {
           </Card.Content>
         </Card>
 
-        <Card mode="outlined" style={styles.noteCard}>
+        <Card
+          mode="elevated"
+          style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
+        >
           <Card.Title
             title="Assistant memory"
             subtitle="Inspect and manage semantic memory snippets"
@@ -901,8 +930,11 @@ export default function SettingsScreen() {
             {memorySnippets.map((snippet) => (
               <Card
                 key={snippet.id}
-                mode="outlined"
-                style={styles.actionCardCompact}
+                mode="contained"
+                style={[
+                  styles.actionCardCompact,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
               >
                 <Card.Content>
                   <Text variant="bodySmall">{snippet.content}</Text>
@@ -943,7 +975,10 @@ export default function SettingsScreen() {
           </Card.Content>
         </Card>
 
-        <Card mode="outlined" style={styles.noteCard}>
+        <Card
+          mode="elevated"
+          style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
+        >
           <Card.Title
             title="Contextual AI Assistant"
             subtitle="Uses your BYOK and current app data context"
@@ -1033,7 +1068,10 @@ export default function SettingsScreen() {
           </Card.Content>
         </Card>
 
-        <Card mode="outlined" style={styles.noteCard}>
+        <Card
+          mode="elevated"
+          style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
+        >
           <Card.Title
             title="Diagnostic workflow"
             subtitle="Guided root-cause analysis for tank problems"
@@ -1111,7 +1149,10 @@ export default function SettingsScreen() {
           </Card.Content>
         </Card>
 
-        <Card mode="outlined" style={styles.noteCard}>
+        <Card
+          mode="elevated"
+          style={[styles.noteCard, { backgroundColor: theme.colors.surface }]}
+        >
           <Card.Title
             title="Compatibility workflow"
             subtitle="Evaluate additions against your tank context"
@@ -1217,7 +1258,7 @@ export default function SettingsScreen() {
             ) : null}
           </Card.Content>
         </Card>
-      </ScrollView>
+      </DashboardScrollView>
 
       <BottomSheet
         visible={isModelSheetVisible}
@@ -1356,14 +1397,8 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-    paddingBottom: 132,
-    gap: 12,
-  },
-  subtitle: {
-    opacity: 0.75,
-    marginBottom: 6,
+  primaryCard: {
+    borderRadius: 24,
   },
   saveButton: {
     marginTop: 12,
@@ -1407,8 +1442,8 @@ const styles = StyleSheet.create({
     opacity: 0.75,
   },
   noteCard: {
-    marginTop: 2,
-    borderRadius: 24,
+    marginTop: 0,
+    borderRadius: 28,
   },
   askButton: {
     marginTop: 12,
@@ -1429,6 +1464,6 @@ const styles = StyleSheet.create({
   },
   actionCardCompact: {
     marginTop: 8,
-    borderRadius: 12,
+    borderRadius: 20,
   },
 });

@@ -1432,7 +1432,13 @@ export default function AssistantScreen() {
     <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
       {/* ── MAIN CHAT AREA ───────────────────────────────────── */}
       <KeyboardAvoidingView
-        style={[styles.main, { paddingTop: insets.top }]}
+        style={[
+          styles.main,
+          {
+            paddingTop: insets.top + 12,
+            paddingHorizontal: 12,
+          },
+        ]}
         behavior="padding"
         keyboardVerticalOffset={-TAB_BAR_HEIGHT}
       >
@@ -1440,7 +1446,7 @@ export default function AssistantScreen() {
         <View
           style={[
             styles.header,
-            { borderBottomColor: theme.colors.outlineVariant },
+            { backgroundColor: theme.colors.surface },
           ]}
         >
           <IconButton icon="menu" onPress={openDrawer} />
@@ -1516,12 +1522,13 @@ export default function AssistantScreen() {
                       borderBottomRightRadius: 4,
                     },
                     isSystem && {
-                      backgroundColor: theme.colors.surfaceVariant,
+                      backgroundColor: theme.colors.secondaryContainer,
                       alignSelf: "center",
                     },
                     !isUser &&
                       !isSystem && {
-                        backgroundColor: "transparent",
+                        backgroundColor: theme.colors.surface,
+                        borderBottomLeftRadius: 4,
                         flex: 1,
                       },
                   ]}
@@ -1701,7 +1708,6 @@ export default function AssistantScreen() {
             styles.composer,
             {
               backgroundColor: theme.colors.surface,
-              borderTopColor: theme.colors.outlineVariant,
               paddingBottom: TAB_BAR_HEIGHT + 12,
             },
           ]}
@@ -2538,15 +2544,16 @@ const styles = StyleSheet.create({
   },
   main: {
     flex: 1,
+    paddingBottom: 8,
   },
 
   /* Header */
   header: {
     flexDirection: "row",
     alignItems: "center",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 4,
-    height: 52,
+    paddingHorizontal: 8,
+    height: 56,
+    borderRadius: 24,
   },
   headerTitle: {
     flex: 1,
@@ -2557,9 +2564,10 @@ const styles = StyleSheet.create({
   /* Messages */
   messageArea: {
     flex: 1,
+    marginTop: 10,
   },
   messageContent: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 6,
     paddingTop: 12,
     gap: 14,
   },
@@ -2640,9 +2648,10 @@ const styles = StyleSheet.create({
 
   /* Composer */
   composer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 8,
     paddingTop: 6,
+    borderRadius: 28,
+    marginTop: 8,
   },
   quickPromptScroller: {
     marginHorizontal: 4,

@@ -1,25 +1,30 @@
 import { useForm } from "@tanstack/react-form";
 import { useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import {
-    Button,
-    Card,
-    Chip,
-    Divider,
-    FAB,
-    Text,
-    TextInput,
+  Button,
+  Card,
+  Chip,
+  Divider,
+  FAB,
+  Text,
+  TextInput,
+  useTheme,
 } from "react-native-paper";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import {
+  DashboardHero,
+  DashboardScrollView,
+  DashboardSection,
+} from "@/components/ui/dashboard-shell";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
 import { TaskFrequency } from "@/types/aquapt";
 
 export default function TasksScreen() {
-  const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const {
     aquariums,
     livestock,
@@ -202,154 +207,212 @@ export default function TasksScreen() {
     void form.handleSubmit();
   };
 
+  const getKeepTone = (index: number) => {
+    const tones = [
+      theme.colors.secondaryContainer,
+      theme.colors.tertiaryContainer,
+      theme.colors.surfaceVariant,
+    ];
+
+    return tones[index % tones.length];
+  };
+
   return (
     <>
-      <ScrollView
-        contentContainerStyle={[
-          styles.container,
-          { paddingTop: 16 + insets.top },
-        ]}
-      >
-        <Text variant="headlineMedium">Tasks & Maintenance</Text>
-        <Text variant="bodyMedium" style={styles.subtitle}>
-          Recurring schedules, one-tap completion, and dosing logs.
-        </Text>
+      <DashboardScrollView>
+        <DashboardHero
+          title="Tasks & Maintenance"
+          subtitle="Recurring schedules, quick completion, and dosing logs in the same dashboard rhythm."
+          tone="secondary"
+          chips={
+            <>
+              <Chip compact icon="calendar-clock">
+                {dueTasks.length} due now
+              </Chip>
+              <Chip compact icon="fish">
+                {aquariums.length} tanks
+              </Chip>
+              <Chip compact icon="test-tube">
+                {dosingLogs.length} dosing logs
+              </Chip>
+              <Chip compact icon="history">
+                {recentExecutions.length} recent entries
+              </Chip>
+            </>
+          }
+        />
 
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          Tasks due now
-        </Text>
-
-        {dueTasks.map(({ key, task, aquariumId }) => {
-          const doneAt = latestExecutionByTemplate[key];
-          const targetLivestock = task.livestockId
-            ? livestock.find((item) => item.id === task.livestockId)
-            : undefined;
-
-          return (
-            <Card key={key} style={styles.card} mode="contained">
-              <Card.Content>
-                <View style={styles.titleRow}>
-                  <Text variant="titleMedium">{task.title}</Text>
-                  <Chip compact>{task.frequency}</Chip>
-                </View>
-                <Text variant="bodySmall" style={styles.targetTank}>
-                  {getAquariumName(aquariumId)}
-                </Text>
-                {targetLivestock ? (
-                  <Text variant="bodySmall" style={styles.targetTank}>
-                    Target livestock: {targetLivestock.name}
-                  </Text>
-                ) : null}
-                {task.description ? (
-                  <Text variant="bodyMedium">{task.description}</Text>
-                ) : null}
-                <Divider style={styles.divider} />
-                <View style={styles.actionsRow}>
-                  <Text variant="bodySmall" style={styles.lastDoneText}>
-                    Last done:{" "}
-                    {doneAt ? new Date(doneAt).toLocaleString() : "Never"}
-                  </Text>
-                  <Button
-                    mode="contained"
-                    onPress={() => {
-                      completeTask(
-                        task.id,
-                        aquariumId,
-                        completionNoteDraft[key]?.trim() || undefined,
-                      );
-                      setCompletionNoteDraft((prev) => ({
-                        ...prev,
-                        [key]: "",
-                      }));
-                    }}
-                  >
-                    Complete
-                  </Button>
-                </View>
-                <TextInput
-                  mode="outlined"
-                  label="Completion note (optional)"
-                  value={completionNoteDraft[key] ?? ""}
-                  onChangeText={(value) =>
-                    setCompletionNoteDraft((prev) => ({
-                      ...prev,
-                      [key]: value,
-                    }))
-                  }
-                  style={styles.completionNoteInput}
-                />
-              </Card.Content>
-            </Card>
-          );
-        })}
-
-        {dueTasks.length === 0 ? (
-          <Card style={styles.card} mode="outlined">
-            <Card.Content>
-              <Text variant="bodyMedium">
-                No due tasks right now. Your tanks are on schedule ✅
-              </Text>
-            </Card.Content>
-          </Card>
-        ) : null}
-
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          Latest dosing by tank
-        </Text>
-
-        {aquariums.map((aquarium) => (
-          <Card key={aquarium.id} style={styles.card} mode="outlined">
-            <Card.Title title={aquarium.name} subtitle={aquarium.waterType} />
-            <Card.Content>
-              <Text variant="bodyMedium">
-                {latestDosingByAquarium[aquarium.id] ??
-                  "No dosing recorded yet."}
-              </Text>
-            </Card.Content>
-          </Card>
-        ))}
-
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          Recent task history
-        </Text>
-
-        {recentExecutions.length === 0 ? (
-          <Card style={styles.card} mode="outlined">
-            <Card.Content>
-              <Text variant="bodyMedium">No task execution history yet.</Text>
-            </Card.Content>
-          </Card>
-        ) : (
-          recentExecutions.map((execution) => {
-            const task = taskTemplates.find(
-              (template) => template.id === execution.taskTemplateId,
-            );
-            const targetLivestock = task?.livestockId
+        <DashboardSection
+          title="Tasks due now"
+          description="Clear the highest priority maintenance items before they drift."
+        >
+          {dueTasks.map(({ key, task, aquariumId }, index) => {
+            const doneAt = latestExecutionByTemplate[key];
+            const targetLivestock = task.livestockId
               ? livestock.find((item) => item.id === task.livestockId)
               : undefined;
 
             return (
-              <Card key={execution.id} style={styles.card} mode="outlined">
+              <Card
+                key={key}
+                style={[
+                  styles.card,
+                  { backgroundColor: getKeepTone(index) },
+                ]}
+                mode="contained"
+              >
                 <Card.Content>
-                  <Text variant="titleSmall">{task?.title ?? "Task"}</Text>
+                  <View style={styles.titleRow}>
+                    <Text variant="titleMedium">{task.title}</Text>
+                    <Chip compact>{task.frequency}</Chip>
+                  </View>
                   <Text variant="bodySmall" style={styles.targetTank}>
-                    {getAquariumName(execution.aquariumId)} •{" "}
-                    {new Date(execution.completedAt).toLocaleString()}
+                    {getAquariumName(aquariumId)}
                   </Text>
-                  {execution.note ? (
-                    <Text variant="bodyMedium">{execution.note}</Text>
-                  ) : null}
                   {targetLivestock ? (
                     <Text variant="bodySmall" style={styles.targetTank}>
                       Target livestock: {targetLivestock.name}
                     </Text>
                   ) : null}
+                  {task.description ? (
+                    <Text variant="bodyMedium">{task.description}</Text>
+                  ) : null}
+                  <Divider style={styles.divider} />
+                  <View style={styles.actionsRow}>
+                    <Text variant="bodySmall" style={styles.lastDoneText}>
+                      Last done:{" "}
+                      {doneAt ? new Date(doneAt).toLocaleString() : "Never"}
+                    </Text>
+                    <Button
+                      mode="contained"
+                      onPress={() => {
+                        completeTask(
+                          task.id,
+                          aquariumId,
+                          completionNoteDraft[key]?.trim() || undefined,
+                        );
+                        setCompletionNoteDraft((prev) => ({
+                          ...prev,
+                          [key]: "",
+                        }));
+                      }}
+                    >
+                      Complete
+                    </Button>
+                  </View>
+                  <TextInput
+                    mode="outlined"
+                    label="Completion note (optional)"
+                    value={completionNoteDraft[key] ?? ""}
+                    onChangeText={(value) =>
+                      setCompletionNoteDraft((prev) => ({
+                        ...prev,
+                        [key]: value,
+                      }))
+                    }
+                    style={styles.completionNoteInput}
+                  />
                 </Card.Content>
               </Card>
             );
-          })
-        )}
-      </ScrollView>
+          })}
+
+          {dueTasks.length === 0 ? (
+            <Card
+              style={[
+                styles.card,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+              mode="contained"
+            >
+              <Card.Content>
+                <Text variant="bodyMedium">
+                  No due tasks right now. Your tanks are on schedule.
+                </Text>
+              </Card.Content>
+            </Card>
+          ) : null}
+        </DashboardSection>
+
+        <DashboardSection
+          title="Latest dosing by tank"
+          description="A quick dosing snapshot across every aquarium."
+        >
+          {aquariums.map((aquarium, index) => (
+            <Card
+              key={aquarium.id}
+              style={[
+                styles.card,
+                { backgroundColor: getKeepTone(index) },
+              ]}
+              mode="contained"
+            >
+              <Card.Title title={aquarium.name} subtitle={aquarium.waterType} />
+              <Card.Content>
+                <Text variant="bodyMedium">
+                  {latestDosingByAquarium[aquarium.id] ??
+                    "No dosing recorded yet."}
+                </Text>
+              </Card.Content>
+            </Card>
+          ))}
+        </DashboardSection>
+
+        <DashboardSection
+          title="Recent task history"
+          description="Recent completions, notes, and livestock-specific work."
+        >
+          {recentExecutions.length === 0 ? (
+            <Card
+              style={[
+                styles.card,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+              mode="contained"
+            >
+              <Card.Content>
+                <Text variant="bodyMedium">No task execution history yet.</Text>
+              </Card.Content>
+            </Card>
+          ) : (
+            recentExecutions.map((execution, index) => {
+              const task = taskTemplates.find(
+                (template) => template.id === execution.taskTemplateId,
+              );
+              const targetLivestock = task?.livestockId
+                ? livestock.find((item) => item.id === task.livestockId)
+                : undefined;
+
+              return (
+                <Card
+                  key={execution.id}
+                  style={[
+                    styles.card,
+                    { backgroundColor: getKeepTone(index) },
+                  ]}
+                  mode="contained"
+                >
+                  <Card.Content>
+                    <Text variant="titleSmall">{task?.title ?? "Task"}</Text>
+                    <Text variant="bodySmall" style={styles.targetTank}>
+                      {getAquariumName(execution.aquariumId)} •{" "}
+                      {new Date(execution.completedAt).toLocaleString()}
+                    </Text>
+                    {execution.note ? (
+                      <Text variant="bodyMedium">{execution.note}</Text>
+                    ) : null}
+                    {targetLivestock ? (
+                      <Text variant="bodySmall" style={styles.targetTank}>
+                        Target livestock: {targetLivestock.name}
+                      </Text>
+                    ) : null}
+                  </Card.Content>
+                </Card>
+              );
+            })
+          )}
+        </DashboardSection>
+      </DashboardScrollView>
 
       <BottomSheet
         visible={isDialogOpen}
@@ -539,7 +602,11 @@ export default function TasksScreen() {
       <FAB
         icon="plus"
         label="Add"
-        style={styles.fab}
+        style={[
+          styles.fab,
+          { backgroundColor: theme.colors.primaryContainer },
+        ]}
+        color={theme.colors.onPrimaryContainer}
         onPress={() => {
           resetDialogForm(aquariums[0]?.id ?? "");
           setDialogOpen(true);
@@ -550,21 +617,8 @@ export default function TasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-    paddingBottom: 132,
-    gap: 10,
-  },
-  subtitle: {
-    opacity: 0.75,
-    marginBottom: 8,
-  },
-  sectionTitle: {
-    marginTop: 8,
-    marginBottom: 4,
-  },
   card: {
-    marginBottom: 8,
+    marginTop: 0,
     borderRadius: 24,
   },
   titleRow: {

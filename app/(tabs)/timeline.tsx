@@ -2,12 +2,24 @@ import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, ScrollView, StyleSheet, View } from "react-native";
-import { Button, Card, Chip, FAB, Text, TextInput } from "react-native-paper";
+import { Alert, StyleSheet, View } from "react-native";
+import {
+  Button,
+  Card,
+  Chip,
+  FAB,
+  Text,
+  TextInput,
+  useTheme,
+} from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import {
+  DashboardHero,
+  DashboardScrollView,
+  DashboardSection,
+} from "@/components/ui/dashboard-shell";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
@@ -26,7 +38,7 @@ const filters: { value: TimelineEventType | "all"; label: string }[] = [
 ];
 
 export default function TimelineScreen() {
-  const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const {
     timeline,
     aquariums,
@@ -272,90 +284,139 @@ export default function TimelineScreen() {
     void form.handleSubmit();
   };
 
+  const getEventBackground = (eventType: TimelineEventType) => {
+    switch (eventType) {
+      case "issue":
+        return theme.colors.errorContainer;
+      case "parameter":
+        return theme.colors.secondaryContainer;
+      case "task":
+        return theme.colors.primaryContainer;
+      case "memo":
+        return theme.colors.tertiaryContainer;
+      default:
+        return theme.colors.surfaceVariant;
+    }
+  };
+
   return (
     <>
-      <ScrollView
-        contentContainerStyle={[
-          styles.container,
-          { paddingTop: 16 + insets.top },
-        ]}
-      >
-        <Text variant="headlineMedium">Unified Timeline</Text>
-        <Text variant="bodyMedium" style={styles.subtitle}>
-          Chronological events across tasks, parameters, issues, and memos.
-        </Text>
+      <DashboardScrollView>
+        <DashboardHero
+          title="Unified Timeline"
+          subtitle="Chronological activity across tasks, parameters, issues, and memos with the same dashboard framing."
+          tone="tertiary"
+          chips={
+            <>
+              <Chip compact icon="timeline-clock">
+                {filteredTimeline.length} visible events
+              </Chip>
+              <Chip compact icon="filter-variant">
+                {selectedFilter === "all" ? "All types" : selectedFilter}
+              </Chip>
+              <Chip compact icon="fish">
+                {selectedAquariumFilter === "all"
+                  ? "All tanks"
+                  : aquariumNameById[selectedAquariumFilter] ?? "1 tank"}
+              </Chip>
+            </>
+          }
+        />
 
-        <View style={styles.filterRow}>
-          {filters.map((filter) => (
+        <DashboardSection
+          title="Filters"
+          description="Narrow the stream by event type and aquarium."
+        >
+          <View style={styles.filterRow}>
+            {filters.map((filter) => (
+              <Chip
+                key={filter.value}
+                selected={selectedFilter === filter.value}
+                onPress={() => setSelectedFilter(filter.value)}
+                style={styles.filterChip}
+              >
+                {filter.label}
+              </Chip>
+            ))}
+          </View>
+
+          <View style={styles.filterRow}>
             <Chip
-              key={filter.value}
-              selected={selectedFilter === filter.value}
-              onPress={() => setSelectedFilter(filter.value)}
+              selected={selectedAquariumFilter === "all"}
+              onPress={() => setSelectedAquariumFilter("all")}
               style={styles.filterChip}
             >
-              {filter.label}
+              All tanks
             </Chip>
-          ))}
-        </View>
+            {aquariums.map((aquarium) => (
+              <Chip
+                key={aquarium.id}
+                selected={selectedAquariumFilter === aquarium.id}
+                onPress={() => setSelectedAquariumFilter(aquarium.id)}
+                style={styles.filterChip}
+              >
+                {aquarium.name}
+              </Chip>
+            ))}
+          </View>
+        </DashboardSection>
 
-        <View style={styles.filterRow}>
-          <Chip
-            selected={selectedAquariumFilter === "all"}
-            onPress={() => setSelectedAquariumFilter("all")}
-            style={styles.filterChip}
-          >
-            All tanks
-          </Chip>
-          {aquariums.map((aquarium) => (
-            <Chip
-              key={aquarium.id}
-              selected={selectedAquariumFilter === aquarium.id}
-              onPress={() => setSelectedAquariumFilter(aquarium.id)}
-              style={styles.filterChip}
+        <DashboardSection
+          title="Event stream"
+          description="The latest cross-app activity, ordered most recent first."
+        >
+          {filteredTimeline.map((event) => (
+            <Card
+              key={event.id}
+              style={[
+                styles.eventCard,
+                { backgroundColor: getEventBackground(event.type) },
+              ]}
+              mode="contained"
             >
-              {aquarium.name}
-            </Chip>
-          ))}
-        </View>
-
-        {filteredTimeline.map((event) => (
-          <Card key={event.id} style={styles.eventCard} mode="outlined">
-            <Card.Content>
-              <View style={styles.eventHeader}>
-                <Chip compact>{event.type}</Chip>
-                <Text variant="labelSmall">
-                  {new Date(event.createdAt).toLocaleString()}
+              <Card.Content>
+                <View style={styles.eventHeader}>
+                  <Chip compact>{event.type}</Chip>
+                  <Text variant="labelSmall">
+                    {new Date(event.createdAt).toLocaleString()}
+                  </Text>
+                </View>
+                <Text variant="titleSmall" style={styles.eventTitle}>
+                  {event.title}
                 </Text>
-              </View>
-              <Text variant="titleSmall" style={styles.eventTitle}>
-                {event.title}
-              </Text>
-              <Text variant="bodySmall" style={styles.aquariumName}>
-                {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
-              </Text>
-              {event.description ? (
-                <Text variant="bodyMedium">{event.description}</Text>
-              ) : null}
-              {event.photoUri ? (
-                <Image
-                  source={{ uri: event.photoUri }}
-                  style={styles.eventPhoto}
-                />
-              ) : null}
-            </Card.Content>
-          </Card>
-        ))}
+                <Text variant="bodySmall" style={styles.aquariumName}>
+                  {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
+                </Text>
+                {event.description ? (
+                  <Text variant="bodyMedium">{event.description}</Text>
+                ) : null}
+                {event.photoUri ? (
+                  <Image
+                    source={{ uri: event.photoUri }}
+                    style={styles.eventPhoto}
+                  />
+                ) : null}
+              </Card.Content>
+            </Card>
+          ))}
 
-        {filteredTimeline.length === 0 ? (
-          <Card mode="outlined">
-            <Card.Content>
-              <Text variant="bodyMedium">
-                No timeline events for this filter yet.
-              </Text>
-            </Card.Content>
-          </Card>
-        ) : null}
-      </ScrollView>
+          {filteredTimeline.length === 0 ? (
+            <Card
+              style={[
+                styles.eventCard,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+              mode="contained"
+            >
+              <Card.Content>
+                <Text variant="bodyMedium">
+                  No timeline events for this filter yet.
+                </Text>
+              </Card.Content>
+            </Card>
+          ) : null}
+        </DashboardSection>
+      </DashboardScrollView>
 
       <BottomSheet
         visible={isDialogOpen}
@@ -613,27 +674,21 @@ export default function TimelineScreen() {
           resetQuickLogForm(aquariums[0]?.id ?? "");
           setDialogOpen(true);
         }}
-        style={styles.fab}
+        style={[
+          styles.fab,
+          { backgroundColor: theme.colors.primaryContainer },
+        ]}
+        color={theme.colors.onPrimaryContainer}
       />
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-    paddingBottom: 132,
-  },
-  subtitle: {
-    opacity: 0.75,
-    marginTop: 6,
-    marginBottom: 12,
-  },
   filterRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginBottom: 12,
   },
   filterChip: {
     marginBottom: 4,
@@ -649,7 +704,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   eventCard: {
-    marginBottom: 10,
+    marginTop: 0,
     borderRadius: 24,
   },
   eventPhoto: {

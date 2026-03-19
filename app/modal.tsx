@@ -1,14 +1,18 @@
 import { Link } from "expo-router";
-import { ScrollView, StyleSheet, View } from "react-native";
-import { Card, Chip, Text } from "react-native-paper";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet } from "react-native";
+import { Card, Chip, Text, useTheme } from "react-native-paper";
 
+import {
+  DashboardHero,
+  DashboardScrollView,
+  DashboardSection,
+} from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 
 export default function ModalScreen() {
-  const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const { aquariums, taskTemplates, taskExecutions, issues, parameterLogs } =
     useAquapt();
 
@@ -35,62 +39,64 @@ export default function ModalScreen() {
   }, 0);
 
   return (
-    <ScrollView
-      contentContainerStyle={[
-        styles.container,
-        { paddingTop: 16 + insets.top },
-      ]}
-    >
-      <Text variant="headlineSmall">Global Insights</Text>
-      <Text variant="bodyMedium" style={styles.subtitle}>
-        Quick portfolio health snapshot across all tanks.
-      </Text>
-
-      <Card mode="contained">
-        <Card.Content>
-          <View style={styles.row}>
+    <DashboardScrollView contentContainerStyle={styles.container}>
+      <DashboardHero
+        title="Global Insights"
+        subtitle="Quick portfolio health across all tanks, using the same dashboard card language."
+        tone="primary"
+        chips={
+          <>
             <Chip icon="fish">{aquariums.length} tanks</Chip>
             <Chip icon="calendar-clock">{dueTaskCount} due tasks</Chip>
             <Chip icon="alert-circle">{activeIssueCount} active issues</Chip>
             <Chip icon="shield-alert">{safetyAlertCount} safety alerts</Chip>
-          </View>
-        </Card.Content>
-      </Card>
+          </>
+        }
+      />
 
-      <Card mode="outlined">
-        <Card.Title title="What to do next" />
-        <Card.Content>
-          <Text variant="bodyMedium">
-            • Complete due tasks first to keep schedule drift low.
-          </Text>
-          <Text variant="bodyMedium">
-            • Resolve safety alerts before adding livestock.
-          </Text>
-          <Text variant="bodyMedium">
-            • Close open issues with resolution notes for better diagnostics.
-          </Text>
-        </Card.Content>
-      </Card>
+      <DashboardSection
+        title="What to do next"
+        description="A short focus list before you head back into the main app."
+      >
+        <Card
+          mode="contained"
+          style={[styles.actionCard, { backgroundColor: theme.colors.surfaceVariant }]}
+        >
+          <Card.Content style={styles.actionContent}>
+            <Text variant="bodyMedium">
+              Complete due tasks first to keep schedule drift low.
+            </Text>
+            <Text variant="bodyMedium">
+              Resolve safety alerts before adding livestock.
+            </Text>
+            <Text variant="bodyMedium">
+              Close open issues with resolution notes for better diagnostics.
+            </Text>
+          </Card.Content>
+        </Card>
 
-      <Link href="/" dismissTo style={styles.link}>
-        <Text variant="labelLarge">Back to dashboard</Text>
-      </Link>
-    </ScrollView>
+        <Link href="/" dismissTo style={styles.link}>
+          <Text variant="labelLarge">Back to dashboard</Text>
+        </Link>
+      </DashboardSection>
+    </DashboardScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    gap: 12,
-  },
-  subtitle: {
-    opacity: 0.75,
+    paddingBottom: 40,
   },
   row: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  actionCard: {
+    borderRadius: 24,
+  },
+  actionContent: {
+    gap: 10,
   },
   link: {
     marginTop: 4,
