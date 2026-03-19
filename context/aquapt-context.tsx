@@ -587,6 +587,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
         title: "Livestock added",
         description: `${livestockItem.name} (${livestockItem.quantity})`,
+        photoUri: livestockItem.photoUri,
       },
       ...prev,
     ]);
@@ -626,6 +627,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             createdAt,
             title: `Transferred out ${moved?.name}`,
             description: `Moved to ${targetAquariumName}${note ? ` • ${note}` : ""}`,
+            photoUri: moved?.photoUri,
           },
           {
             id: nowId("event"),
@@ -634,6 +636,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             createdAt,
             title: `Transferred ${moved?.name}`,
             description: `From ${sourceAquariumName}${note ? ` • ${note}` : ""}`,
+            photoUri: moved?.photoUri,
           },
           ...prev,
         ]);
@@ -672,6 +675,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           createdAt,
           title: "Offspring linked",
           description: `${offspring.name} linked to ${parent.name}`,
+          photoUri: offspring.photoUri,
         },
         ...prev,
       ]);
@@ -698,6 +702,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     ) => {
       let updatedAquariumId = "";
       let updatedName = "";
+      let updatedPhotoUri = "";
 
       setLivestock((prev) =>
         prev.map((item) => {
@@ -707,6 +712,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
 
           updatedAquariumId = item.aquariumId;
           updatedName = item.name;
+          updatedPhotoUri = item.photoUri ?? "";
           return { ...item, status };
         }),
       );
@@ -720,6 +726,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             createdAt: new Date().toISOString(),
             title: `${updatedName} status: ${status}`,
             description: note,
+            photoUri: updatedPhotoUri || undefined,
           },
           ...prev,
         ]);
@@ -739,6 +746,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
         title: "Asset registered",
         description: created.brandModel,
+        photoUri: created.photoUri,
       },
       ...prev,
     ]);
@@ -762,6 +770,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           createdAt,
           title: "Consumable tracked",
           description: `${created.name} (${created.remaining}${created.unit})`,
+          photoUri: created.photoUri,
         },
         ...prev,
       ]);
@@ -776,6 +785,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       }
 
       let updated: Consumable | null = null;
+      let updatedPhotoUri = "";
 
       setConsumables((prev) =>
         prev.map((item) => {
@@ -788,6 +798,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             remaining: Math.max(0, item.remaining - amountUsed),
             updatedAt: new Date().toISOString(),
           };
+          updatedPhotoUri = item.photoUri ?? "";
 
           return updated;
         }),
@@ -803,6 +814,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
             createdAt: new Date().toISOString(),
             title: `Used ${consumed.name}`,
             description: `${amountUsed}${consumed.unit}${note ? ` • ${note}` : ""}`,
+            photoUri: updatedPhotoUri || undefined,
           },
           ...prev,
         ]);

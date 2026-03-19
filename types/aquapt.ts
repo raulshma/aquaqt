@@ -24,6 +24,7 @@ export interface Aquarium {
   waterType: WaterType;
   setupDate: string;
   investmentCost?: number;
+  photoUri?: string;
 }
 
 export interface WaterParameters {
@@ -78,6 +79,7 @@ export interface Asset {
   purchasedAt?: string;
   price?: number;
   maintenanceTaskTemplateIds?: string[];
+  photoUri?: string;
 }
 
 export interface Consumable {
@@ -88,6 +90,7 @@ export interface Consumable {
   remaining: number;
   reorderAt?: number;
   updatedAt: string;
+  photoUri?: string;
 }
 
 export interface TaskTemplate {

@@ -1,6 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 import {
@@ -37,6 +38,17 @@ const filters: { value: TimelineEventType | "all"; label: string }[] = [
   { value: "consumable", label: "Consumables" },
   { value: "memo", label: "Memos" },
 ];
+
+const EVENT_LABELS: Record<TimelineEventType, string> = {
+  task: "Task",
+  parameter: "Parameters",
+  issue: "Issue",
+  livestock: "Livestock",
+  memo: "Memo",
+  dosing: "Dosing",
+  asset: "Asset",
+  consumable: "Consumable",
+};
 
 export default function TimelineScreen() {
   const theme = useTheme();
@@ -212,6 +224,15 @@ export default function TimelineScreen() {
     }, {});
   }, [aquariums]);
 
+  const aquariumPhotoById = useMemo(() => {
+    return aquariums.reduce<Record<string, string>>((acc, aquarium) => {
+      if (aquarium.photoUri) {
+        acc[aquarium.id] = aquarium.photoUri;
+      }
+      return acc;
+    }, {});
+  }, [aquariums]);
+
   const dueTasksByAquarium = useMemo(() => {
     const now = new Date();
     return aquariums.reduce<Record<string, typeof taskTemplates>>(
@@ -295,6 +316,14 @@ export default function TimelineScreen() {
         return theme.colors.primaryContainer;
       case "memo":
         return theme.colors.tertiaryContainer;
+      case "livestock":
+        return "#dff7e2";
+      case "asset":
+        return "#dbeafe";
+      case "consumable":
+        return "#fff4cc";
+      case "dosing":
+        return "#f3e8ff";
       default:
         return theme.colors.surfaceVariant;
     }
@@ -367,47 +396,104 @@ export default function TimelineScreen() {
           description="The latest cross-app activity, ordered most recent first."
         >
           {filteredTimeline.map((event) => {
+            const eventImageUri =
+              event.photoUri || aquariumPhotoById[event.aquariumId] || undefined;
             const backgroundColor = getEventBackground(event.type);
+            const cardBackground = eventImageUri
+              ? theme.colors.surface
+              : backgroundColor;
             const textColor = getCardTextColorForBackground(
               theme,
-              backgroundColor,
+              cardBackground,
             );
 
             return (
               <Card
                 key={event.id}
-                style={[styles.eventCard, { backgroundColor }]}
+                style={[styles.eventCard, { backgroundColor: cardBackground }]}
                 mode="contained"
               >
-                <Card.Content>
-                  <View style={styles.eventHeader}>
-                    <Chip compact>{event.type}</Chip>
-                    <Text variant="labelSmall" style={{ color: textColor }}>
-                      {new Date(event.createdAt).toLocaleString()}
-                    </Text>
+                {eventImageUri ? (
+                  <View style={styles.eventPhotoShell}>
+                    <Image
+                      source={{ uri: eventImageUri }}
+                      style={styles.eventPhoto}
+                      contentFit="cover"
+                    />
+                    <LinearGradient
+                      colors={["rgba(15,23,42,0.08)", "rgba(15,23,42,0.84)"]}
+                      style={styles.eventPhotoOverlay}
+                    />
+                    <View style={styles.eventPhotoHeader}>
+                      <View style={styles.eventPhotoTypePill}>
+                        <Text
+                          variant="labelSmall"
+                          style={styles.eventPhotoTypeText}
+                        >
+                          {EVENT_LABELS[event.type]}
+                        </Text>
+                      </View>
+                      <Text
+                        variant="labelSmall"
+                        style={styles.eventPhotoTimestamp}
+                      >
+                        {new Date(event.createdAt).toLocaleString()}
+                      </Text>
+                    </View>
+                    <View style={styles.eventPhotoFooter}>
+                      <Text
+                        variant="labelLarge"
+                        style={styles.eventPhotoAquarium}
+                      >
+                        {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
+                      </Text>
+                    </View>
                   </View>
+                ) : null}
+                <Card.Content>
+                  {!eventImageUri ? (
+                    <View style={styles.eventHeader}>
+                      <View
+                        style={[
+                          styles.eventTypePill,
+                          { backgroundColor },
+                        ]}
+                      >
+                        <Text
+                          variant="labelSmall"
+                          style={{
+                            color: getCardTextColorForBackground(
+                              theme,
+                              backgroundColor,
+                            ),
+                          }}
+                        >
+                          {EVENT_LABELS[event.type]}
+                        </Text>
+                      </View>
+                      <Text variant="labelSmall" style={{ color: textColor }}>
+                        {new Date(event.createdAt).toLocaleString()}
+                      </Text>
+                    </View>
+                  ) : null}
                   <Text
                     variant="titleSmall"
                     style={[styles.eventTitle, { color: textColor }]}
                   >
                     {event.title}
                   </Text>
-                  <Text
-                    variant="bodySmall"
-                    style={[styles.aquariumName, { color: textColor }]}
-                  >
-                    {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
-                  </Text>
+                  {!eventImageUri ? (
+                    <Text
+                      variant="bodySmall"
+                      style={[styles.aquariumName, { color: textColor }]}
+                    >
+                      {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
+                    </Text>
+                  ) : null}
                   {event.description ? (
                     <Text variant="bodyMedium" style={{ color: textColor }}>
                       {event.description}
                     </Text>
-                  ) : null}
-                  {event.photoUri ? (
-                    <Image
-                      source={{ uri: event.photoUri }}
-                      style={styles.eventPhoto}
-                    />
                   ) : null}
                 </Card.Content>
               </Card>
@@ -720,12 +806,57 @@ const styles = StyleSheet.create({
   eventCard: {
     marginTop: 0,
     borderRadius: 24,
+    overflow: "hidden",
   },
   eventPhoto: {
     width: "100%",
-    height: 170,
-    borderRadius: 18,
-    marginTop: 10,
+    height: 220,
+  },
+  eventPhotoShell: {
+    position: "relative",
+  },
+  eventPhotoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  eventPhotoHeader: {
+    position: "absolute",
+    top: 14,
+    left: 14,
+    right: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+  },
+  eventPhotoFooter: {
+    position: "absolute",
+    left: 14,
+    right: 14,
+    bottom: 14,
+  },
+  eventPhotoTypePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  eventPhotoTypeText: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+  eventPhotoTimestamp: {
+    color: "rgba(255,255,255,0.9)",
+    textAlign: "right",
+    flex: 1,
+  },
+  eventPhotoAquarium: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+  eventTypePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
   eventHeader: {
     flexDirection: "row",

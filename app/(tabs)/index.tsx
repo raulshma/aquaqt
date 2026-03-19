@@ -163,6 +163,13 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
 
   return (
     <Card style={[styles.keepCard, { backgroundColor }]} mode="contained">
+      {aquarium.photoUri ? (
+        <Image
+          source={{ uri: aquarium.photoUri }}
+          style={styles.aquariumCardPhoto}
+          contentFit="cover"
+        />
+      ) : null}
       <Card.Title
         title={aquarium.name}
         subtitle={`${aquarium.volumeLiters}L • ${aquarium.waterType}`}
@@ -582,6 +589,9 @@ export default function HomeScreen() {
   const [newLivestockPhotoUri, setNewLivestockPhotoUri] = useState("");
   const [isPickingPhoto, setPickingPhoto] = useState(false);
   const [isPickingMemoPhoto, setPickingMemoPhoto] = useState(false);
+  const [isPickingAquariumPhoto, setPickingAquariumPhoto] = useState(false);
+  const [isPickingAssetPhoto, setPickingAssetPhoto] = useState(false);
+  const [isPickingConsumablePhoto, setPickingConsumablePhoto] = useState(false);
   const [newAssetModel, setNewAssetModel] = useState("");
   const [newAssetCategory, setNewAssetCategory] = useState<
     "filter" | "heater" | "light" | "co2" | "other"
@@ -590,6 +600,7 @@ export default function HomeScreen() {
     toIsoDate(new Date()),
   );
   const [newAssetPrice, setNewAssetPrice] = useState("");
+  const [newAssetPhotoUri, setNewAssetPhotoUri] = useState("");
   const [selectedAssetTaskTemplateIds, setSelectedAssetTaskTemplateIds] =
     useState<string[]>([]);
   const [newConsumableName, setNewConsumableName] = useState("");
@@ -597,6 +608,7 @@ export default function HomeScreen() {
   const [newConsumableUnit, setNewConsumableUnit] = useState<
     "pcs" | "ml" | "g"
   >("pcs");
+  const [newConsumablePhotoUri, setNewConsumablePhotoUri] = useState("");
   const [issueStatusDraft, setIssueStatusDraft] = useState<
     Record<string, IssueStatus>
   >({});
@@ -633,6 +645,7 @@ export default function HomeScreen() {
       setupDateValue: new Date(),
       investment: "",
       waterType: "freshwater" as "freshwater" | "marine" | "brackish",
+      photoUri: "",
     },
     onSubmit: ({ value }) => {
       const volume = Number(value.volume);
@@ -651,6 +664,7 @@ export default function HomeScreen() {
           Number.isFinite(investment) && investment >= 0
             ? investment
             : undefined,
+        photoUri: value.photoUri || undefined,
       });
 
       addAquariumForm.setFieldValue("name", "");
@@ -660,6 +674,7 @@ export default function HomeScreen() {
       addAquariumForm.setFieldValue("setupDateValue", new Date());
       addAquariumForm.setFieldValue("investment", "");
       addAquariumForm.setFieldValue("waterType", "freshwater");
+      addAquariumForm.setFieldValue("photoUri", "");
       setAddAquariumOpen(false);
     },
   });
@@ -673,6 +688,7 @@ export default function HomeScreen() {
       setupDate: "",
       setupDateValue: new Date(),
       investment: "",
+      photoUri: "",
     },
     onSubmit: ({ value }) => {
       if (!value.id || !value.name.trim()) {
@@ -694,6 +710,7 @@ export default function HomeScreen() {
           Number.isFinite(investment) && investment >= 0
             ? investment
             : undefined,
+        photoUri: value.photoUri || undefined,
       });
 
       setEditAquariumOpen(false);
@@ -828,6 +845,83 @@ export default function HomeScreen() {
       setDialogOpen(false);
     },
   });
+
+  const promptForPhoto = async ({
+    title,
+    currentUri,
+    setLoading,
+    onPicked,
+    onCleared,
+  }: {
+    title: string;
+    currentUri?: string;
+    setLoading: Dispatch<SetStateAction<boolean>>;
+    onPicked: (uri: string) => void;
+    onCleared: () => void;
+  }) => {
+    const pickFromSource = async (source: "camera" | "library") => {
+      setLoading(true);
+      try {
+        const permission =
+          source === "camera"
+            ? await ImagePicker.requestCameraPermissionsAsync()
+            : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+        if (!permission.granted) {
+          return;
+        }
+
+        const result =
+          source === "camera"
+            ? await ImagePicker.launchCameraAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                quality: 0.7,
+              })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                quality: 0.7,
+              });
+
+        if (!result.canceled && result.assets?.[0]?.uri) {
+          onPicked(result.assets[0].uri);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const actions = [
+      {
+        text: "Take photo",
+        onPress: () => {
+          void pickFromSource("camera");
+        },
+      },
+      {
+        text: "Choose from library",
+        onPress: () => {
+          void pickFromSource("library");
+        },
+      },
+      ...(currentUri
+        ? [
+            {
+              text: "Remove photo",
+              style: "destructive" as const,
+              onPress: onCleared,
+            },
+          ]
+        : []),
+      {
+        text: "Cancel",
+        style: "cancel" as const,
+      },
+    ];
+
+    Alert.alert(title, "Choose photo source", actions);
+  };
 
   useEffect(() => {
     if (aquariums.length === 0) {
@@ -988,111 +1082,72 @@ export default function HomeScreen() {
   };
 
   const pickLivestockPhoto = async () => {
-    const pickFromSource = async (source: "camera" | "library") => {
-      setPickingPhoto(true);
-      try {
-        const permission =
-          source === "camera"
-            ? await ImagePicker.requestCameraPermissionsAsync()
-            : await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-        if (!permission.granted) {
-          return;
-        }
-
-        const result =
-          source === "camera"
-            ? await ImagePicker.launchCameraAsync({
-                mediaTypes: ["images"],
-                allowsEditing: true,
-                quality: 0.7,
-              })
-            : await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ["images"],
-                allowsEditing: true,
-                quality: 0.7,
-              });
-
-        if (!result.canceled && result.assets?.[0]?.uri) {
-          setNewLivestockPhotoUri(result.assets[0].uri);
-        }
-      } finally {
-        setPickingPhoto(false);
-      }
-    };
-
-    Alert.alert("Add livestock photo", "Choose photo source", [
-      {
-        text: "Take photo",
-        onPress: () => {
-          void pickFromSource("camera");
-        },
-      },
-      {
-        text: "Choose from library",
-        onPress: () => {
-          void pickFromSource("library");
-        },
-      },
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-    ]);
+    await promptForPhoto({
+      title: "Add livestock photo",
+      currentUri: newLivestockPhotoUri,
+      setLoading: setPickingPhoto,
+      onPicked: setNewLivestockPhotoUri,
+      onCleared: () => setNewLivestockPhotoUri(""),
+    });
   };
 
   const pickMemoPhoto = async () => {
-    const pickFromSource = async (source: "camera" | "library") => {
-      setPickingMemoPhoto(true);
-      try {
-        const permission =
-          source === "camera"
-            ? await ImagePicker.requestCameraPermissionsAsync()
-            : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    await promptForPhoto({
+      title: "Add memo photo",
+      currentUri: quickLogForm.state.values.memo.photoUri,
+      setLoading: setPickingMemoPhoto,
+      onPicked: (uri) => quickLogForm.setFieldValue("memo.photoUri", uri),
+      onCleared: () => quickLogForm.setFieldValue("memo.photoUri", ""),
+    });
+  };
 
-        if (!permission.granted) {
+  const pickAquariumPhoto = async (target: "add" | "edit") => {
+    const currentUri =
+      target === "add"
+        ? addAquariumForm.state.values.photoUri
+        : editAquariumForm.state.values.photoUri;
+
+    await promptForPhoto({
+      title: target === "add" ? "Add aquarium photo" : "Update aquarium photo",
+      currentUri,
+      setLoading: setPickingAquariumPhoto,
+      onPicked: (uri) => {
+        if (target === "add") {
+          addAquariumForm.setFieldValue("photoUri", uri);
           return;
         }
 
-        const result =
-          source === "camera"
-            ? await ImagePicker.launchCameraAsync({
-                mediaTypes: ["images"],
-                allowsEditing: true,
-                quality: 0.7,
-              })
-            : await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ["images"],
-                allowsEditing: true,
-                quality: 0.7,
-              });
-
-        if (!result.canceled && result.assets?.[0]?.uri) {
-          quickLogForm.setFieldValue("memo.photoUri", result.assets[0].uri);
+        editAquariumForm.setFieldValue("photoUri", uri);
+      },
+      onCleared: () => {
+        if (target === "add") {
+          addAquariumForm.setFieldValue("photoUri", "");
+          return;
         }
-      } finally {
-        setPickingMemoPhoto(false);
-      }
-    };
 
-    Alert.alert("Add memo photo", "Choose photo source", [
-      {
-        text: "Take photo",
-        onPress: () => {
-          void pickFromSource("camera");
-        },
+        editAquariumForm.setFieldValue("photoUri", "");
       },
-      {
-        text: "Choose from library",
-        onPress: () => {
-          void pickFromSource("library");
-        },
-      },
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-    ]);
+    });
+  };
+
+  const pickAssetPhoto = async () => {
+    await promptForPhoto({
+      title: "Add asset photo",
+      currentUri: newAssetPhotoUri,
+      setLoading: setPickingAssetPhoto,
+      onPicked: setNewAssetPhotoUri,
+      onCleared: () => setNewAssetPhotoUri(""),
+    });
+  };
+
+  const pickConsumablePhoto = async () => {
+    await promptForPhoto({
+      title: "Add consumable photo",
+      currentUri: newConsumablePhotoUri,
+      setLoading: setPickingConsumablePhoto,
+      onPicked: setNewConsumablePhotoUri,
+      onCleared: () => setNewConsumablePhotoUri(""),
+    });
   };
 
   const createAsset = () => {
@@ -1112,11 +1167,13 @@ export default function HomeScreen() {
         selectedAssetTaskTemplateIds.length > 0
           ? selectedAssetTaskTemplateIds
           : undefined,
+      photoUri: newAssetPhotoUri || undefined,
     });
     setNewAssetModel("");
     setNewAssetCategory("other");
     setNewAssetPurchasedAt(toIsoDate(new Date()));
     setNewAssetPrice("");
+    setNewAssetPhotoUri("");
     setSelectedAssetTaskTemplateIds([]);
     setAddAssetOpen(false);
   };
@@ -1142,6 +1199,7 @@ export default function HomeScreen() {
         ? String(aquarium.investmentCost)
         : "",
     );
+    editAquariumForm.setFieldValue("photoUri", aquarium.photoUri ?? "");
     setEditAquariumOpen(true);
   };
 
@@ -1165,10 +1223,12 @@ export default function HomeScreen() {
       unit: newConsumableUnit,
       remaining,
       reorderAt: Math.max(1, Math.floor(remaining * 0.25)),
+      photoUri: newConsumablePhotoUri || undefined,
     });
     setNewConsumableName("");
     setNewConsumableRemaining("0");
     setNewConsumableUnit("pcs");
+    setNewConsumablePhotoUri("");
     setAddConsumableOpen(false);
   };
 
@@ -1779,6 +1839,13 @@ export default function HomeScreen() {
                     mode="contained"
                   >
                     <Card.Content>
+                      {asset.photoUri ? (
+                        <Image
+                          source={{ uri: asset.photoUri }}
+                          style={styles.entityPhoto}
+                          contentFit="cover"
+                        />
+                      ) : null}
                       <Text variant="titleSmall">{asset.brandModel}</Text>
                       <Text variant="bodySmall" style={styles.issueMeta}>
                         {asset.category} •{" "}
@@ -1836,6 +1903,13 @@ export default function HomeScreen() {
                       mode="contained"
                     >
                       <Card.Content>
+                        {consumable.photoUri ? (
+                          <Image
+                            source={{ uri: consumable.photoUri }}
+                            style={styles.entityPhoto}
+                            contentFit="cover"
+                          />
+                        ) : null}
                         <Text variant="titleSmall">{consumable.name}</Text>
                         <Text variant="bodySmall" style={styles.issueMeta}>
                           {consumable.remaining}
@@ -1999,6 +2073,28 @@ export default function HomeScreen() {
               />
             )}
           </editAquariumForm.Field>
+          <editAquariumForm.Subscribe selector={(state) => state.values.photoUri}>
+            {(photoUri) => (
+              <>
+                <Button
+                  mode="contained-tonal"
+                  onPress={() => {
+                    void pickAquariumPhoto("edit");
+                  }}
+                  loading={isPickingAquariumPhoto}
+                >
+                  {photoUri ? "Change photo" : "Add aquarium photo"}
+                </Button>
+                {photoUri ? (
+                  <Image
+                    source={{ uri: photoUri }}
+                    style={styles.photoPreview}
+                    contentFit="cover"
+                  />
+                ) : null}
+              </>
+            )}
+          </editAquariumForm.Subscribe>
         </View>
       </BottomSheet>
 
@@ -2088,6 +2184,28 @@ export default function HomeScreen() {
               />
             )}
           </addAquariumForm.Field>
+          <addAquariumForm.Subscribe selector={(state) => state.values.photoUri}>
+            {(photoUri) => (
+              <>
+                <Button
+                  mode="contained-tonal"
+                  onPress={() => {
+                    void pickAquariumPhoto("add");
+                  }}
+                  loading={isPickingAquariumPhoto}
+                >
+                  {photoUri ? "Change photo" : "Add aquarium photo"}
+                </Button>
+                {photoUri ? (
+                  <Image
+                    source={{ uri: photoUri }}
+                    style={styles.photoPreview}
+                    contentFit="cover"
+                  />
+                ) : null}
+              </>
+            )}
+          </addAquariumForm.Subscribe>
         </View>
       </BottomSheet>
 
@@ -2214,6 +2332,22 @@ export default function HomeScreen() {
             onChangeText={setNewAssetPrice}
             keyboardType="numeric"
           />
+          <Button
+            mode="contained-tonal"
+            onPress={() => {
+              void pickAssetPhoto();
+            }}
+            loading={isPickingAssetPhoto}
+          >
+            {newAssetPhotoUri ? "Change photo" : "Add asset photo"}
+          </Button>
+          {newAssetPhotoUri ? (
+            <Image
+              source={{ uri: newAssetPhotoUri }}
+              style={styles.photoPreview}
+              contentFit="cover"
+            />
+          ) : null}
           {availableTaskTemplatesForAsset.length > 0 ? (
             <View style={styles.summaryRow}>
               {availableTaskTemplatesForAsset.map((task) => {
@@ -2282,6 +2416,22 @@ export default function HomeScreen() {
               value: unit,
             }))}
           />
+          <Button
+            mode="contained-tonal"
+            onPress={() => {
+              void pickConsumablePhoto();
+            }}
+            loading={isPickingConsumablePhoto}
+          >
+            {newConsumablePhotoUri ? "Change photo" : "Add consumable photo"}
+          </Button>
+          {newConsumablePhotoUri ? (
+            <Image
+              source={{ uri: newConsumablePhotoUri }}
+              style={styles.photoPreview}
+              contentFit="cover"
+            />
+          ) : null}
         </View>
       </BottomSheet>
 
@@ -2687,6 +2837,7 @@ const styles = StyleSheet.create({
   keepCard: {
     borderRadius: 18,
     marginVertical: 0,
+    overflow: "hidden",
   },
   actionCard: {
     minHeight: 140,
@@ -2802,6 +2953,16 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 160,
     borderRadius: 18,
+  },
+  aquariumCardPhoto: {
+    width: "100%",
+    height: 160,
+  },
+  entityPhoto: {
+    width: "100%",
+    height: 140,
+    borderRadius: 18,
+    marginBottom: 10,
   },
   livestockPhoto: {
     width: "100%",
