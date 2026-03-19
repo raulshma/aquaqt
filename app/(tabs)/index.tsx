@@ -144,6 +144,11 @@ type DueTaskEntry = {
   aquariumId: string;
 };
 
+type AquariumAlertEntry = ReturnType<typeof evaluateParameterAlerts>[number] & {
+  aquariumId: string;
+  aquariumName: string;
+};
+
 type AquariumOverviewCardProps = {
   aquarium: Aquarium;
   backgroundColor: string;
@@ -547,6 +552,142 @@ const IssueCard = memo(function IssueCard({
         </Button>
       </Card.Content>
     </Card>
+  );
+});
+
+type TodayMetricCardProps = {
+  label: string;
+  value: string;
+  detail: string;
+  accentColor: string;
+  backgroundColor: string;
+  textColor: string;
+};
+
+const TodayMetricCard = memo(function TodayMetricCard({
+  label,
+  value,
+  detail,
+  accentColor,
+  backgroundColor,
+  textColor,
+}: TodayMetricCardProps) {
+  return (
+    <Surface elevation={1} style={[styles.todayMetricCard, { backgroundColor }]}>
+      <View style={styles.todayMetricHeader}>
+        <View
+          style={[styles.todayMetricAccent, { backgroundColor: accentColor }]}
+        />
+        <Text
+          variant="labelMedium"
+          style={[styles.todayMetricLabel, { color: textColor }]}
+        >
+          {label}
+        </Text>
+      </View>
+      <Text variant="headlineSmall" style={{ color: textColor }}>
+        {value}
+      </Text>
+      <Text
+        variant="bodySmall"
+        numberOfLines={1}
+        style={[styles.todayMetricDetail, { color: textColor }]}
+      >
+        {detail}
+      </Text>
+    </Surface>
+  );
+});
+
+type TodayFocusPanelItem = {
+  id: string;
+  title: string;
+  caption: string;
+  accentColor: string;
+};
+
+type TodayFocusPanelProps = {
+  eyebrow: string;
+  title: string;
+  summary: string;
+  items: TodayFocusPanelItem[];
+  emptyState: string;
+  backgroundColor: string;
+  textColor: string;
+  emptyAccentColor: string;
+};
+
+const TodayFocusPanel = memo(function TodayFocusPanel({
+  eyebrow,
+  title,
+  summary,
+  items,
+  emptyState,
+  backgroundColor,
+  textColor,
+  emptyAccentColor,
+}: TodayFocusPanelProps) {
+  return (
+    <Surface elevation={1} style={[styles.todayFocusPanel, { backgroundColor }]}>
+      <View style={styles.todayFocusHeader}>
+        <Text variant="labelMedium" style={[styles.todayFocusEyebrow, { color: textColor }]}>
+          {eyebrow}
+        </Text>
+        <Text variant="titleSmall" style={{ color: textColor }}>
+          {title}
+        </Text>
+        <Text
+          variant="bodySmall"
+          numberOfLines={2}
+          style={[styles.todayFocusSummary, { color: textColor }]}
+        >
+          {summary}
+        </Text>
+      </View>
+
+      {items.length > 0 ? (
+        <View style={styles.todayFocusList}>
+          {items.map((item) => (
+            <View key={item.id} style={styles.todayFocusItem}>
+              <View
+                style={[
+                  styles.todayFocusItemAccent,
+                  { backgroundColor: item.accentColor },
+                ]}
+              />
+              <View style={styles.todayFocusItemCopy}>
+                <Text
+                  variant="bodyMedium"
+                  numberOfLines={1}
+                  style={{ color: textColor }}
+                >
+                  {item.title}
+                </Text>
+                <Text
+                  variant="bodySmall"
+                  numberOfLines={1}
+                  style={[styles.todayFocusItemCaption, { color: textColor }]}
+                >
+                  {item.caption}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={styles.todayFocusEmpty}>
+          <View
+            style={[
+              styles.todayFocusItemAccent,
+              { backgroundColor: emptyAccentColor },
+            ]}
+          />
+          <Text variant="bodySmall" style={{ color: textColor }}>
+            {emptyState}
+          </Text>
+        </View>
+      )}
+    </Surface>
   );
 });
 
@@ -1072,6 +1213,17 @@ export default function HomeScreen() {
       ),
     [aquariumInsightsById],
   );
+  const todayAlertEntries = useMemo<AquariumAlertEntry[]>(
+    () =>
+      aquariums.flatMap((aquarium) =>
+        (aquariumInsightsById[aquarium.id]?.alerts ?? []).map((alert) => ({
+          ...alert,
+          aquariumId: aquarium.id,
+          aquariumName: aquarium.name,
+        })),
+      ),
+    [aquariums, aquariumInsightsById],
+  );
 
   const assistantHeaderSubtitle =
     totalParameterAlerts > 0
@@ -1320,6 +1472,10 @@ export default function HomeScreen() {
       return acc;
     }, {});
   }, [aquariums]);
+  const totalLivestock = useMemo(
+    () => livestock.reduce((sum, item) => sum + item.quantity, 0),
+    [livestock],
+  );
 
   const totalOpenIssues = useMemo(
     () =>
@@ -1371,14 +1527,65 @@ export default function HomeScreen() {
     theme,
     theme.colors.primaryContainer,
   );
-  const errorSummaryTextColor = getCardTextColorForBackground(
+  const todayGlanceTextColor = getCardTextColorForBackground(
     theme,
-    theme.colors.errorContainer,
+    theme.colors.primaryContainer,
   );
-  const secondarySummaryTextColor = getCardTextColorForBackground(
-    theme,
-    theme.colors.secondaryContainer,
-  );
+  const todaySummaryDescription =
+    totalParameterAlerts > 0
+      ? `${totalParameterAlerts} safety alert${totalParameterAlerts === 1 ? "" : "s"} need review today.`
+      : pendingTasksToday.length > 0
+        ? `${pendingTasksToday.length} routine task${pendingTasksToday.length === 1 ? "" : "s"} are queued for today.`
+        : aquariums.length > 0
+          ? `Everything looks steady across ${aquariums.length} tank${aquariums.length === 1 ? "" : "s"}.`
+          : "Start by adding a tank and building your care routine.";
+  const todayMetrics = [
+    {
+      label: "Tanks",
+      value: `${aquariums.length}`,
+      detail:
+        aquariums.length === 1 ? "single active system" : "active systems",
+      accentColor: theme.colors.primary,
+    },
+    {
+      label: "Residents",
+      value: `${totalLivestock}`,
+      detail: `${livestock.length} livestock record${livestock.length === 1 ? "" : "s"}`,
+      accentColor: theme.colors.tertiary,
+    },
+    {
+      label: "Open issues",
+      value: `${totalOpenIssues}`,
+      detail: totalOpenIssues > 0 ? "follow-up needed" : "all clear",
+      accentColor:
+        totalOpenIssues > 0 ? theme.colors.error : theme.colors.primary,
+    },
+    {
+      label: "Dosing logs",
+      value: `${dosingLogs.length}`,
+      detail:
+        parameterLogs.length > 0
+          ? `${parameterLogs.length} water test${parameterLogs.length === 1 ? "" : "s"} logged`
+          : "no chemistry logs yet",
+      accentColor: theme.colors.secondary,
+    },
+  ];
+  const todayAlertItems = todayAlertEntries.slice(0, 3).map((entry) => ({
+    id: `${entry.aquariumId}-${entry.key}-${entry.status}`,
+    title: `${entry.aquariumName} · ${entry.label}`,
+    caption: `${entry.status === "high" ? "High" : "Low"} at ${entry.value}${entry.unit ? ` ${entry.unit}` : ""}`,
+    accentColor:
+      entry.status === "high" ? theme.colors.error : theme.colors.tertiary,
+  }));
+  const todayTaskItems = pendingTasksToday.slice(0, 3).map((entry) => ({
+    id: `${entry.taskId}-${entry.aquariumId}`,
+    title: entry.taskTitle,
+    caption: aquariumNameById[entry.aquariumId] ?? "Unknown tank",
+    accentColor: theme.colors.secondary,
+  }));
+  const isWideTodayGlanceLayout = width >= 720;
+  const todayMetricWidth = isWideTodayGlanceLayout ? "24%" : "48.5%";
+  const todayPanelWidth = isWideTodayGlanceLayout ? "49%" : "100%";
 
   return (
     <>
@@ -1428,77 +1635,124 @@ export default function HomeScreen() {
             styles.keepCard,
             {
               backgroundColor: theme.colors.primaryContainer,
-              marginBottom: 10,
+              marginBottom: 6,
             },
           ]}
           mode="elevated"
         >
-          <Card.Content>
-            <Text
-              variant="titleMedium"
-              style={{ color: primarySummaryTextColor }}
-            >
-              Today at a glance
-            </Text>
-            <View style={styles.summaryRow}>
-              <Chip compact icon="fish">
-                {aquariums.length} Tanks
-              </Chip>
-              <Chip compact icon="alert">
-                {totalOpenIssues} Active issues
-              </Chip>
-              <Chip compact icon="calendar-clock">
-                {pendingTasksToday.length} Tasks due
-              </Chip>
-              <Chip compact icon="test-tube">
-                {dosingLogs.length} Dosing logs
-              </Chip>
-              <Chip compact icon="shield-alert">
-                {totalParameterAlerts} Safety alerts
-              </Chip>
+          <Card.Content style={styles.todayGlanceCardContent}>
+            <View style={styles.todayGlanceHeader}>
+              <View style={styles.todayGlanceHeaderCopy}>
+                <Text
+                  variant="titleMedium"
+                  style={{ color: primarySummaryTextColor }}
+                >
+                  Today at a glance
+                </Text>
+                <Text
+                  variant="bodySmall"
+                  style={[
+                    styles.todayGlanceDescription,
+                    { color: todayGlanceTextColor },
+                  ]}
+                >
+                  {todaySummaryDescription}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.todayGlanceBadge,
+                  {
+                    backgroundColor:
+                      totalParameterAlerts > 0
+                        ? theme.colors.errorContainer
+                        : theme.colors.surface,
+                  },
+                ]}
+              >
+                <Text
+                  variant="labelMedium"
+                  style={{
+                    color:
+                      totalParameterAlerts > 0
+                        ? theme.colors.onErrorContainer
+                        : theme.colors.onSurface,
+                  }}
+                >
+                  {totalParameterAlerts > 0
+                    ? `${totalParameterAlerts} alert${totalParameterAlerts === 1 ? "" : "s"}`
+                    : pendingTasksToday.length > 0
+                      ? `${pendingTasksToday.length} due`
+                      : "Calm"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.todayMetricsGrid}>
+              {todayMetrics.map((metric) => (
+                <View
+                  key={metric.label}
+                  style={[styles.todayMetricSlot, { width: todayMetricWidth }]}
+                >
+                  <TodayMetricCard
+                    label={metric.label}
+                    value={metric.value}
+                    detail={metric.detail}
+                    accentColor={metric.accentColor}
+                    backgroundColor={theme.colors.surface}
+                    textColor={theme.colors.onSurface}
+                  />
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.todayFocusGrid}>
+              <View style={[styles.todayFocusSlot, { width: todayPanelWidth }]}>
+                <TodayFocusPanel
+                  eyebrow="Water safety"
+                  title={
+                    totalParameterAlerts > 0
+                      ? `${totalParameterAlerts} alert${totalParameterAlerts === 1 ? "" : "s"} need attention`
+                      : "No chemistry alerts"
+                  }
+                  summary={
+                    totalParameterAlerts > 0
+                      ? "Recent test values are outside your expected range."
+                      : "Latest readings are sitting inside a safer range."
+                  }
+                  items={todayAlertItems}
+                  emptyState="No active water safety warnings right now."
+                  backgroundColor={theme.colors.surface}
+                  textColor={theme.colors.onSurface}
+                  emptyAccentColor={theme.colors.primary}
+                />
+              </View>
+              <View style={[styles.todayFocusSlot, { width: todayPanelWidth }]}>
+                <TodayFocusPanel
+                  eyebrow="Due today"
+                  title={
+                    pendingTasksToday.length > 0
+                      ? `${pendingTasksToday.length} task${pendingTasksToday.length === 1 ? "" : "s"} queued`
+                      : "Nothing due today"
+                  }
+                  summary={
+                    pendingTasksToday.length > 0
+                      ? "Knock these out to keep routines current across your tanks."
+                      : "Your recurring care schedule is clear for the day."
+                  }
+                  items={todayTaskItems}
+                  emptyState="No recurring tasks need action today."
+                  backgroundColor={theme.colors.surface}
+                  textColor={theme.colors.onSurface}
+                  emptyAccentColor={theme.colors.secondary}
+                />
+              </View>
             </View>
           </Card.Content>
         </Card>
 
         <View style={styles.keepGrid}>
           <View style={styles.keepColumn}>
-            {totalParameterAlerts > 0 ? (
-              <Card
-                style={[
-                  styles.summaryCard,
-                  styles.keepCard,
-                  { backgroundColor: theme.colors.errorContainer },
-                ]}
-                mode="outlined"
-              >
-                <Card.Title
-                  title="Water safety alerts"
-                  titleStyle={{ color: errorSummaryTextColor }}
-                />
-                <Card.Content>
-                  <View style={styles.summaryRow}>
-                    {aquariums.flatMap((aquarium) =>
-                      (aquariumInsightsById[aquarium.id]?.alerts ?? []).map(
-                        (alert) => (
-                          <Chip
-                            key={`${aquarium.id}-${alert.key}-${alert.status}`}
-                            icon={
-                              alert.status === "high"
-                                ? "arrow-up"
-                                : "arrow-down"
-                            }
-                          >
-                            {aquarium.name}: {alert.label} {alert.value}
-                            {alert.unit ? ` ${alert.unit}` : ""}
-                          </Chip>
-                        ),
-                      ),
-                    )}
-                  </View>
-                </Card.Content>
-              </Card>
-            ) : null}
-
             {leftColumnAquariums.map((aquarium, index) => {
               const insight = aquariumInsightsById[aquarium.id];
 
@@ -1521,31 +1775,6 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.keepColumn}>
-            {pendingTasksToday.length > 0 ? (
-              <Card
-                style={[
-                  styles.summaryCard,
-                  styles.keepCard,
-                  { backgroundColor: theme.colors.secondaryContainer },
-                ]}
-                mode="elevated"
-              >
-                <Card.Title
-                  title="Tasks due today"
-                  titleStyle={{ color: secondarySummaryTextColor }}
-                />
-                <Card.Content>
-                  <View style={styles.summaryRow}>
-                    {pendingTasksToday.slice(0, 6).map((entry) => (
-                      <Chip key={`${entry.taskId}-${entry.aquariumId}`} compact>
-                        {entry.taskTitle}
-                      </Chip>
-                    ))}
-                  </View>
-                </Card.Content>
-              </Card>
-            ) : null}
-
             {rightColumnAquariums.map((aquarium, index) => {
               const insight = aquariumInsightsById[aquarium.id];
 
@@ -3022,6 +3251,111 @@ const styles = StyleSheet.create({
   summaryCard: {
     marginVertical: 0,
     borderRadius: 24,
+  },
+  todayGlanceCardContent: {
+    gap: 12,
+  },
+  todayGlanceHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  todayGlanceHeaderCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  todayGlanceDescription: {
+    opacity: 0.76,
+    lineHeight: 18,
+  },
+  todayGlanceBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignSelf: "flex-start",
+  },
+  todayMetricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  todayMetricSlot: {
+    minWidth: 0,
+  },
+  todayMetricCard: {
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 6,
+  },
+  todayMetricHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  todayMetricAccent: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  todayMetricLabel: {
+    opacity: 0.72,
+  },
+  todayMetricDetail: {
+    opacity: 0.68,
+  },
+  todayFocusGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  todayFocusSlot: {
+    minWidth: 0,
+  },
+  todayFocusPanel: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  todayFocusHeader: {
+    gap: 3,
+  },
+  todayFocusEyebrow: {
+    opacity: 0.7,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  todayFocusSummary: {
+    opacity: 0.72,
+    lineHeight: 18,
+  },
+  todayFocusList: {
+    gap: 10,
+  },
+  todayFocusItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  todayFocusItemAccent: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    marginTop: 6,
+  },
+  todayFocusItemCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  todayFocusItemCaption: {
+    opacity: 0.66,
+  },
+  todayFocusEmpty: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   sectionShell: {
     marginTop: 8,
