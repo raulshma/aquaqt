@@ -149,6 +149,18 @@ const splitSseEvents = (rawText: string): string[] =>
     .map((event) => event.trim())
     .filter((event) => event.length > 0);
 
+const findSseSeparator = (buffer: string) => {
+  const match = /\r?\n\r?\n/.exec(buffer);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    index: match.index,
+    length: match[0].length,
+  };
+};
+
 async function fetchGenerationMetadata(
   apiKey: string,
   generationId: string,
@@ -363,13 +375,13 @@ export async function requestOpenRouterStreamingCompletion({
       buffer += decoder.decode(value, { stream: true });
 
       while (true) {
-        const separatorIndex = buffer.indexOf("\n\n");
-        if (separatorIndex < 0) {
+        const separator = findSseSeparator(buffer);
+        if (!separator) {
           break;
         }
 
-        const rawEvent = buffer.slice(0, separatorIndex);
-        buffer = buffer.slice(separatorIndex + 2);
+        const rawEvent = buffer.slice(0, separator.index);
+        buffer = buffer.slice(separator.index + separator.length);
         processEvent(rawEvent);
       }
     }
