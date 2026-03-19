@@ -3,17 +3,31 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    useWindowDimensions,
+    View,
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
-import { Button, Card, Chip, FAB, Text, TextInput } from "react-native-paper";
+import {
+    Button,
+    Card,
+    Chip,
+    FAB,
+    Text,
+    TextInput,
+    useTheme,
+} from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import {
+  AquariumBackground,
+  AssetBackground,
+  ConsumableBackground,
+  LivestockBackground,
+} from "@/components/illustrations/AnimatedCardBackgrounds";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
@@ -81,6 +95,7 @@ const parseIsoDate = (value: string) => {
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const {
     aquariums,
     livestock,
@@ -112,6 +127,10 @@ export default function HomeScreen() {
     setIssueStatus,
   } = useAquapt();
   const [isDialogOpen, setDialogOpen] = useState(false);
+  const [isAddAquariumOpen, setAddAquariumOpen] = useState(false);
+  const [isAddLivestockOpen, setAddLivestockOpen] = useState(false);
+  const [isAddAssetOpen, setAddAssetOpen] = useState(false);
+  const [isAddConsumableOpen, setAddConsumableOpen] = useState(false);
   const [selectedAquariumId, setSelectedAquariumId] = useState(
     aquariums[0]?.id ?? "",
   );
@@ -202,6 +221,7 @@ export default function HomeScreen() {
       addAquariumForm.setFieldValue("setupDateValue", new Date());
       addAquariumForm.setFieldValue("investment", "");
       addAquariumForm.setFieldValue("waterType", "freshwater");
+      setAddAquariumOpen(false);
     },
   });
 
@@ -532,6 +552,7 @@ export default function HomeScreen() {
     setNewLivestockKind("other");
     setNewLivestockPrice("");
     setNewLivestockPhotoUri("");
+    setAddLivestockOpen(false);
   };
 
   const pickLivestockPhoto = async () => {
@@ -665,6 +686,7 @@ export default function HomeScreen() {
     setNewAssetPurchasedAt(toIsoDate(new Date()));
     setNewAssetPrice("");
     setSelectedAssetTaskTemplateIds([]);
+    setAddAssetOpen(false);
   };
 
   const openEditAquarium = (aquariumId: string) => {
@@ -715,6 +737,7 @@ export default function HomeScreen() {
     setNewConsumableName("");
     setNewConsumableRemaining("0");
     setNewConsumableUnit("pcs");
+    setAddConsumableOpen(false);
   };
 
   const totalOpenIssues = issues.filter(
@@ -747,6 +770,62 @@ export default function HomeScreen() {
       }));
   }, [chartAquariumId, parameterLogs, selectedMetric]);
 
+  const renderAquariumCard = (
+    aquarium: (typeof aquariums)[number],
+    cardIndex: number,
+  ) => {
+    const keepTones = [
+      theme.colors.secondaryContainer,
+      theme.colors.tertiaryContainer,
+      theme.colors.surfaceVariant,
+    ];
+    const backgroundColor = keepTones[cardIndex % keepTones.length];
+
+    return (
+      <Card
+        key={aquarium.id}
+        style={[styles.keepCard, { backgroundColor }]}
+        mode="contained"
+      >
+        <Card.Title
+          title={aquarium.name}
+          subtitle={`${aquarium.volumeLiters}L • ${aquarium.waterType}`}
+        />
+        <Card.Content>
+          <Text variant="bodyMedium">
+            Latest parameters: {latestParameterByAquarium[aquarium.id]}
+          </Text>
+          <Text variant="bodySmall" style={styles.issueMeta}>
+            {aquarium.dimensions} • Setup {aquarium.setupDate}
+            {aquarium.investmentCost !== undefined
+              ? ` • $${aquarium.investmentCost}`
+              : ""}
+          </Text>
+          <View style={styles.summaryRow}>
+            <Chip compact icon="fish">
+              {livestockCountByAquarium[aquarium.id] ?? 0} livestock
+            </Chip>
+            <Chip compact icon="alert-circle">
+              {openIssuesByAquarium[aquarium.id] ?? 0} issues
+            </Chip>
+            <Chip compact icon="chart-line">
+              NO3 trend: {nitrateTrend[aquarium.id]}
+            </Chip>
+            <Button
+              mode="contained-tonal"
+              onPress={() => openEditAquarium(aquarium.id)}
+            >
+              Edit specs
+            </Button>
+          </View>
+        </Card.Content>
+      </Card>
+    );
+  };
+
+  const leftColumnAquariums = aquariums.filter((_, index) => index % 2 === 0);
+  const rightColumnAquariums = aquariums.filter((_, index) => index % 2 === 1);
+
   return (
     <>
       <ScrollView
@@ -760,7 +839,14 @@ export default function HomeScreen() {
           Monitor tank health, log key events, and catch issues early.
         </Text>
 
-        <Card style={styles.summaryCard} mode="elevated">
+        <Card
+          style={[
+            styles.summaryCard,
+            styles.keepCard,
+            { backgroundColor: theme.colors.primaryContainer, marginBottom: 10 },
+          ]}
+          mode="elevated"
+        >
           <Card.Content>
             <Text variant="titleMedium">Today at a glance</Text>
             <View style={styles.summaryRow}>
@@ -783,166 +869,156 @@ export default function HomeScreen() {
           </Card.Content>
         </Card>
 
-        {pendingTasksToday.length > 0 ? (
-          <Card style={styles.summaryCard} mode="outlined">
-            <Card.Title title="Tasks due today" />
-            <Card.Content>
-              <View style={styles.summaryRow}>
-                {pendingTasksToday.slice(0, 6).map((entry) => (
-                  <Chip key={`${entry.taskId}-${entry.aquariumId}`} compact>
-                    {entry.taskTitle}
-                  </Chip>
-                ))}
-              </View>
-            </Card.Content>
-          </Card>
-        ) : null}
+        <View style={styles.keepGrid}>
+          <View style={styles.keepColumn}>
+            {totalParameterAlerts > 0 ? (
+              <Card
+                style={[
+                  styles.summaryCard,
+                  styles.keepCard,
+                  { backgroundColor: theme.colors.errorContainer },
+                ]}
+                mode="outlined"
+              >
+                <Card.Title title="Water safety alerts" />
+                <Card.Content>
+                  <View style={styles.summaryRow}>
+                    {aquariums.flatMap((aquarium) =>
+                      (parameterAlertsByAquarium[aquarium.id] ?? []).map(
+                        (alert) => (
+                          <Chip
+                            key={`${aquarium.id}-${alert.key}-${alert.status}`}
+                            icon={
+                              alert.status === "high"
+                                ? "arrow-up"
+                                : "arrow-down"
+                            }
+                          >
+                            {aquarium.name}: {alert.label} {alert.value}
+                            {alert.unit ? ` ${alert.unit}` : ""}
+                          </Chip>
+                        ),
+                      ),
+                    )}
+                  </View>
+                </Card.Content>
+              </Card>
+            ) : null}
 
-        {totalParameterAlerts > 0 ? (
-          <Card style={styles.summaryCard} mode="outlined">
-            <Card.Title title="Water safety alerts" />
-            <Card.Content>
-              <View style={styles.summaryRow}>
-                {aquariums.flatMap((aquarium) =>
-                  (parameterAlertsByAquarium[aquarium.id] ?? []).map(
-                    (alert) => (
-                      <Chip
-                        key={`${aquarium.id}-${alert.key}-${alert.status}`}
-                        icon={
-                          alert.status === "high" ? "arrow-up" : "arrow-down"
-                        }
-                      >
-                        {aquarium.name}: {alert.label} {alert.value}
-                        {alert.unit ? ` ${alert.unit}` : ""}
+            {leftColumnAquariums.map((aquarium, index) =>
+              renderAquariumCard(aquarium, index),
+            )}
+          </View>
+
+          <View style={styles.keepColumn}>
+            {pendingTasksToday.length > 0 ? (
+              <Card
+                style={[
+                  styles.summaryCard,
+                  styles.keepCard,
+                  { backgroundColor: theme.colors.secondaryContainer },
+                ]}
+                mode="outlined"
+              >
+                <Card.Title title="Tasks due today" />
+                <Card.Content>
+                  <View style={styles.summaryRow}>
+                    {pendingTasksToday.slice(0, 6).map((entry) => (
+                      <Chip key={`${entry.taskId}-${entry.aquariumId}`} compact>
+                        {entry.taskTitle}
                       </Chip>
-                    ),
-                  ),
-                )}
-              </View>
-            </Card.Content>
-          </Card>
-        ) : null}
+                    ))}
+                  </View>
+                </Card.Content>
+              </Card>
+            ) : null}
 
-        <Card style={styles.tankCard} mode="outlined">
-          <Card.Title title="Add Aquarium" subtitle="Multi-tank management" />
-          <Card.Content style={styles.formStack}>
-            <addAquariumForm.Field name="name">
-              {(field) => (
-                <TextInput
-                  mode="outlined"
-                  label="Aquarium name"
-                  value={field.state.value}
-                  onChangeText={field.handleChange}
-                />
-              )}
-            </addAquariumForm.Field>
-            <addAquariumForm.Field name="volume">
-              {(field) => (
-                <TextInput
-                  mode="outlined"
-                  label="Volume (L)"
-                  value={field.state.value}
-                  onChangeText={field.handleChange}
-                  keyboardType="numeric"
-                />
-              )}
-            </addAquariumForm.Field>
-            <addAquariumForm.Field name="dimensions">
-              {(field) => (
-                <TextInput
-                  mode="outlined"
-                  label="Dimensions"
-                  value={field.state.value}
-                  onChangeText={field.handleChange}
-                  placeholder="90 x 45 x 45 cm"
-                />
-              )}
-            </addAquariumForm.Field>
-            <addAquariumForm.Subscribe
-              selector={(state) => state.values.setupDate}
-            >
-              {(setupDate) => (
-                <Button
-                  mode="outlined"
-                  icon="calendar"
-                  onPress={() => setNewDatePickerOpen(true)}
-                >
-                  Setup date: {setupDate}
-                </Button>
-              )}
-            </addAquariumForm.Subscribe>
-            <addAquariumForm.Field name="investment">
-              {(field) => (
-                <TextInput
-                  mode="outlined"
-                  label="Investment cost (optional)"
-                  value={field.state.value}
-                  onChangeText={field.handleChange}
-                  keyboardType="numeric"
-                />
-              )}
-            </addAquariumForm.Field>
-            <addAquariumForm.Field name="waterType">
-              {(field) => (
-                <ScrollableSegmentedButtons
-                  value={field.state.value}
-                  onValueChange={(value) =>
-                    field.handleChange(
-                      value as "freshwater" | "marine" | "brackish",
-                    )
-                  }
-                  buttons={WATER_TYPES.map((type) => ({
-                    label: type,
-                    value: type,
-                  }))}
-                />
-              )}
-            </addAquariumForm.Field>
-            <Button
+            {rightColumnAquariums.map((aquarium, index) =>
+              renderAquariumCard(aquarium, index + leftColumnAquariums.length),
+            )}
+          </View>
+        </View>
+
+        <Text variant="titleMedium" style={styles.sectionTitle}>
+          Create something new
+        </Text>
+        <View style={styles.keepGrid}>
+          <View style={styles.keepColumn}>
+            <Card
+              style={[
+                styles.keepCard,
+                styles.actionCard,
+                { backgroundColor: theme.colors.tertiaryContainer, overflow: "hidden" },
+              ]}
               mode="contained"
-              onPress={() => void addAquariumForm.handleSubmit()}
+              onPress={() => setAddAquariumOpen(true)}
             >
-              Save aquarium
-            </Button>
-          </Card.Content>
-        </Card>
-
-        {aquariums.map((aquarium) => (
-          <Card key={aquarium.id} style={styles.tankCard} mode="contained">
-            <Card.Title
-              title={aquarium.name}
-              subtitle={`${aquarium.volumeLiters}L • ${aquarium.waterType}`}
-            />
-            <Card.Content>
-              <Text variant="bodyMedium">
-                Latest parameters: {latestParameterByAquarium[aquarium.id]}
-              </Text>
-              <Text variant="bodySmall" style={styles.issueMeta}>
-                {aquarium.dimensions} • Setup {aquarium.setupDate}
-                {aquarium.investmentCost !== undefined
-                  ? ` • $${aquarium.investmentCost}`
-                  : ""}
-              </Text>
-              <View style={styles.summaryRow}>
-                <Chip compact icon="fish">
-                  {livestockCountByAquarium[aquarium.id] ?? 0} livestock
-                </Chip>
-                <Chip compact icon="alert-circle">
-                  {openIssuesByAquarium[aquarium.id] ?? 0} issues
-                </Chip>
-                <Chip compact icon="chart-line">
-                  NO3 trend: {nitrateTrend[aquarium.id]}
-                </Chip>
-                <Button
-                  mode="contained-tonal"
-                  onPress={() => openEditAquarium(aquarium.id)}
-                >
-                  Edit specs
-                </Button>
+              <View style={styles.actionCardInner}>
+                <AquariumBackground tint={theme.colors.onTertiaryContainer + "30"} />
+                <Text variant="titleSmall" style={[styles.actionTitle, { color: theme.colors.onTertiaryContainer }]}>New aquarium</Text>
+                <Text variant="bodySmall" style={[styles.actionDescription, { color: theme.colors.onTertiaryContainer }]}>
+                  Add tank size, setup date, and water type.
+                </Text>
               </View>
-            </Card.Content>
-          </Card>
-        ))}
+            </Card>
+
+            <Card
+              style={[
+                styles.keepCard,
+                styles.actionCard,
+                { backgroundColor: theme.colors.secondaryContainer, overflow: "hidden" },
+              ]}
+              mode="contained"
+              onPress={() => setAddAssetOpen(true)}
+            >
+              <View style={styles.actionCardInner}>
+                <AssetBackground tint={theme.colors.onSecondaryContainer + "30"} />
+                <Text variant="titleSmall" style={[styles.actionTitle, { color: theme.colors.onSecondaryContainer }]}>New asset</Text>
+                <Text variant="bodySmall" style={[styles.actionDescription, { color: theme.colors.onSecondaryContainer }]}>
+                  Register equipment and maintenance links.
+                </Text>
+              </View>
+            </Card>
+          </View>
+
+          <View style={styles.keepColumn}>
+            <Card
+              style={[
+                styles.keepCard,
+                styles.actionCard,
+                { backgroundColor: theme.colors.primaryContainer, overflow: "hidden" },
+              ]}
+              mode="contained"
+              onPress={() => setAddLivestockOpen(true)}
+            >
+              <View style={styles.actionCardInner}>
+                <LivestockBackground tint={theme.colors.onPrimaryContainer + "30"} />
+                <Text variant="titleSmall" style={[styles.actionTitle, { color: theme.colors.onPrimaryContainer }]}>New livestock</Text>
+                <Text variant="bodySmall" style={[styles.actionDescription, { color: theme.colors.onPrimaryContainer }]}>
+                  Log species, quantity, and optional photo.
+                </Text>
+              </View>
+            </Card>
+
+            <Card
+              style={[
+                styles.keepCard,
+                styles.actionCard,
+                { backgroundColor: theme.colors.surfaceVariant, overflow: "hidden" },
+              ]}
+              mode="contained"
+              onPress={() => setAddConsumableOpen(true)}
+            >
+              <View style={styles.actionCardInner}>
+                <ConsumableBackground tint={theme.colors.onSurfaceVariant + "30"} />
+                <Text variant="titleSmall" style={[styles.actionTitle, { color: theme.colors.onSurfaceVariant }]}>New consumable</Text>
+                <Text variant="bodySmall" style={[styles.actionDescription, { color: theme.colors.onSurfaceVariant }]}>
+                  Track stock levels and reorder thresholds.
+                </Text>
+              </View>
+            </Card>
+          </View>
+        </View>
 
         <Card style={styles.tankCard} mode="outlined">
           <Card.Title
@@ -1002,70 +1078,6 @@ export default function HomeScreen() {
         <Text variant="titleMedium" style={styles.sectionTitle}>
           Livestock tracking
         </Text>
-        <Card mode="outlined">
-          <Card.Content style={styles.formStack}>
-            <ScrollableSegmentedButtons
-              value={selectedAquariumId}
-              onValueChange={setSelectedAquariumId}
-              buttons={aquariums.map((aq) => ({
-                label: aq.name,
-                value: aq.id,
-              }))}
-            />
-            <TextInput
-              mode="outlined"
-              label="Name"
-              value={newLivestockName}
-              onChangeText={setNewLivestockName}
-            />
-            <TextInput
-              mode="outlined"
-              label="Species"
-              value={newLivestockSpecies}
-              onChangeText={setNewLivestockSpecies}
-            />
-            <ScrollableSegmentedButtons
-              value={newLivestockKind}
-              onValueChange={(value) =>
-                setNewLivestockKind(value as Livestock["kind"])
-              }
-              buttons={LIVESTOCK_KINDS.map((kind) => ({
-                label: kind,
-                value: kind,
-              }))}
-            />
-            <TextInput
-              mode="outlined"
-              label="Quantity"
-              value={newLivestockQty}
-              onChangeText={setNewLivestockQty}
-              keyboardType="numeric"
-            />
-            <TextInput
-              mode="outlined"
-              label="Purchase price (optional)"
-              value={newLivestockPrice}
-              onChangeText={setNewLivestockPrice}
-              keyboardType="numeric"
-            />
-            <Button
-              mode="contained-tonal"
-              onPress={pickLivestockPhoto}
-              loading={isPickingPhoto}
-            >
-              {newLivestockPhotoUri ? "Change photo" : "Select photo"}
-            </Button>
-            {newLivestockPhotoUri ? (
-              <Image
-                source={{ uri: newLivestockPhotoUri }}
-                style={styles.photoPreview}
-              />
-            ) : null}
-            <Button mode="contained" onPress={createLivestock}>
-              Add livestock
-            </Button>
-          </Card.Content>
-        </Card>
 
         {livestock.map((item) => {
           const currentIndex = aquariums.findIndex(
@@ -1257,95 +1269,6 @@ export default function HomeScreen() {
         <Text variant="titleMedium" style={styles.sectionTitle}>
           Assets & consumables inventory
         </Text>
-        <Card mode="outlined">
-          <Card.Content style={styles.formStack}>
-            <TextInput
-              mode="outlined"
-              label="Asset model"
-              value={newAssetModel}
-              onChangeText={setNewAssetModel}
-            />
-            <ScrollableSegmentedButtons
-              value={newAssetCategory}
-              onValueChange={(value) =>
-                setNewAssetCategory(
-                  value as "filter" | "heater" | "light" | "co2" | "other",
-                )
-              }
-              buttons={ASSET_CATEGORIES.map((category) => ({
-                label: category,
-                value: category,
-              }))}
-            />
-            <TextInput
-              mode="outlined"
-              label="Purchased date (YYYY-MM-DD)"
-              value={newAssetPurchasedAt}
-              onChangeText={setNewAssetPurchasedAt}
-            />
-            <TextInput
-              mode="outlined"
-              label="Asset price (optional)"
-              value={newAssetPrice}
-              onChangeText={setNewAssetPrice}
-              keyboardType="numeric"
-            />
-            {availableTaskTemplatesForAsset.length > 0 ? (
-              <View style={styles.summaryRow}>
-                {availableTaskTemplatesForAsset.map((task) => {
-                  const selected = selectedAssetTaskTemplateIds.includes(
-                    task.id,
-                  );
-                  return (
-                    <Chip
-                      key={task.id}
-                      selected={selected}
-                      onPress={() =>
-                        setSelectedAssetTaskTemplateIds((prev) =>
-                          selected
-                            ? prev.filter((id) => id !== task.id)
-                            : [...prev, task.id],
-                        )
-                      }
-                    >
-                      {task.title}
-                    </Chip>
-                  );
-                })}
-              </View>
-            ) : null}
-            <Button mode="contained-tonal" onPress={createAsset}>
-              Add asset
-            </Button>
-
-            <TextInput
-              mode="outlined"
-              label="Consumable name"
-              value={newConsumableName}
-              onChangeText={setNewConsumableName}
-            />
-            <TextInput
-              mode="outlined"
-              label={`Remaining (${newConsumableUnit})`}
-              value={newConsumableRemaining}
-              onChangeText={setNewConsumableRemaining}
-              keyboardType="numeric"
-            />
-            <ScrollableSegmentedButtons
-              value={newConsumableUnit}
-              onValueChange={(value) =>
-                setNewConsumableUnit(value as "pcs" | "ml" | "g")
-              }
-              buttons={CONSUMABLE_UNITS.map((unit) => ({
-                label: unit,
-                value: unit,
-              }))}
-            />
-            <Button mode="contained-tonal" onPress={createConsumable}>
-              Add consumable
-            </Button>
-          </Card.Content>
-        </Card>
 
         {assets.map((asset) => (
           <Card key={asset.id} style={styles.issueCard} mode="contained">
@@ -1554,6 +1477,289 @@ export default function HomeScreen() {
               />
             )}
           </editAquariumForm.Field>
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={isAddAquariumOpen}
+        onDismiss={() => setAddAquariumOpen(false)}
+        title="Add aquarium"
+        actions={
+          <>
+            <Button onPress={() => setAddAquariumOpen(false)}>Cancel</Button>
+            <Button onPress={() => void addAquariumForm.handleSubmit()}>
+              Save
+            </Button>
+          </>
+        }
+      >
+        <View style={styles.inputsContainer}>
+          <addAquariumForm.Field name="name">
+            {(field) => (
+              <TextInput
+                mode="outlined"
+                label="Aquarium name"
+                value={field.state.value}
+                onChangeText={field.handleChange}
+              />
+            )}
+          </addAquariumForm.Field>
+          <addAquariumForm.Field name="volume">
+            {(field) => (
+              <TextInput
+                mode="outlined"
+                label="Volume (L)"
+                value={field.state.value}
+                onChangeText={field.handleChange}
+                keyboardType="numeric"
+              />
+            )}
+          </addAquariumForm.Field>
+          <addAquariumForm.Field name="dimensions">
+            {(field) => (
+              <TextInput
+                mode="outlined"
+                label="Dimensions"
+                value={field.state.value}
+                onChangeText={field.handleChange}
+                placeholder="90 x 45 x 45 cm"
+              />
+            )}
+          </addAquariumForm.Field>
+          <addAquariumForm.Subscribe
+            selector={(state) => state.values.setupDate}
+          >
+            {(setupDate) => (
+              <Button
+                mode="outlined"
+                icon="calendar"
+                onPress={() => setNewDatePickerOpen(true)}
+              >
+                Setup date: {setupDate}
+              </Button>
+            )}
+          </addAquariumForm.Subscribe>
+          <addAquariumForm.Field name="investment">
+            {(field) => (
+              <TextInput
+                mode="outlined"
+                label="Investment cost (optional)"
+                value={field.state.value}
+                onChangeText={field.handleChange}
+                keyboardType="numeric"
+              />
+            )}
+          </addAquariumForm.Field>
+          <addAquariumForm.Field name="waterType">
+            {(field) => (
+              <ScrollableSegmentedButtons
+                value={field.state.value}
+                onValueChange={(value) =>
+                  field.handleChange(
+                    value as "freshwater" | "marine" | "brackish",
+                  )
+                }
+                buttons={WATER_TYPES.map((type) => ({
+                  label: type,
+                  value: type,
+                }))}
+              />
+            )}
+          </addAquariumForm.Field>
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={isAddLivestockOpen}
+        onDismiss={() => setAddLivestockOpen(false)}
+        title="Add livestock"
+        actions={
+          <>
+            <Button onPress={() => setAddLivestockOpen(false)}>Cancel</Button>
+            <Button onPress={createLivestock}>Save</Button>
+          </>
+        }
+      >
+        <View style={styles.inputsContainer}>
+          <ScrollableSegmentedButtons
+            value={selectedAquariumId}
+            onValueChange={setSelectedAquariumId}
+            buttons={aquariums.map((aq) => ({
+              label: aq.name,
+              value: aq.id,
+            }))}
+          />
+          <TextInput
+            mode="outlined"
+            label="Name"
+            value={newLivestockName}
+            onChangeText={setNewLivestockName}
+          />
+          <TextInput
+            mode="outlined"
+            label="Species"
+            value={newLivestockSpecies}
+            onChangeText={setNewLivestockSpecies}
+          />
+          <ScrollableSegmentedButtons
+            value={newLivestockKind}
+            onValueChange={(value) =>
+              setNewLivestockKind(value as Livestock["kind"])
+            }
+            buttons={LIVESTOCK_KINDS.map((kind) => ({
+              label: kind,
+              value: kind,
+            }))}
+          />
+          <TextInput
+            mode="outlined"
+            label="Quantity"
+            value={newLivestockQty}
+            onChangeText={setNewLivestockQty}
+            keyboardType="numeric"
+          />
+          <TextInput
+            mode="outlined"
+            label="Purchase price (optional)"
+            value={newLivestockPrice}
+            onChangeText={setNewLivestockPrice}
+            keyboardType="numeric"
+          />
+          <Button
+            mode="contained-tonal"
+            onPress={pickLivestockPhoto}
+            loading={isPickingPhoto}
+          >
+            {newLivestockPhotoUri ? "Change photo" : "Select photo"}
+          </Button>
+          {newLivestockPhotoUri ? (
+            <Image
+              source={{ uri: newLivestockPhotoUri }}
+              style={styles.photoPreview}
+            />
+          ) : null}
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={isAddAssetOpen}
+        onDismiss={() => setAddAssetOpen(false)}
+        title="Add asset"
+        actions={
+          <>
+            <Button onPress={() => setAddAssetOpen(false)}>Cancel</Button>
+            <Button onPress={createAsset}>Save</Button>
+          </>
+        }
+      >
+        <View style={styles.inputsContainer}>
+          <ScrollableSegmentedButtons
+            value={selectedAquariumId}
+            onValueChange={setSelectedAquariumId}
+            buttons={aquariums.map((aq) => ({
+              label: aq.name,
+              value: aq.id,
+            }))}
+          />
+          <TextInput
+            mode="outlined"
+            label="Asset model"
+            value={newAssetModel}
+            onChangeText={setNewAssetModel}
+          />
+          <ScrollableSegmentedButtons
+            value={newAssetCategory}
+            onValueChange={(value) =>
+              setNewAssetCategory(
+                value as "filter" | "heater" | "light" | "co2" | "other",
+              )
+            }
+            buttons={ASSET_CATEGORIES.map((category) => ({
+              label: category,
+              value: category,
+            }))}
+          />
+          <TextInput
+            mode="outlined"
+            label="Purchased date (YYYY-MM-DD)"
+            value={newAssetPurchasedAt}
+            onChangeText={setNewAssetPurchasedAt}
+          />
+          <TextInput
+            mode="outlined"
+            label="Asset price (optional)"
+            value={newAssetPrice}
+            onChangeText={setNewAssetPrice}
+            keyboardType="numeric"
+          />
+          {availableTaskTemplatesForAsset.length > 0 ? (
+            <View style={styles.summaryRow}>
+              {availableTaskTemplatesForAsset.map((task) => {
+                const selected = selectedAssetTaskTemplateIds.includes(task.id);
+                return (
+                  <Chip
+                    key={task.id}
+                    selected={selected}
+                    onPress={() =>
+                      setSelectedAssetTaskTemplateIds((prev) =>
+                        selected
+                          ? prev.filter((id) => id !== task.id)
+                          : [...prev, task.id],
+                      )
+                    }
+                  >
+                    {task.title}
+                  </Chip>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={isAddConsumableOpen}
+        onDismiss={() => setAddConsumableOpen(false)}
+        title="Add consumable"
+        actions={
+          <>
+            <Button onPress={() => setAddConsumableOpen(false)}>Cancel</Button>
+            <Button onPress={createConsumable}>Save</Button>
+          </>
+        }
+      >
+        <View style={styles.inputsContainer}>
+          <ScrollableSegmentedButtons
+            value={selectedAquariumId}
+            onValueChange={setSelectedAquariumId}
+            buttons={aquariums.map((aq) => ({
+              label: aq.name,
+              value: aq.id,
+            }))}
+          />
+          <TextInput
+            mode="outlined"
+            label="Consumable name"
+            value={newConsumableName}
+            onChangeText={setNewConsumableName}
+          />
+          <TextInput
+            mode="outlined"
+            label={`Remaining (${newConsumableUnit})`}
+            value={newConsumableRemaining}
+            onChangeText={setNewConsumableRemaining}
+            keyboardType="numeric"
+          />
+          <ScrollableSegmentedButtons
+            value={newConsumableUnit}
+            onValueChange={(value) =>
+              setNewConsumableUnit(value as "pcs" | "ml" | "g")
+            }
+            buttons={CONSUMABLE_UNITS.map((unit) => ({
+              label: unit,
+              value: unit,
+            }))}
+          />
         </View>
       </BottomSheet>
 
@@ -1947,12 +2153,44 @@ const styles = StyleSheet.create({
     paddingBottom: 132,
     gap: 12,
   },
+  keepGrid: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  keepColumn: {
+    flex: 1,
+    gap: 10,
+  },
+  keepCard: {
+    borderRadius: 18,
+    marginVertical: 0,
+  },
+  actionCard: {
+    minHeight: 140,
+  },
+  actionCardInner: {
+    minHeight: 140,
+    padding: 16,
+    justifyContent: "flex-end",
+  },
+  actionTitle: {
+    fontWeight: "700",
+  },
+  actionIllustration: {
+    fontSize: 34,
+    marginBottom: 10,
+  },
+  actionDescription: {
+    marginTop: 4,
+    opacity: 0.82,
+  },
   subtitle: {
     opacity: 0.75,
     marginBottom: 4,
   },
   summaryCard: {
-    marginVertical: 4,
+    marginVertical: 0,
     borderRadius: 24,
   },
   tankCard: {

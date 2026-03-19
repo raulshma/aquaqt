@@ -1,3 +1,4 @@
+import "react-native-gesture-handler";
 import { useMaterial3Theme } from "@pchmn/expo-material3-theme";
 import {
     DarkTheme,
@@ -7,6 +8,7 @@ import {
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { MD3DarkTheme, MD3LightTheme, PaperProvider } from "react-native-paper";
 import { en, registerTranslation } from "react-native-paper-dates";
 import "react-native-reanimated";
@@ -90,14 +92,16 @@ export default function RootLayout() {
   }, [isDark, materialTheme]);
 
   return (
-    <ThemeProvider value={navigationTheme}>
-      <PaperProvider theme={paperTheme}>
-        <AquaptProvider>
-          <AppShell />
-        </AquaptProvider>
-      </PaperProvider>
-      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={navigationTheme}>
+        <PaperProvider theme={paperTheme}>
+          <AquaptProvider>
+            <AppShell />
+          </AquaptProvider>
+        </PaperProvider>
+        <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
