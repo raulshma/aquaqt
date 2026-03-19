@@ -1,12 +1,14 @@
 import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
 import {
-  memo,
   type Dispatch,
+  memo,
   type SetStateAction,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -22,9 +24,12 @@ import {
   Card,
   Chip,
   FAB,
+  IconButton,
+  Portal,
+  Surface,
   Text,
   TextInput,
-  useTheme,
+  useTheme
 } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -196,7 +201,9 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
           <Chip compact icon="alert-circle">
             {openIssueCount} issues
           </Chip>
-          <Chip compact icon="chart-line">NO3 trend: {nitrateTrend}</Chip>
+          <Chip compact icon="chart-line">
+            NO3 trend: {nitrateTrend}
+          </Chip>
           <Button mode="contained-tonal" onPress={() => onEdit(aquarium.id)}>
             Edit specs
           </Button>
@@ -220,9 +227,7 @@ type LivestockCardProps = {
   setLivestockStatusDraft: Dispatch<
     SetStateAction<Record<string, NonNullable<Livestock["status"]>>>
   >;
-  setLivestockStatusNoteDraft: Dispatch<
-    SetStateAction<Record<string, string>>
-  >;
+  setLivestockStatusNoteDraft: Dispatch<SetStateAction<Record<string, string>>>;
   setFeedingTaskTitleDraft: Dispatch<SetStateAction<Record<string, string>>>;
   setFeedingTaskFrequencyDraft: Dispatch<
     SetStateAction<Record<string, TaskFrequency>>
@@ -301,7 +306,10 @@ const LivestockCard = memo(function LivestockCard({
           <Chip compact>{item.status ?? "active"}</Chip>
         </View>
         {item.photoUri ? (
-          <Image source={{ uri: item.photoUri }} style={styles.livestockPhoto} />
+          <Image
+            source={{ uri: item.photoUri }}
+            style={styles.livestockPhoto}
+          />
         ) : null}
         <TextInput
           mode="outlined"
@@ -345,7 +353,9 @@ const LivestockCard = memo(function LivestockCard({
         <View style={styles.summaryRow}>
           <Button
             mode="contained-tonal"
-            onPress={() => setLivestockFeedingNotes(item.id, feedingNote.trim())}
+            onPress={() =>
+              setLivestockFeedingNotes(item.id, feedingNote.trim())
+            }
           >
             Save feeding
           </Button>
@@ -366,7 +376,11 @@ const LivestockCard = memo(function LivestockCard({
             disabled={!fallbackTargetId || fallbackTargetId === item.aquariumId}
             onPress={() =>
               fallbackTargetId
-                ? transferLivestock(item.id, fallbackTargetId, "Manual transfer")
+                ? transferLivestock(
+                    item.id,
+                    fallbackTargetId,
+                    "Manual transfer",
+                  )
                 : undefined
             }
           >
@@ -446,9 +460,7 @@ type IssueCardProps = {
   currentStatus: IssueStatus;
   resolutionNote: string;
   setIssueStatusDraft: Dispatch<SetStateAction<Record<string, IssueStatus>>>;
-  setResolutionNoteDraft: Dispatch<
-    SetStateAction<Record<string, string>>
-  >;
+  setResolutionNoteDraft: Dispatch<SetStateAction<Record<string, string>>>;
   setIssueStatus: (
     issueId: string,
     status: Issue["status"],
@@ -542,6 +554,7 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const router = useRouter();
   const {
     aquariums,
     livestock,
@@ -635,6 +648,11 @@ export default function HomeScreen() {
   const [isEditDatePickerOpen, setEditDatePickerOpen] = useState(false);
   const [selectedMetric, setSelectedMetric] =
     useState<AnalyticMetricKey>("nitrate");
+  const [isFabTooltipVisible, setFabTooltipVisible] = useState(false);
+  const fabTooltipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const lastFabLongPressRef = useRef(0);
 
   const addAquariumForm = useForm({
     defaultValues: {
@@ -937,6 +955,14 @@ export default function HomeScreen() {
     }
   }, [aquariums, selectedAquariumId]);
 
+  useEffect(() => {
+    return () => {
+      if (fabTooltipTimeoutRef.current) {
+        clearTimeout(fabTooltipTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const parameterLogsByAquarium = useMemo(() => {
     const groupedLogs: Record<string, WaterParameterLog[]> = {};
 
@@ -1046,6 +1072,55 @@ export default function HomeScreen() {
       ),
     [aquariumInsightsById],
   );
+
+  const assistantHeaderSubtitle =
+    totalParameterAlerts > 0
+      ? `${totalParameterAlerts} water alerts need attention across ${aquariums.length || 1} tank${aquariums.length === 1 ? "" : "s"}.`
+      : pendingTasksToday.length > 0
+        ? `${pendingTasksToday.length} task${pendingTasksToday.length === 1 ? "" : "s"} are due today. Ask the assistant to help you prioritize them.`
+        : aquariums.length > 0
+          ? `Everything looks steady across ${aquariums.length} tank${aquariums.length === 1 ? "" : "s"}. Ask for a quick care review anytime.`
+          : "Add your first tank and let the assistant help you build a care routine.";
+
+  const clearFabTooltipTimer = () => {
+    if (fabTooltipTimeoutRef.current) {
+      clearTimeout(fabTooltipTimeoutRef.current);
+      fabTooltipTimeoutRef.current = null;
+    }
+  };
+
+  const showFabTooltip = () => {
+    clearFabTooltipTimer();
+    setFabTooltipVisible(true);
+    fabTooltipTimeoutRef.current = setTimeout(() => {
+      setFabTooltipVisible(false);
+      fabTooltipTimeoutRef.current = null;
+    }, 1800);
+  };
+
+  const hideFabTooltip = () => {
+    clearFabTooltipTimer();
+    setFabTooltipVisible(false);
+  };
+
+  const openQuickLog = () => {
+    hideFabTooltip();
+    quickLogForm.setFieldValue("selectedAquariumId", selectedAquariumId);
+    setDialogOpen(true);
+  };
+
+  const handleQuickLogFabLongPress = () => {
+    lastFabLongPressRef.current = Date.now();
+    showFabTooltip();
+  };
+
+  const handleQuickLogFabPress = () => {
+    if (Date.now() - lastFabLongPressRef.current < 700) {
+      return;
+    }
+
+    openQuickLog();
+  };
 
   const createLivestock = () => {
     const quantity = Number(newLivestockQty);
@@ -1313,10 +1388,39 @@ export default function HomeScreen() {
           { paddingTop: 16 + insets.top },
         ]}
       >
-        <Text variant="headlineMedium">Aquapt Dashboard</Text>
-        <Text variant="bodyMedium" style={styles.subtitle}>
-          Monitor tank health, log key events, and catch issues early.
-        </Text>
+        <View
+          style={[
+            styles.assistantHeader,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.outlineVariant,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.assistantHeaderBadge,
+              { backgroundColor: theme.colors.primaryContainer },
+            ]}
+          >
+            <Text
+              variant="labelLarge"
+              style={{ color: theme.colors.onPrimaryContainer }}
+            >
+              AI
+            </Text>
+          </View>
+          <View style={styles.assistantHeaderCopy}>
+            <Text variant="titleMedium">Aquapt Dashboard</Text>
+            <Text variant="bodySmall" style={styles.assistantHeaderSubtitle}>
+              {assistantHeaderSubtitle}
+            </Text>
+          </View>
+          <IconButton
+            icon="message-text-outline"
+            onPress={() => router.push("/(tabs)/assistant")}
+          ></IconButton>
+        </View>
 
         <Card
           style={[
@@ -1330,7 +1434,10 @@ export default function HomeScreen() {
           mode="elevated"
         >
           <Card.Content>
-            <Text variant="titleMedium" style={{ color: primarySummaryTextColor }}>
+            <Text
+              variant="titleMedium"
+              style={{ color: primarySummaryTextColor }}
+            >
               Today at a glance
             </Text>
             <View style={styles.summaryRow}>
@@ -1401,7 +1508,8 @@ export default function HomeScreen() {
                   aquarium={aquarium}
                   backgroundColor={getAquariumCardBackgroundColor(index)}
                   latestParameterSummary={
-                    insight?.latestParameterSummary ?? "No measurements logged yet"
+                    insight?.latestParameterSummary ??
+                    "No measurements logged yet"
                   }
                   livestockCount={livestockCountByAquarium[aquarium.id] ?? 0}
                   openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
@@ -1449,7 +1557,8 @@ export default function HomeScreen() {
                     index + leftColumnAquariums.length,
                   )}
                   latestParameterSummary={
-                    insight?.latestParameterSummary ?? "No measurements logged yet"
+                    insight?.latestParameterSummary ??
+                    "No measurements logged yet"
                   }
                   livestockCount={livestockCountByAquarium[aquarium.id] ?? 0}
                   openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
@@ -2073,7 +2182,9 @@ export default function HomeScreen() {
               />
             )}
           </editAquariumForm.Field>
-          <editAquariumForm.Subscribe selector={(state) => state.values.photoUri}>
+          <editAquariumForm.Subscribe
+            selector={(state) => state.values.photoUri}
+          >
             {(photoUri) => (
               <>
                 <Button
@@ -2184,7 +2295,9 @@ export default function HomeScreen() {
               />
             )}
           </addAquariumForm.Field>
-          <addAquariumForm.Subscribe selector={(state) => state.values.photoUri}>
+          <addAquariumForm.Subscribe
+            selector={(state) => state.values.photoUri}
+          >
             {(photoUri) => (
               <>
                 <Button
@@ -2806,14 +2919,37 @@ export default function HomeScreen() {
         </quickLogForm.Subscribe>
       </BottomSheet>
 
+      {isFabTooltipVisible ? (
+        <Portal>
+          <View
+            pointerEvents="none"
+            style={[styles.fabTooltipWrap, { bottom: 160 + insets.bottom }]}
+          >
+            <Surface
+              elevation={3}
+              style={[
+                styles.fabTooltip,
+                { backgroundColor: theme.colors.inverseSurface },
+              ]}
+            >
+              <Text
+                variant="labelMedium"
+                style={{ color: theme.colors.inverseOnSurface }}
+              >
+                Quick Log
+              </Text>
+            </Surface>
+          </View>
+        </Portal>
+      ) : null}
+
       <FAB
         icon="plus"
         style={styles.fab}
-        onPress={() => {
-          quickLogForm.setFieldValue("selectedAquariumId", selectedAquariumId);
-          setDialogOpen(true);
-        }}
-        label="Quick Log"
+        onPress={handleQuickLogFabPress}
+        onLongPress={handleQuickLogFabLongPress}
+        delayLongPress={250}
+        accessibilityLabel="Quick log"
       />
     </>
   );
@@ -2858,9 +2994,30 @@ const styles = StyleSheet.create({
     marginTop: 4,
     opacity: 0.82,
   },
-  subtitle: {
-    opacity: 0.75,
-    marginBottom: 4,
+  assistantHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 2,
+  },
+  assistantHeaderBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  assistantHeaderCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  assistantHeaderSubtitle: {
+    opacity: 0.74,
+    lineHeight: 18,
   },
   summaryCard: {
     marginVertical: 0,
@@ -2993,5 +3150,15 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 16,
     bottom: 88,
+  },
+  fabTooltipWrap: {
+    position: "absolute",
+    right: 16,
+    alignItems: "flex-end",
+  },
+  fabTooltip: {
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
 });
