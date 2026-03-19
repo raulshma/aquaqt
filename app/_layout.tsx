@@ -1,13 +1,14 @@
-import "react-native-gesture-handler";
 import { useMaterial3Theme } from "@pchmn/expo-material3-theme";
 import {
-  DarkTheme,
-  DefaultTheme,
-  ThemeProvider,
+    DarkTheme,
+    DefaultTheme,
+    ThemeProvider,
 } from "@react-navigation/native";
 import { Stack, useRouter } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo } from "react";
+import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { MD3DarkTheme, MD3LightTheme, PaperProvider } from "react-native-paper";
 import { en, registerTranslation } from "react-native-paper-dates";
@@ -32,6 +33,8 @@ registerTranslation("en", en);
 
 const KEEP_SOURCE_COLOR = "#F9AB00";
 
+void SplashScreen.preventAutoHideAsync();
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -43,13 +46,25 @@ export default function RootLayout() {
 }
 
 function ThemedRoot() {
-  const { settings } = useAquapt();
+  const { isHydrated, settings } = useAquapt();
   const colorScheme = useColorScheme();
   const { theme: materialTheme } = useMaterial3Theme({
     sourceColor: KEEP_SOURCE_COLOR,
     fallbackSourceColor: KEEP_SOURCE_COLOR,
     colorFidelity: true,
   });
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    void SplashScreen.hideAsync();
+  }, [isHydrated]);
+
+  if (!isHydrated) {
+    return null;
+  }
 
   const resolvedColorScheme =
     settings.themePreference && settings.themePreference !== "system"
@@ -161,10 +176,7 @@ function AppShell() {
   return (
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="entity/[kind]/[id]"
-        options={{ title: "Details" }}
-      />
+      <Stack.Screen name="entity/[kind]/[id]" options={{ title: "Details" }} />
       <Stack.Screen
         name="modal"
         options={{ presentation: "modal", title: "Details" }}
