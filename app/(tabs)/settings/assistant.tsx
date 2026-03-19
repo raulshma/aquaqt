@@ -26,9 +26,19 @@ export default function AssistantSettingsScreen() {
   const [memoryModel, setMemoryModel] = useState(
     settings.assistantMemoryModel || settings.aiModel,
   );
-  const [models, setModels] = useState<
-    { id: string; name?: string; created?: number; context_length?: number }[]
-  >([]);
+  type OpenRouterModel = {
+    id: string;
+    name?: string;
+    created?: number;
+    context_length?: number;
+    pricing?: {
+      prompt?: string;
+      completion?: string;
+    };
+  };
+  type ModelSort = "name" | "created" | "context";
+
+  const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isModelSheetVisible, setModelSheetVisible] = useState(false);
@@ -36,6 +46,7 @@ export default function AssistantSettingsScreen() {
     "assistant" | "memory"
   >("assistant");
   const [modelQuery, setModelQuery] = useState("");
+  const [modelSort, setModelSort] = useState<ModelSort>("name");
 
   useEffect(() => {
     setApiKey(settings.openRouterApiKey);
@@ -58,12 +69,7 @@ export default function AssistantSettingsScreen() {
       }
 
       const data = (await response.json()) as {
-        data?: {
-          id: string;
-          name?: string;
-          created?: number;
-          context_length?: number;
-        }[];
+        data?: OpenRouterModel[];
       };
       setModels(Array.isArray(data.data) ? data.data : []);
     } catch (error) {
@@ -88,16 +94,126 @@ export default function AssistantSettingsScreen() {
     models.length,
   ]);
 
-  const filteredModels = useMemo(() => {
+  const sortedModels = useMemo(() => {
     const query = modelQuery.trim().toLowerCase();
-    if (!query) {
-      return models;
+    const filtered = !query
+      ? models
+      : models.filter((candidate) =>
+          `${candidate.id} ${candidate.name ?? ""}`
+            .toLowerCase()
+            .includes(query),
+        );
+
+    return [...filtered].sort((a, b) => {
+      if (modelSort === "created") {
+        return (b.created ?? 0) - (a.created ?? 0);
+      }
+
+      if (modelSort === "context") {
+        return (b.context_length ?? 0) - (a.context_length ?? 0);
+      }
+
+      const aLabel = (a.name ?? a.id).toLowerCase();
+      const bLabel = (b.name ?? b.id).toLowerCase();
+      return aLabel.localeCompare(bLabel);
+    });
+  }, [modelQuery, modelSort, models]);
+
+  const groupedModels = useMemo(() => {
+    const parsePrice = (value?: string) => {
+      const parsed = Number.parseFloat(value ?? "");
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+
+    const isFreeModel = (candidate: OpenRouterModel) => {
+      if (candidate.id.toLowerCase().includes(":free")) {
+        return true;
+      }
+
+      const promptPrice = parsePrice(candidate.pricing?.prompt);
+      const completionPrice = parsePrice(candidate.pricing?.completion);
+
+      return promptPrice === 0 && completionPrice === 0;
+    };
+
+    return sortedModels.reduce<{
+      free: OpenRouterModel[];
+      paid: OpenRouterModel[];
+    }>(
+      (acc, candidate) => {
+        if (isFreeModel(candidate)) {
+          acc.free.push(candidate);
+        } else {
+          acc.paid.push(candidate);
+        }
+
+        return acc;
+      },
+      { free: [], paid: [] },
+    );
+  }, [sortedModels]);
+
+  const formatCreatedDate = useCallback((created?: number) => {
+    if (!created || !Number.isFinite(created)) {
+      return "-";
     }
 
-    return models.filter((candidate) =>
-      `${candidate.id} ${candidate.name ?? ""}`.toLowerCase().includes(query),
-    );
-  }, [modelQuery, models]);
+    const asMs = created > 10_000_000_000 ? created : created * 1000;
+    return new Date(asMs).toLocaleDateString();
+  }, []);
+
+  const renderModelButton = useCallback(
+    (candidate: OpenRouterModel) => (
+      <Button
+        key={candidate.id}
+        mode="text"
+        onPress={() => {
+          if (modelSheetTarget === "assistant") {
+            setModel(candidate.id);
+          } else {
+            setMemoryModel(candidate.id);
+          }
+          setModelSheetVisible(false);
+        }}
+      >
+        {`${candidate.name ?? candidate.id} • ${candidate.context_length ?? "-"} ctx • ${formatCreatedDate(candidate.created)}`}
+      </Button>
+    ),
+    [formatCreatedDate, modelSheetTarget],
+  );
+
+  const filteredModelsCount =
+    groupedModels.free.length + groupedModels.paid.length;
+
+  const MAX_MODELS_PER_GROUP = 40;
+
+  const freeModels = groupedModels.free.slice(0, MAX_MODELS_PER_GROUP);
+  const paidModels = groupedModels.paid.slice(0, MAX_MODELS_PER_GROUP);
+
+  const sortLabel =
+    modelSort === "name"
+      ? "name"
+      : modelSort === "created"
+        ? "created"
+        : "context";
+
+  const groupCountLabel = `${groupedModels.free.length} free • ${groupedModels.paid.length} paid`;
+
+  const groupedSummary = `${filteredModelsCount} models shown (${groupCountLabel}, sort: ${sortLabel})`;
+
+  const hasResults = filteredModelsCount > 0;
+
+  const noResultsText =
+    "No models match your filter. Try a broader query or refresh the list.";
+
+  const freeGroupTitle = `Free models (${groupedModels.free.length})`;
+
+  const paidGroupTitle = `Paid models (${groupedModels.paid.length})`;
+
+  const truncatedHint =
+    filteredModelsCount > MAX_MODELS_PER_GROUP * 2
+      ? `Showing the first ${MAX_MODELS_PER_GROUP} models per group.`
+      : "";
 
   return (
     <DashboardScrollView topPadding={4}>
@@ -197,7 +313,7 @@ export default function AssistantSettingsScreen() {
         title={`Select ${modelSheetTarget === "assistant" ? "assistant" : "memory generation"} model`}
       >
         <Text variant="bodySmall" style={{ opacity: 0.75 }}>
-          {filteredModels.length} models shown
+          {groupedSummary}
         </Text>
         <TextInput
           mode="outlined"
@@ -207,6 +323,33 @@ export default function AssistantSettingsScreen() {
           autoCapitalize="none"
           autoCorrect={false}
         />
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 8,
+            marginTop: 10,
+          }}
+        >
+          <Chip
+            selected={modelSort === "name"}
+            onPress={() => setModelSort("name")}
+          >
+            Sort: Name
+          </Chip>
+          <Chip
+            selected={modelSort === "created"}
+            onPress={() => setModelSort("created")}
+          >
+            Sort: Created
+          </Chip>
+          <Chip
+            selected={modelSort === "context"}
+            onPress={() => setModelSort("context")}
+          >
+            Sort: Context
+          </Chip>
+        </View>
         <Button
           mode="contained-tonal"
           onPress={() => {
@@ -228,23 +371,31 @@ export default function AssistantSettingsScreen() {
             {modelsError}
           </Text>
         ) : null}
+        {truncatedHint ? (
+          <Text variant="bodySmall" style={{ opacity: 0.65, marginTop: 8 }}>
+            {truncatedHint}
+          </Text>
+        ) : null}
         <View style={{ gap: 8, marginTop: 12 }}>
-          {filteredModels.slice(0, 40).map((candidate) => (
-            <Button
-              key={candidate.id}
-              mode="text"
-              onPress={() => {
-                if (modelSheetTarget === "assistant") {
-                  setModel(candidate.id);
-                } else {
-                  setMemoryModel(candidate.id);
-                }
-                setModelSheetVisible(false);
-              }}
-            >
-              {`${candidate.name ?? candidate.id} • ${candidate.context_length ?? "-"} ctx`}
-            </Button>
-          ))}
+          {!hasResults ? (
+            <Text variant="bodySmall" style={{ opacity: 0.75 }}>
+              {noResultsText}
+            </Text>
+          ) : null}
+
+          {freeModels.length > 0 ? (
+            <Text variant="titleSmall" style={{ marginTop: 4 }}>
+              {freeGroupTitle}
+            </Text>
+          ) : null}
+          {freeModels.map(renderModelButton)}
+
+          {paidModels.length > 0 ? (
+            <Text variant="titleSmall" style={{ marginTop: 8 }}>
+              {paidGroupTitle}
+            </Text>
+          ) : null}
+          {paidModels.map(renderModelButton)}
         </View>
       </BottomSheet>
     </DashboardScrollView>
