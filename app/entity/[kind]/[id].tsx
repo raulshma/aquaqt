@@ -1,4 +1,5 @@
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { type ReactNode, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
@@ -245,29 +246,67 @@ export default function EntityDetailScreen() {
       <Stack.Screen options={{ title: resolved.title }} />
       {resolved.ref.kind === "aquarium" && aquariumCollections ? (
         <>
-          <DashboardHero
-            title={aquariumCollections.aquarium.name}
-            subtitle={`${aquariumCollections.aquarium.volumeLiters}L • ${aquariumCollections.aquarium.waterType} • Setup ${aquariumCollections.aquarium.setupDate}`}
-            tone="primary"
-            chips={
-              <>
-                <Chip compact icon="calendar-clock">
-                  {aquariumCollections.dueTaskTemplates.length} due
-                </Chip>
-                <Chip compact icon="fish">
-                  {aquariumCollections.livestock.length} livestock
-                </Chip>
-                <Chip compact icon="alert-circle">
-                  {
-                    aquariumCollections.issues.filter(
-                      (issue) => issue.status !== "resolved",
-                    ).length
-                  }{" "}
-                  open issues
-                </Chip>
-              </>
-            }
-          />
+          <Card mode="elevated" style={styles.aquariumHeroCard}>
+            <View style={styles.aquariumHeroInner}>
+              {aquariumCollections.aquarium.photoUri ? (
+                <>
+                  <Image
+                    source={{ uri: aquariumCollections.aquarium.photoUri }}
+                    style={styles.aquariumHeroPhoto}
+                    contentFit="cover"
+                    transition={120}
+                  />
+                  <LinearGradient
+                    colors={["transparent", theme.colors.surface]}
+                    locations={[0.3, 1]}
+                    style={styles.aquariumHeroGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                  />
+                </>
+              ) : null}
+              <View style={styles.aquariumHeroContent}>
+                <Text variant="headlineMedium" style={styles.aquariumHeroTitle}>
+                  {aquariumCollections.aquarium.name}
+                </Text>
+                <Text variant="bodyMedium" style={styles.aquariumHeroSubtitle}>
+                  {aquariumCollections.aquarium.volumeLiters}L •{" "}
+                  {aquariumCollections.aquarium.waterType} • Setup{" "}
+                  {aquariumCollections.aquarium.setupDate}
+                </Text>
+                <View style={styles.chipRow}>
+                  <Chip compact icon="calendar-clock" mode="flat">
+                    {aquariumCollections.dueTaskTemplates.length} due
+                  </Chip>
+                  <Chip compact icon="fish" mode="flat">
+                    {aquariumCollections.livestock.length} livestock
+                  </Chip>
+                  <Chip compact icon="alert-circle" mode="flat">
+                    {
+                      aquariumCollections.issues.filter(
+                        (issue) => issue.status !== "resolved",
+                      ).length
+                    }{" "}
+                    open issues
+                  </Chip>
+                </View>
+                <View style={styles.aquariumDetailsRow}>
+                  <Text style={styles.aquariumDetailsText} variant="bodySmall">
+                    {aquariumCollections.aquarium.dimensions}
+                  </Text>
+                  <Text style={styles.aquariumDetailsText} variant="bodySmall">
+                    {aquariumCollections.aquarium.investmentCost !== undefined
+                      ? `Cost: ${formatCurrencyAmount(
+                          aquariumCollections.aquarium.investmentCost,
+                          userCurrencyCode,
+                          userLocale,
+                        )}`
+                      : "Cost: N/A"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </Card>
 
           <DashboardSection
             title="Current focus"
@@ -971,6 +1010,60 @@ const styles = StyleSheet.create({
   heroImage: {
     width: "100%",
     height: 220,
+  },
+  aquariumHeroCard: {
+    borderRadius: 24,
+    marginTop: 0,
+    overflow: "hidden",
+  },
+  aquariumHeroInner: {
+    position: "relative",
+    minHeight: 220,
+    overflow: "hidden",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  aquariumHeroPhoto: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: "100%",
+    height: "100%",
+  },
+  aquariumHeroGradient: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "70%",
+  },
+  aquariumHeroContent: {
+    position: "relative",
+    padding: 19,
+    paddingTop: 24,
+    gap: 9,
+    zIndex: 1,
+  },
+  aquariumHeroTitle: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  aquariumHeroSubtitle: {
+    color: "rgba(255, 255, 255, 0.96)",
+  },
+  aquariumDetailsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  aquariumDetailsText: {
+    color: "rgba(255, 255, 255, 0.9)",
+    backgroundColor: "rgba(0, 0, 0, 0.22)",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 7,
   },
   classificationErrorText: {
     color: "#dc2626",

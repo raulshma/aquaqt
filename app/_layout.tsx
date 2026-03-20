@@ -200,7 +200,10 @@ function AppShell() {
   return (
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="entity/[kind]/[id]" options={{ title: "Details" }} />
+      <Stack.Screen
+        name="entity/[kind]/[id]"
+        options={{ headerShown: false, title: "Details" }}
+      />
       <Stack.Screen
         name="modal"
         options={{ presentation: "modal", title: "Details" }}

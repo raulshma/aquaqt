@@ -3,47 +3,47 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import {
-  type Dispatch,
-  memo,
-  type SetStateAction,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    type Dispatch,
+    memo,
+    type SetStateAction,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
+    ScrollView,
+    StyleSheet,
+    useWindowDimensions,
+    View,
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import {
-  Button,
-  Card,
-  Chip,
-  FAB,
-  IconButton,
-  Portal,
-  Surface,
-  Text,
-  TextInput,
-  useTheme,
+    Button,
+    Card,
+    Chip,
+    FAB,
+    IconButton,
+    Portal,
+    Surface,
+    Text,
+    TextInput,
+    useTheme,
 } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  AquariumBackground,
-  AssetBackground,
-  ConsumableBackground,
-  LivestockBackground,
+    AquariumBackground,
+    AssetBackground,
+    ConsumableBackground,
+    LivestockBackground,
 } from "@/components/illustrations/AnimatedCardBackgrounds";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
-  type PhotoSource,
-  PhotoSourceDialog,
+    type PhotoSource,
+    PhotoSourceDialog,
 } from "@/components/ui/photo-source-dialog";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
@@ -52,14 +52,14 @@ import { formatCurrencyAmount } from "@/services/localization";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
-  type Aquarium,
-  type EntityRef,
-  type Issue,
-  IssueStatus,
-  type Livestock,
-  TaskFrequency,
-  type TaskTemplate,
-  type WaterParameterLog,
+    type Aquarium,
+    type EntityRef,
+    type Issue,
+    IssueStatus,
+    type Livestock,
+    TaskFrequency,
+    type TaskTemplate,
+    type WaterParameterLog,
 } from "@/types/aquapt";
 
 const WATER_TYPES = ["freshwater", "marine", "brackish"] as const;
@@ -208,36 +208,45 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
         titleStyle={{ color: textColor }}
         subtitleStyle={{ color: textColor, opacity: 0.8 }}
       />
-      <Card.Content>
-        <Text variant="bodyMedium" style={{ color: textColor }}>
-          Latest parameters: {latestParameterSummary}
+      <Card.Content style={styles.aquariumCardContent}>
+        <Text variant="bodySmall" style={{ color: textColor, opacity: 0.95 }}>
+          {latestParameterSummary}
         </Text>
         <Text
           variant="bodySmall"
-          style={[styles.issueMeta, { color: textColor }]}
+          style={[styles.aquariumCardMeta, { color: textColor }]}
         >
           {aquarium.dimensions} • Setup {aquarium.setupDate}
           {investmentCostText ? ` • ${investmentCostText}` : ""}
         </Text>
-        <View style={styles.summaryRow}>
+
+        <View style={styles.aquariumStatusRow}>
           <Chip compact icon="fish">
-            {livestockCount} livestock
+            {livestockCount}
           </Chip>
           <Chip compact icon="alert-circle">
-            {openIssueCount} issues
+            {openIssueCount}
           </Chip>
           <Chip compact icon="chart-line">
-            NO3 trend: {nitrateTrend}
+            NO3 {nitrateTrend}
           </Chip>
-          <Button mode="contained-tonal" onPress={() => onEdit(aquarium.id)}>
-            Edit specs
-          </Button>
-          <Button
-            mode="contained-tonal"
+        </View>
+
+        <View style={styles.aquariumActionRow}>
+          <IconButton
+            icon="pencil"
+            mode="contained"
+            size={20}
+            onPress={() => onEdit(aquarium.id)}
+            accessibilityLabel="Edit aquarium specs"
+          />
+          <IconButton
+            icon="open-in-new"
+            mode="contained"
+            size={20}
             onPress={() => onOpenDetails(aquarium.id)}
-          >
-            Open hub
-          </Button>
+            accessibilityLabel="Open aquarium hub"
+          />
         </View>
       </Card.Content>
     </Card>
@@ -3645,6 +3654,24 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 10,
   },
+  aquariumCardContent: {
+    gap: 6,
+    paddingBottom: 8,
+  },
+  aquariumCardMeta: {
+    opacity: 0.75,
+  },
+  aquariumStatusRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 6,
+  },
+  aquariumActionRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 8,
+  },
   actionSelector: {
     marginTop: 12,
   },
@@ -3704,7 +3731,7 @@ const styles = StyleSheet.create({
   },
   aquariumCardPhoto: {
     width: "100%",
-    height: 160,
+    height: 110,
   },
   entityPhoto: {
     width: "100%",
