@@ -1,61 +1,61 @@
 import {
-  createContext,
-  ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    createContext,
+    ReactNode,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 
 import {
-  loadBackupMasterKey,
-  loadBackupS3Credentials,
-  saveBackupMasterKey,
-  saveBackupS3Credentials,
+    loadBackupMasterKey,
+    loadBackupS3Credentials,
+    saveBackupMasterKey,
+    saveBackupS3Credentials,
 } from "@/services/backup-secrets";
 import {
-  buildVersionedBackupObjectKey,
-  cleanupVersionedBackups,
-  createBackupEnvelope,
-  decryptBackupEnvelope,
-  downloadEncryptedBackupFromS3,
-  encryptBackupEnvelope,
-  getBackupDateStamp,
-  uploadEncryptedBackupToS3,
+    buildVersionedBackupObjectKey,
+    cleanupVersionedBackups,
+    createBackupEnvelope,
+    decryptBackupEnvelope,
+    downloadEncryptedBackupFromS3,
+    encryptBackupEnvelope,
+    getBackupDateStamp,
+    uploadEncryptedBackupToS3,
 } from "@/services/backup-sync";
 import {
-  createEntityRef,
-  entityRefEquals,
-  normalizeTimelineEvents,
+    createEntityRef,
+    entityRefEquals,
+    normalizeTimelineEvents,
 } from "@/services/entity-links";
 import {
-  applyRegionalDefaults,
-  resolveManualRegionalSettings,
+    applyRegionalDefaults,
+    resolveManualRegionalSettings,
 } from "@/services/localization";
 import {
-  initPersistence,
-  loadPersistedState,
-  PersistedAppState,
-  savePersistedState,
+    initPersistence,
+    loadPersistedState,
+    PersistedAppState,
+    savePersistedState,
 } from "@/services/persistence";
 import {
-  AppSettings,
-  AppThemePreference,
-  Aquarium,
-  Asset,
-  Consumable,
-  DosingLog,
-  Issue,
-  Livestock,
-  Memo,
-  TaskExecution,
-  TaskFrequency,
-  TaskTemplate,
-  TimelineEvent,
-  WaterParameterLog,
-  WaterParameters,
+    AppSettings,
+    AppThemePreference,
+    Aquarium,
+    Asset,
+    Consumable,
+    DosingLog,
+    Issue,
+    Livestock,
+    Memo,
+    TaskExecution,
+    TaskFrequency,
+    TaskTemplate,
+    TimelineEvent,
+    WaterParameterLog,
+    WaterParameters,
 } from "@/types/aquapt";
 
 const AI_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
@@ -440,7 +440,22 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
   }, [issues]);
 
   const addAquarium = useCallback((input: Omit<Aquarium, "id">) => {
-    setAquariums((prev) => [{ ...input, id: nowId("tank") }, ...prev]);
+    const id = nowId("tank");
+    const createdAt = new Date().toISOString();
+
+    setAquariums((prev) => [{ ...input, id }, ...prev]);
+    setTimeline((prev) => [
+      {
+        id: nowId("event"),
+        aquariumId: id,
+        type: "livestock",
+        createdAt,
+        title: `Aquarium added: ${input.name}`,
+        description: `${input.volumeLiters}L • ${input.waterType}`,
+        source: createEntityRef("aquarium", id, id),
+      },
+      ...prev,
+    ]);
   }, []);
 
   const editAquarium = useCallback(

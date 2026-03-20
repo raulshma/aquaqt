@@ -107,31 +107,26 @@ export default function SettingsIndexScreen() {
         description="Your most-used settings are split into focused child pages. Tap one to jump straight there."
       />
 
-      <DashboardSection
-        title="Settings pages"
-        description="Browse by category to keep the main settings view lightweight and fast."
-      >
-        <List.Section>
-          {settingsSections.map((section) => (
-            <List.Section key={section.title}>
-              <List.Subheader>{section.title}</List.Subheader>
-              {section.pages.map((page) => (
-                <List.Item
-                  key={page.route}
-                  title={page.title}
-                  description={`${page.description} ${page.info}`}
-                  descriptionNumberOfLines={2}
-                  left={(props) => <List.Icon {...props} icon={page.icon} />}
-                  right={(props) => (
-                    <List.Icon {...props} icon="chevron-right" />
-                  )}
-                  onPress={() => router.push(page.route)}
-                />
-              ))}
-            </List.Section>
-          ))}
-        </List.Section>
-      </DashboardSection>
+      <List.Section>
+        {settingsSections.map((section) => (
+          <List.Section key={section.title}>
+            <List.Subheader>{section.title}</List.Subheader>
+            {section.pages.map((page) => (
+              <List.Item
+                key={page.route}
+                title={page.title}
+                description={`${page.description} ${page.info}`}
+                descriptionNumberOfLines={2}
+                left={(props) => <List.Icon {...props} icon={page.icon} />}
+                right={(props) => (
+                  <List.Icon {...props} icon="chevron-right" />
+                )}
+                onPress={() => router.push(page.route)}
+              />
+            ))}
+          </List.Section>
+        ))}
+      </List.Section>
     </DashboardScrollView>
   );
 }
