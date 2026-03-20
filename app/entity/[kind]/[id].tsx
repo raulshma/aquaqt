@@ -1,44 +1,54 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { type ReactNode, useMemo } from "react";
-import { StyleSheet, View } from "react-native";
-import { Card, Chip, Text, useTheme } from "react-native-paper";
+import { type ReactNode, useMemo, useState } from "react";
+import {
+    ScrollView as RNScrollView,
+    StyleSheet,
+    View,
+} from "react-native";
+import {
+    Button,
+    Card,
+    Chip,
+    Text,
+    useTheme
+} from "react-native-paper";
 
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
-  DashboardHero,
-  DashboardScrollView,
-  DashboardSection,
+    DashboardHero,
+    DashboardScrollView,
+    DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
 import {
-  AquaptEntityStore,
-  createEntityRef,
-  getAquariumCollections,
-  getEntityHref,
-  getLivestockFeedingTasks,
-  getLivestockOffspring,
-  getRelatedTimelineEvents,
-  getTaskExecutionHistory,
-  getTimelineEventTarget,
-  parseEntityKind,
-  resolveEntityRef,
+    AquaptEntityStore,
+    createEntityRef,
+    getAquariumCollections,
+    getEntityHref,
+    getLivestockFeedingTasks,
+    getLivestockOffspring,
+    getRelatedTimelineEvents,
+    getTaskExecutionHistory,
+    getTimelineEventTarget,
+    parseEntityKind,
+    resolveEntityRef,
 } from "@/services/entity-links";
 import { formatCurrencyAmount } from "@/services/localization";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
-  Asset,
-  Consumable,
-  DosingLog,
-  EntityRef,
-  Issue,
-  Livestock,
-  Memo,
-  TaskTemplate,
-  WaterParameterLog,
-  WaterParameters,
+    Asset,
+    Consumable,
+    DosingLog,
+    EntityRef,
+    Issue,
+    Livestock,
+    Memo,
+    TaskTemplate,
+    WaterParameterLog,
+    WaterParameters,
 } from "@/types/aquapt";
 
 const PARAMETER_LABELS: Record<keyof WaterParameters, string> = {
@@ -163,6 +173,61 @@ function ParameterChips({ values }: { values: WaterParameters }) {
   );
 }
 
+type GalleryItem = {
+  uri: string;
+  label: string;
+  entityRef: EntityRef;
+};
+
+function ImageGallery({ items }: { items: GalleryItem[] }) {
+  const theme = useTheme();
+  const router = useRouter();
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <DashboardSection
+      title="Photo gallery"
+      description="Images from this record and linked entities."
+      style={styles.gallerySection}
+    >
+      <RNScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.galleryScroll}
+      >
+        {items.map((item, index) => (
+          <Card
+            key={`${item.entityRef.kind}-${item.entityRef.id}-${index}`}
+            mode="contained"
+            onPress={() => router.push(getEntityHref(item.entityRef) as never)}
+          >
+            <View style={styles.galleryItem}>
+              <Image
+                source={{ uri: item.uri }}
+                style={styles.galleryThumbnail}
+                contentFit="cover"
+              />
+              <View
+                style={[
+                  styles.galleryBadge,
+                  { backgroundColor: theme.colors.surface },
+                ]}
+              >
+                <Text variant="labelSmall" numberOfLines={1}>
+                  {item.label}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        ))}
+      </RNScrollView>
+    </DashboardSection>
+  );
+}
+
 export default function EntityDetailScreen() {
   const params = useLocalSearchParams<{ kind?: string; id?: string }>();
   const theme = useTheme();
@@ -191,9 +256,6 @@ export default function EntityDetailScreen() {
       (left, right) => +new Date(right.createdAt) - +new Date(left.createdAt),
     );
   }, [resolved, store]);
-
-  const openEntity = (entityRef: EntityRef) =>
-    router.push(getEntityHref(entityRef) as never);
 
   const taskItem =
     resolved?.ref.kind === "task"
@@ -227,6 +289,103 @@ export default function EntityDetailScreen() {
     resolved?.ref.kind === "parameter-log"
       ? (resolved.item as WaterParameterLog | undefined)
       : undefined;
+
+  const galleryItems = useMemo(() => {
+    const items: GalleryItem[] = [];
+
+    if (aquariumCollections && resolved?.ref.kind === "aquarium") {
+      for (const livestock of aquariumCollections.livestock) {
+        if (livestock.photoUri) {
+          items.push({
+            uri: livestock.photoUri,
+            label: livestock.name,
+            entityRef: createEntityRef(
+              "livestock",
+              livestock.id,
+              aquariumCollections.aquarium.id,
+            ),
+          });
+        }
+      }
+      for (const asset of aquariumCollections.assets) {
+        if (asset.photoUri) {
+          items.push({
+            uri: asset.photoUri,
+            label: asset.brandModel,
+            entityRef: createEntityRef(
+              "asset",
+              asset.id,
+              aquariumCollections.aquarium.id,
+            ),
+          });
+        }
+      }
+      for (const consumable of aquariumCollections.consumables) {
+        if (consumable.photoUri) {
+          items.push({
+            uri: consumable.photoUri,
+            label: consumable.name,
+            entityRef: createEntityRef(
+              "consumable",
+              consumable.id,
+              aquariumCollections.aquarium.id,
+            ),
+          });
+        }
+      }
+    }
+
+    if (
+      resolved?.item &&
+      "photoUri" in resolved.item &&
+      resolved.item.photoUri &&
+      resolved.ref.kind !== "aquarium"
+    ) {
+      items.push({
+        uri: resolved.item.photoUri,
+        label: resolved.title,
+        entityRef: resolved.ref,
+      });
+    }
+
+    if (livestockItem) {
+      const parent = livestockItem.parentId
+        ? store.livestock.find((l) => l.id === livestockItem.parentId)
+        : null;
+      const offspring = getLivestockOffspring(store, livestockItem.id);
+      for (const child of offspring) {
+        if (child.photoUri) {
+          items.push({
+            uri: child.photoUri,
+            label: child.name,
+            entityRef: createEntityRef(
+              "livestock",
+              child.id,
+              livestockItem.aquariumId,
+            ),
+          });
+        }
+      }
+      if (parent && parent.photoUri) {
+        items.push({
+          uri: parent.photoUri,
+          label: parent.name,
+          entityRef: createEntityRef(
+            "livestock",
+            parent.id,
+            livestockItem.aquariumId,
+          ),
+        });
+      }
+    }
+
+    return items;
+  }, [aquariumCollections, resolved, livestockItem, store]);
+
+  const [showGallery, setShowGallery] = useState(false);
+
+  const openEntity = (entityRef: EntityRef) =>
+    router.push(getEntityHref(entityRef) as never);
 
   if (!resolved) {
     return (
@@ -307,6 +466,32 @@ export default function EntityDetailScreen() {
               </View>
             </View>
           </Card>
+
+          {galleryItems.length > 0 && (
+            <>
+              {!showGallery ? (
+                <Button
+                  mode="outlined"
+                  icon="image-multiple"
+                  onPress={() => setShowGallery(true)}
+                  style={styles.galleryButton}
+                >
+                  Show gallery ({galleryItems.length} photos)
+                </Button>
+              ) : (
+                <>
+                  <ImageGallery items={galleryItems} />
+                  <Button
+                    mode="text"
+                    onPress={() => setShowGallery(false)}
+                    style={styles.galleryButton}
+                  >
+                    Hide gallery
+                  </Button>
+                </>
+              )}
+            </>
+          )}
 
           <DashboardSection
             title="Current focus"
@@ -669,19 +854,6 @@ export default function EntityDetailScreen() {
                 style={styles.heroImage}
               />
             </Card>
-          ) : null}
-          {livestockItem.photoUri ? (
-            <DashboardSection
-              title="Photo"
-              description="Saved image for this livestock record."
-            >
-              <Card mode="contained" style={styles.imageCard}>
-                <Image
-                  source={{ uri: livestockItem.photoUri }}
-                  style={styles.heroImage}
-                />
-              </Card>
-            </DashboardSection>
           ) : null}
           <DashboardSection
             title="Related links"
@@ -1067,5 +1239,34 @@ const styles = StyleSheet.create({
   },
   classificationErrorText: {
     color: "#dc2626",
+  },
+  gallerySection: {
+    marginTop: 12,
+  },
+  galleryButton: {
+    marginTop: 12,
+    marginHorizontal: 16,
+  },
+  galleryScroll: {
+    gap: 10,
+  },
+  galleryItem: {
+    width: 120,
+    height: 120,
+    borderRadius: 18,
+    position: "relative",
+    overflow: "hidden",
+  },
+  galleryThumbnail: {
+    width: "100%",
+    height: "100%",
+  },
+  galleryBadge: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
 });
