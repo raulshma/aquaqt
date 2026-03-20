@@ -2,53 +2,43 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { type ReactNode, useMemo, useState } from "react";
-import {
-    ScrollView as RNScrollView,
-    StyleSheet,
-    View,
-} from "react-native";
-import {
-    Button,
-    Card,
-    Chip,
-    Text,
-    useTheme
-} from "react-native-paper";
+import { ScrollView as RNScrollView, StyleSheet, View } from "react-native";
+import { Button, Card, Chip, Text, useTheme } from "react-native-paper";
 
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
-    DashboardHero,
-    DashboardScrollView,
-    DashboardSection,
+  DashboardHero,
+  DashboardScrollView,
+  DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
 import {
-    AquaptEntityStore,
-    createEntityRef,
-    getAquariumCollections,
-    getEntityHref,
-    getLivestockFeedingTasks,
-    getLivestockOffspring,
-    getRelatedTimelineEvents,
-    getTaskExecutionHistory,
-    getTimelineEventTarget,
-    parseEntityKind,
-    resolveEntityRef,
+  AquaptEntityStore,
+  createEntityRef,
+  getAquariumCollections,
+  getEntityHref,
+  getLivestockFeedingTasks,
+  getLivestockOffspring,
+  getRelatedTimelineEvents,
+  getTaskExecutionHistory,
+  getTimelineEventTarget,
+  parseEntityKind,
+  resolveEntityRef,
 } from "@/services/entity-links";
 import { formatCurrencyAmount } from "@/services/localization";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
-    Asset,
-    Consumable,
-    DosingLog,
-    EntityRef,
-    Issue,
-    Livestock,
-    Memo,
-    TaskTemplate,
-    WaterParameterLog,
-    WaterParameters,
+  Asset,
+  Consumable,
+  DosingLog,
+  EntityRef,
+  Issue,
+  Livestock,
+  Memo,
+  TaskTemplate,
+  WaterParameterLog,
+  WaterParameters,
 } from "@/types/aquapt";
 
 const PARAMETER_LABELS: Record<keyof WaterParameters, string> = {
