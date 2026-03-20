@@ -2,6 +2,15 @@ name: AquaPT APK Build (Local)
 
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: "App variant to build"
+        required: true
+        default: production
+        type: choice
+        options:
+          - development
+          - production
 
 permissions:
   contents: write
@@ -23,19 +32,20 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build Android APK (${{ matrix.abi }}, Local)
+    name: Build Android APK (${{ github.event.inputs.variant }}, ${{ matrix.abi }}, Local)
     needs: metadata
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: production
+    env:
+      APP_VARIANT: ${{ github.event.inputs.variant || 'production' }}
+      PROFILE_PREFIX: ${{ github.event.inputs.variant == 'development' && 'preview' || 'production' }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - abi: arm64-v8a
-            profile: production-arm64-v8a
           - abi: x86_64
-            profile: production-x86_64
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -76,14 +86,14 @@ jobs:
       - name: Build Android app locally for ${{ matrix.abi }}
         run: |
           VERSION="${{ needs.metadata.outputs.version }}"
-          OUTPUT_PATH="${{ github.workspace }}/AquaPT-v${VERSION}-android-${{ matrix.abi }}.apk"
-          eas build --platform android --profile ${{ matrix.profile }} --local --non-interactive --output "$OUTPUT_PATH"
+          OUTPUT_PATH="${{ github.workspace }}/AquaPT-${APP_VARIANT}-v${VERSION}-android-${{ matrix.abi }}.apk"
+          eas build --platform android --profile ${PROFILE_PREFIX}-${{ matrix.abi }} --local --non-interactive --output "$OUTPUT_PATH"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aquapt-apk-${{ matrix.abi }}
-          path: ${{ github.workspace }}/AquaPT-v${{ needs.metadata.outputs.version }}-android-${{ matrix.abi }}.apk
+          name: aquapt-apk-${{ github.event.inputs.variant }}-${{ matrix.abi }}
+          path: ${{ github.workspace }}/AquaPT-${{ github.event.inputs.variant }}-v${{ needs.metadata.outputs.version }}-android-${{ matrix.abi }}.apk
 
   release:
     name: Create GitHub Release
@@ -99,7 +109,7 @@ jobs:
       - name: Download built APK artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: aquapt-apk-*
+          pattern: aquapt-apk-${{ github.event.inputs.variant }}-*
           path: ./release
           merge-multiple: true
 
@@ -111,6 +121,7 @@ jobs:
             echo '🚀 **New Android build released (Local)**'
             echo
             echo '- **Version:** v${{ needs.metadata.outputs.version }}'
+            echo '- **Variant:** ${{ github.event.inputs.variant }}'
             echo '- **Commit:** ${{ github.sha }}'
             echo '- **Build:** Local EAS Build'
             echo '- **APK assets:**'
@@ -123,8 +134,8 @@ jobs:
       - name: Create GitHub Release with APKs
         uses: softprops/action-gh-release@v2
         with:
-          name: "AquaPT v${{ needs.metadata.outputs.version }}"
-          tag_name: "aquapt-v${{ needs.metadata.outputs.version }}-local"
+          name: "AquaPT ${{ github.event.inputs.variant }} v${{ needs.metadata.outputs.version }}"
+          tag_name: "aquapt-${{ github.event.inputs.variant }}-v${{ needs.metadata.outputs.version }}-local"
           body: ${{ steps.release_notes.outputs.body }}
           files: ./release/*.apk
           generate_release_notes: true
