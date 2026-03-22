@@ -1,61 +1,61 @@
 import {
-    createContext,
-    ReactNode,
-    useCallback,
-    useContext,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 
 import {
-    loadBackupMasterKey,
-    loadBackupS3Credentials,
-    saveBackupMasterKey,
-    saveBackupS3Credentials,
+  loadBackupMasterKey,
+  loadBackupS3Credentials,
+  saveBackupMasterKey,
+  saveBackupS3Credentials,
 } from "@/services/backup-secrets";
 import {
-    buildVersionedBackupObjectKey,
-    cleanupVersionedBackups,
-    createBackupEnvelope,
-    decryptBackupEnvelope,
-    downloadEncryptedBackupFromS3,
-    encryptBackupEnvelope,
-    getBackupDateStamp,
-    uploadEncryptedBackupToS3,
+  buildVersionedBackupObjectKey,
+  cleanupVersionedBackups,
+  createBackupEnvelope,
+  decryptBackupEnvelope,
+  downloadEncryptedBackupFromS3,
+  encryptBackupEnvelope,
+  getBackupDateStamp,
+  uploadEncryptedBackupToS3,
 } from "@/services/backup-sync";
 import {
-    createEntityRef,
-    entityRefEquals,
-    normalizeTimelineEvents,
+  createEntityRef,
+  entityRefEquals,
+  normalizeTimelineEvents,
 } from "@/services/entity-links";
 import {
-    applyRegionalDefaults,
-    resolveManualRegionalSettings,
+  applyRegionalDefaults,
+  resolveManualRegionalSettings,
 } from "@/services/localization";
 import {
-    initPersistence,
-    loadPersistedState,
-    PersistedAppState,
-    savePersistedState,
+  initPersistence,
+  loadPersistedState,
+  PersistedAppState,
+  savePersistedState,
 } from "@/services/persistence";
 import {
-    AppSettings,
-    AppThemePreference,
-    Aquarium,
-    Asset,
-    Consumable,
-    DosingLog,
-    Issue,
-    Livestock,
-    Memo,
-    TaskExecution,
-    TaskFrequency,
-    TaskTemplate,
-    TimelineEvent,
-    WaterParameterLog,
-    WaterParameters,
+  AppSettings,
+  AppThemePreference,
+  Aquarium,
+  Asset,
+  Consumable,
+  DosingLog,
+  Issue,
+  Livestock,
+  Memo,
+  TaskExecution,
+  TaskFrequency,
+  TaskTemplate,
+  TimelineEvent,
+  WaterParameterLog,
+  WaterParameters,
 } from "@/types/aquapt";
 
 const AI_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
@@ -176,12 +176,16 @@ interface AquaptContextValue {
     description?: string;
     category?: "maintenance" | "feeding";
     livestockId?: string;
+    startDate?: string;
+    timesPerDay?: number;
   }) => void;
   addLivestockFeedingTask: (input: {
     livestockId: string;
     title: string;
     frequency: TaskFrequency;
     description?: string;
+    startDate?: string;
+    timesPerDay?: number;
   }) => void;
   completeTask: (
     taskTemplateId: string,
@@ -475,6 +479,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       description?: string;
       category?: "maintenance" | "feeding";
       livestockId?: string;
+      startDate?: string;
+      timesPerDay?: number;
     }) => {
       const task: TaskTemplate = {
         id: nowId("task"),
@@ -484,6 +490,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         description: input.description,
         category: input.category,
         livestockId: input.livestockId,
+        startDate: input.startDate,
+        timesPerDay: input.timesPerDay,
       };
 
       setTaskTemplates((prev) => [task, ...prev]);
@@ -497,6 +505,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       title: string;
       frequency: TaskFrequency;
       description?: string;
+      startDate?: string;
+      timesPerDay?: number;
     }) => {
       const livestockItem = livestock.find(
         (item) => item.id === input.livestockId,
@@ -512,6 +522,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         description: input.description,
         category: "feeding",
         livestockId: livestockItem.id,
+        startDate: input.startDate,
+        timesPerDay: input.timesPerDay,
       });
     },
     [addTaskTemplate, livestock],

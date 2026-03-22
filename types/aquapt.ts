@@ -119,6 +119,8 @@ export interface TaskTemplate {
   livestockId?: string;
   frequency: TaskFrequency;
   aquariumIds: string[];
+  startDate?: string;
+  timesPerDay?: number;
 }
 
 export interface TaskExecution {

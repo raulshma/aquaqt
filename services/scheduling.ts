@@ -7,27 +7,67 @@ const frequencyDays: Record<TaskFrequency, number> = {
   monthly: 30,
 };
 
+function getDayStart(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export function toIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function getExecutionsForTask(
+  taskExecutions: TaskExecution[],
+  taskTemplateId: string,
+  aquariumId: string,
+): TaskExecution[] {
+  return taskExecutions.filter(
+    (entry) =>
+      entry.taskTemplateId === taskTemplateId && entry.aquariumId === aquariumId,
+  );
+}
+
+export function getExecutionsForDay(
+  executions: TaskExecution[],
+  date: Date,
+): TaskExecution[] {
+  const dayStart = getDayStart(date);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  return executions.filter((e) => {
+    const ts = new Date(e.completedAt).getTime();
+    return ts >= dayStart.getTime() && ts < dayEnd.getTime();
+  });
+}
+
 export function getLatestExecutionIso(
   taskExecutions: TaskExecution[],
   taskTemplateId: string,
   aquariumId: string,
 ) {
+  const executions = getExecutionsForTask(
+    taskExecutions,
+    taskTemplateId,
+    aquariumId,
+  );
+
+  if (executions.length === 0) {
+    return undefined;
+  }
+
   let latestIso: string | undefined;
   let latestTs = -1;
 
-  for (const entry of taskExecutions) {
-    if (
-      entry.taskTemplateId !== taskTemplateId ||
-      entry.aquariumId !== aquariumId
-    ) {
-      continue;
-    }
-
+  for (const entry of executions) {
     const ts = new Date(entry.completedAt).getTime();
     if (Number.isNaN(ts) || ts <= latestTs) {
       continue;
     }
-
     latestTs = ts;
     latestIso = entry.completedAt;
   }
@@ -41,6 +81,25 @@ export function isTaskDue(
   taskExecutions: TaskExecution[],
   now = new Date(),
 ) {
+  if (task.startDate) {
+    const startDate = new Date(task.startDate);
+    if (getDayStart(now) < getDayStart(startDate)) {
+      return false;
+    }
+  }
+
+  const executions = getExecutionsForTask(
+    taskExecutions,
+    task.id,
+    aquariumId,
+  );
+  const timesPerDay = task.timesPerDay ?? 1;
+
+  if (task.frequency === "daily" && timesPerDay > 1) {
+    const todayExecutions = getExecutionsForDay(executions, now);
+    return todayExecutions.length < timesPerDay;
+  }
+
   const lastDoneIso = getLatestExecutionIso(
     taskExecutions,
     task.id,
@@ -55,6 +114,21 @@ export function isTaskDue(
   const elapsedMs = now.getTime() - new Date(lastDoneIso).getTime();
 
   return elapsedMs >= days * 24 * 60 * 60 * 1000;
+}
+
+export function getCompletionsToday(
+  task: TaskTemplate,
+  aquariumId: string,
+  taskExecutions: TaskExecution[],
+  now = new Date(),
+): number {
+  const executions = getExecutionsForTask(
+    taskExecutions,
+    task.id,
+    aquariumId,
+  );
+  const todayExecutions = getExecutionsForDay(executions, now);
+  return todayExecutions.length;
 }
 
 export function countDueTasks(

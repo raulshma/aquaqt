@@ -3,27 +3,27 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import {
-  Button,
-  Card,
-  Chip,
-  Divider,
-  FAB,
-  Text,
-  TextInput,
-  useTheme,
+    Button,
+    Card,
+    Chip,
+    Divider,
+    FAB,
+    Text,
+    TextInput,
+    useTheme,
 } from "react-native-paper";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import {
-  DashboardHero,
-  DashboardScrollView,
-  DashboardSection,
-} from "@/components/ui/dashboard-shell";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
+import {
+    DashboardHero,
+    DashboardScrollView,
+    DashboardSection,
+} from "@/components/ui/dashboard-shell";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { createEntityRef, getEntityHref } from "@/services/entity-links";
-import { isTaskDue } from "@/services/scheduling";
+import { getCompletionsToday, isTaskDue } from "@/services/scheduling";
 import { TaskFrequency } from "@/types/aquapt";
 
 export default function TasksScreen() {
@@ -260,6 +260,15 @@ export default function TasksScreen() {
               theme,
               backgroundColor,
             );
+            const completionsToday = getCompletionsToday(
+              task,
+              aquariumId,
+              taskExecutions,
+              new Date(),
+            );
+            const timesPerDay = task.timesPerDay ?? 1;
+            const showProgress =
+              task.frequency === "daily" && timesPerDay > 1;
 
             return (
               <Card
@@ -330,6 +339,14 @@ export default function TasksScreen() {
                   {task.description ? (
                     <Text variant="bodyMedium" style={{ color: textColor }}>
                       {task.description}
+                    </Text>
+                  ) : null}
+                  {showProgress ? (
+                    <Text
+                      variant="bodySmall"
+                      style={[styles.targetTank, { color: textColor }]}
+                    >
+                      Progress: {completionsToday} / {timesPerDay} done today
                     </Text>
                   ) : null}
                   <Divider style={styles.divider} />

@@ -49,7 +49,7 @@ import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented
 import { useAquapt } from "@/context/aquapt-context";
 import { createEntityRef, getEntityHref } from "@/services/entity-links";
 import { formatCurrencyAmount } from "@/services/localization";
-import { isTaskDue } from "@/services/scheduling";
+import { isTaskDue, toIsoDate } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
     type Aquarium,
@@ -113,7 +113,6 @@ const METRIC_COLORS: Record<AnalyticMetricKey, string> = {
   alkalinity: "#9333ea",
 };
 
-const toIsoDate = (date: Date) => date.toISOString().slice(0, 10);
 const parseIsoDate = (value: string) => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
@@ -262,6 +261,8 @@ type LivestockCardProps = {
   livestockStatusNote: string;
   feedingTaskTitle: string;
   feedingTaskFrequency: TaskFrequency;
+  feedingTaskStartDate: string;
+  feedingTaskTimesPerDay: string;
   cardBackground: string;
   parentEntity?: { id: string; name: string; aquariumId: string };
   offspringEntities: { id: string; name: string; aquariumId: string }[];
@@ -276,6 +277,8 @@ type LivestockCardProps = {
   setFeedingTaskFrequencyDraft: Dispatch<
     SetStateAction<Record<string, TaskFrequency>>
   >;
+  setFeedingTaskStartDateDraft: Dispatch<SetStateAction<Record<string, string>>>;
+  setFeedingTaskTimesPerDayDraft: Dispatch<SetStateAction<Record<string, string>>>;
   setLivestockFeedingNotes: (livestockId: string, dietaryNotes: string) => void;
   setLivestockStatus: (
     livestockId: string,
@@ -298,6 +301,8 @@ type LivestockCardProps = {
     title: string;
     frequency: TaskFrequency;
     description?: string;
+    startDate?: string;
+    timesPerDay?: number;
   }) => void;
 };
 
@@ -310,6 +315,8 @@ const LivestockCard = memo(function LivestockCard({
   livestockStatusNote,
   feedingTaskTitle,
   feedingTaskFrequency,
+  feedingTaskStartDate,
+  feedingTaskTimesPerDay,
   cardBackground,
   parentEntity,
   offspringEntities,
@@ -320,6 +327,8 @@ const LivestockCard = memo(function LivestockCard({
   setLivestockStatusNoteDraft,
   setFeedingTaskTitleDraft,
   setFeedingTaskFrequencyDraft,
+  setFeedingTaskStartDateDraft,
+  setFeedingTaskTimesPerDayDraft,
   setLivestockFeedingNotes,
   setLivestockStatus,
   transferLivestock,
@@ -353,11 +362,25 @@ const LivestockCard = memo(function LivestockCard({
           {item.species} • {aquariumName}
         </Text>
         <View style={styles.summaryRow}>
-          <Chip compact>{item.kind}</Chip>
-          <Chip compact>{item.status ?? "active"}</Chip>
+          <Chip
+            compact
+            style={{ backgroundColor: theme.colors.surface }}
+            textStyle={{ color: theme.colors.onSurface }}
+          >
+            {item.kind}
+          </Chip>
+          <Chip
+            compact
+            style={{ backgroundColor: theme.colors.surface }}
+            textStyle={{ color: theme.colors.onSurface }}
+          >
+            {item.status ?? "active"}
+          </Chip>
           <Chip
             compact
             icon="fishbowl"
+            style={{ backgroundColor: theme.colors.surface }}
+            textStyle={{ color: theme.colors.onSurface }}
             onPress={() =>
               openEntity(
                 createEntityRef("aquarium", item.aquariumId, item.aquariumId),
@@ -370,6 +393,8 @@ const LivestockCard = memo(function LivestockCard({
             <Chip
               compact
               icon="family-tree"
+              style={{ backgroundColor: theme.colors.surface }}
+              textStyle={{ color: theme.colors.onSurface }}
               onPress={() =>
                 openEntity(
                   createEntityRef(
@@ -388,6 +413,8 @@ const LivestockCard = memo(function LivestockCard({
               key={offspring.id}
               compact
               icon="baby-face-outline"
+              style={{ backgroundColor: theme.colors.surface }}
+              textStyle={{ color: theme.colors.onSurface }}
               onPress={() =>
                 openEntity(
                   createEntityRef(
@@ -406,6 +433,8 @@ const LivestockCard = memo(function LivestockCard({
               key={task.id}
               compact
               icon="wrench"
+              style={{ backgroundColor: theme.colors.surface }}
+              textStyle={{ color: theme.colors.onSurface }}
               onPress={() =>
                 openEntity(createEntityRef("task", task.id, item.aquariumId))
               }
@@ -433,6 +462,9 @@ const LivestockCard = memo(function LivestockCard({
           multiline
           numberOfLines={2}
           style={styles.issueResolutionInput}
+          outlineColor={theme.colors.outline}
+          activeOutlineColor={theme.colors.primary}
+          textColor={theme.colors.onSurface}
         />
         <ScrollableSegmentedButtons
           value={livestockStatus}
@@ -458,10 +490,13 @@ const LivestockCard = memo(function LivestockCard({
           multiline
           numberOfLines={2}
           style={styles.issueResolutionInput}
+          outlineColor={theme.colors.outline}
+          activeOutlineColor={theme.colors.primary}
+          textColor={theme.colors.onSurface}
         />
         <View style={styles.summaryRow}>
           <Button
-            mode="contained-tonal"
+            mode="contained"
             onPress={() =>
               setLivestockFeedingNotes(item.id, feedingNote.trim())
             }
@@ -469,7 +504,7 @@ const LivestockCard = memo(function LivestockCard({
             Save feeding
           </Button>
           <Button
-            mode="contained-tonal"
+            mode="contained"
             onPress={() =>
               setLivestockStatus(
                 item.id,
@@ -481,7 +516,7 @@ const LivestockCard = memo(function LivestockCard({
             Save status
           </Button>
           <Button
-            mode="contained-tonal"
+            mode="contained"
             disabled={!fallbackTargetId || fallbackTargetId === item.aquariumId}
             onPress={() =>
               fallbackTargetId
@@ -496,7 +531,7 @@ const LivestockCard = memo(function LivestockCard({
             Transfer
           </Button>
           <Button
-            mode="contained-tonal"
+            mode="contained"
             onPress={() =>
               addOffspring(item.id, {
                 kind: item.kind,
@@ -523,6 +558,9 @@ const LivestockCard = memo(function LivestockCard({
           }
           style={styles.issueResolutionInput}
           placeholder={`Feed ${item.name}`}
+          outlineColor={theme.colors.outline}
+          activeOutlineColor={theme.colors.primary}
+          textColor={theme.colors.onSurface}
         />
         <ScrollableSegmentedButtons
           value={feedingTaskFrequency}
@@ -535,11 +573,48 @@ const LivestockCard = memo(function LivestockCard({
           buttons={FEEDING_TASK_FREQUENCY_BUTTONS}
           style={styles.issueStatusSelector}
         />
+        <View style={styles.summaryRow}>
+          <TextInput
+            mode="outlined"
+            label="Times per day"
+            value={feedingTaskTimesPerDay}
+            onChangeText={(value) =>
+              setFeedingTaskTimesPerDayDraft((prev) => ({
+                ...prev,
+                [item.id]: value,
+              }))
+            }
+            keyboardType="numeric"
+            style={[styles.issueResolutionInput, { flex: 1 }]}
+            placeholder="1"
+            outlineColor={theme.colors.outline}
+            activeOutlineColor={theme.colors.primary}
+            textColor={theme.colors.onSurface}
+          />
+          <TextInput
+            mode="outlined"
+            label="Start date (YYYY-MM-DD)"
+            value={feedingTaskStartDate}
+            onChangeText={(value) =>
+              setFeedingTaskStartDateDraft((prev) => ({
+                ...prev,
+                [item.id]: value,
+              }))
+            }
+            style={[styles.issueResolutionInput, { flex: 2 }]}
+            placeholder={toIsoDate(new Date())}
+            outlineColor={theme.colors.outline}
+            activeOutlineColor={theme.colors.primary}
+            textColor={theme.colors.onSurface}
+          />
+        </View>
         <Button
           mode="contained-tonal"
           style={styles.issueSaveButton}
           onPress={() => {
             const customTitle = feedingTaskTitle.trim();
+            const timesPerDay = Math.max(1, Math.floor(Number(feedingTaskTimesPerDay) || 1));
+            const startDateValue = feedingTaskStartDate.trim() || toIsoDate(new Date());
             addLivestockFeedingTask({
               livestockId: item.id,
               title: customTitle || `Feed ${item.name}`,
@@ -548,9 +623,19 @@ const LivestockCard = memo(function LivestockCard({
                 feedingNote.trim() ||
                 item.dietaryNotes ||
                 `Targeted feeding regimen for ${item.name}`,
+              startDate: startDateValue,
+              timesPerDay: feedingTaskFrequency === "daily" ? timesPerDay : undefined,
             });
 
             setFeedingTaskTitleDraft((prev) => ({
+              ...prev,
+              [item.id]: "",
+            }));
+            setFeedingTaskTimesPerDayDraft((prev) => ({
+              ...prev,
+              [item.id]: "",
+            }));
+            setFeedingTaskStartDateDraft((prev) => ({
               ...prev,
               [item.id]: "",
             }));
@@ -920,6 +1005,12 @@ export default function HomeScreen() {
   >({});
   const [feedingTaskFrequencyDraft, setFeedingTaskFrequencyDraft] = useState<
     Record<string, TaskFrequency>
+  >({});
+  const [feedingTaskStartDateDraft, setFeedingTaskStartDateDraft] = useState<
+    Record<string, string>
+  >({});
+  const [feedingTaskTimesPerDayDraft, setFeedingTaskTimesPerDayDraft] = useState<
+    Record<string, string>
   >({});
   const [resolutionNoteDraft, setResolutionNoteDraft] = useState<
     Record<string, string>
@@ -2277,6 +2368,8 @@ export default function HomeScreen() {
                     feedingTaskFrequency={
                       feedingTaskFrequencyDraft[item.id] ?? "daily"
                     }
+                    feedingTaskStartDate={feedingTaskStartDateDraft[item.id] ?? ""}
+                    feedingTaskTimesPerDay={feedingTaskTimesPerDayDraft[item.id] ?? ""}
                     cardBackground={cardBackground}
                     parentEntity={
                       parentEntity
@@ -2299,6 +2392,8 @@ export default function HomeScreen() {
                     setLivestockStatusNoteDraft={setLivestockStatusNoteDraft}
                     setFeedingTaskTitleDraft={setFeedingTaskTitleDraft}
                     setFeedingTaskFrequencyDraft={setFeedingTaskFrequencyDraft}
+                    setFeedingTaskStartDateDraft={setFeedingTaskStartDateDraft}
+                    setFeedingTaskTimesPerDayDraft={setFeedingTaskTimesPerDayDraft}
                     setLivestockFeedingNotes={setLivestockFeedingNotes}
                     setLivestockStatus={setLivestockStatus}
                     transferLivestock={transferLivestock}
