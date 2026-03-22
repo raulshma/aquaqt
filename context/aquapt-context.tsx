@@ -191,6 +191,7 @@ interface AquaptContextValue {
     taskTemplateId: string,
     aquariumId: string,
     note?: string,
+    completedAt?: string,
   ) => void;
   logDosing: (
     aquariumId: string,
@@ -530,12 +531,13 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
   );
 
   const completeTask = useCallback(
-    (taskTemplateId: string, aquariumId: string, note?: string) => {
+    (taskTemplateId: string, aquariumId: string, note?: string, completedAtInput?: string) => {
+      const completedAt = completedAtInput ?? new Date().toISOString();
       const execution: TaskExecution = {
         id: nowId("exec"),
         taskTemplateId,
         aquariumId,
-        completedAt: new Date().toISOString(),
+        completedAt,
         note,
       };
 

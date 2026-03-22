@@ -3,22 +3,22 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import {
-    Button,
-    Card,
-    Chip,
-    Divider,
-    FAB,
-    Text,
-    TextInput,
-    useTheme,
+  Button,
+  Card,
+  Chip,
+  Divider,
+  FAB,
+  Text,
+  TextInput,
+  useTheme,
 } from "react-native-paper";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
-    DashboardHero,
-    DashboardScrollView,
-    DashboardSection,
+  DashboardHero,
+  DashboardScrollView,
+  DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
@@ -43,6 +43,9 @@ export default function TasksScreen() {
   const [completionNoteDraft, setCompletionNoteDraft] = useState<
     Record<string, string>
   >({});
+  const [completionDateDraft, setCompletionDateDraft] = useState<
+    Record<string, string>
+  >({});
 
   const form = useForm({
     defaultValues: {
@@ -53,6 +56,8 @@ export default function TasksScreen() {
         description: "",
         frequency: "weekly" as TaskFrequency,
         aquariumIds: aquariums[0]?.id ? [aquariums[0].id] : [],
+        timesPerDay: 1,
+        startDate: new Date().toISOString().split("T")[0],
       },
       dosing: {
         product: "",
@@ -78,12 +83,16 @@ export default function TasksScreen() {
           aquariumIds: value.task.aquariumIds.length
             ? value.task.aquariumIds
             : [value.selectedAquariumId],
+          timesPerDay: value.task.timesPerDay,
+          startDate: value.task.startDate,
         });
 
         form.setFieldValue("task.title", "");
         form.setFieldValue("task.description", "");
         form.setFieldValue("task.frequency", "weekly");
         form.setFieldValue("task.aquariumIds", [value.selectedAquariumId]);
+        form.setFieldValue("task.timesPerDay", 1);
+        form.setFieldValue("task.startDate", new Date().toISOString().split("T")[0]);
         setDialogOpen(false);
         return;
       }
@@ -118,6 +127,8 @@ export default function TasksScreen() {
     form.setFieldValue("task.description", "");
     form.setFieldValue("task.frequency", "weekly");
     form.setFieldValue("task.aquariumIds", aquariumId ? [aquariumId] : []);
+    form.setFieldValue("task.timesPerDay", 1);
+    form.setFieldValue("task.startDate", new Date().toISOString().split("T")[0]);
     form.setFieldValue("dosing.product", "");
     form.setFieldValue("dosing.amount", "");
     form.setFieldValue("dosing.note", "");
@@ -361,12 +372,18 @@ export default function TasksScreen() {
                     <Button
                       mode="contained"
                       onPress={() => {
+                        const backDate = completionDateDraft[key]?.trim();
                         completeTask(
                           task.id,
                           aquariumId,
                           completionNoteDraft[key]?.trim() || undefined,
+                          backDate || undefined,
                         );
                         setCompletionNoteDraft((prev) => ({
+                          ...prev,
+                          [key]: "",
+                        }));
+                        setCompletionDateDraft((prev) => ({
                           ...prev,
                           [key]: "",
                         }));
@@ -375,6 +392,19 @@ export default function TasksScreen() {
                       Complete
                     </Button>
                   </View>
+                  <TextInput
+                    mode="outlined"
+                    label="Completion date (optional, backdate)"
+                    value={completionDateDraft[key] ?? ""}
+                    onChangeText={(value) =>
+                      setCompletionDateDraft((prev) => ({
+                        ...prev,
+                        [key]: value,
+                      }))
+                    }
+                    placeholder="YYYY-MM-DDTHH:mm"
+                    style={styles.completionDateInput}
+                  />
                   <TextInput
                     mode="outlined"
                     label="Completion note (optional)"
@@ -702,6 +732,39 @@ export default function TasksScreen() {
                     />
                   )}
                 </form.Field>
+                <form.Subscribe selector={(state) => state.values.task.frequency}>
+                  {(frequency) =>
+                    frequency === "daily" ? (
+                      <form.Field name="task.timesPerDay">
+                        {(field) => (
+                          <TextInput
+                            mode="outlined"
+                            label="Times per day"
+                            value={String(field.state.value)}
+                            onChangeText={(value) => {
+                              const num = parseInt(value, 10);
+                              field.handleChange(
+                                Number.isNaN(num) || num < 1 ? 1 : num,
+                              );
+                            }}
+                            keyboardType="numeric"
+                          />
+                        )}
+                      </form.Field>
+                    ) : null
+                  }
+                </form.Subscribe>
+                <form.Field name="task.startDate">
+                  {(field) => (
+                    <TextInput
+                      mode="outlined"
+                      label="Start date"
+                      value={field.state.value}
+                      onChangeText={field.handleChange}
+                      placeholder="YYYY-MM-DD"
+                    />
+                  )}
+                </form.Field>
                 <form.Field name="task.description">
                   {(field) => (
                     <TextInput
@@ -801,6 +864,9 @@ const styles = StyleSheet.create({
   },
   actionToggle: {
     marginTop: 12,
+  },
+  completionDateInput: {
+    marginTop: 10,
   },
   completionNoteInput: {
     marginTop: 10,
