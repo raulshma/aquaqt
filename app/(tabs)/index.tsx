@@ -3,47 +3,47 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import {
-    type Dispatch,
-    memo,
-    type SetStateAction,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  type Dispatch,
+  memo,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import {
-    ScrollView,
-    StyleSheet,
-    useWindowDimensions,
-    View,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import {
-    Button,
-    Card,
-    Chip,
-    FAB,
-    IconButton,
-    Portal,
-    Surface,
-    Text,
-    TextInput,
-    useTheme,
+  Button,
+  Card,
+  Chip,
+  FAB,
+  IconButton,
+  Portal,
+  Surface,
+  Text,
+  TextInput,
+  useTheme,
 } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-    AquariumBackground,
-    AssetBackground,
-    ConsumableBackground,
-    LivestockBackground,
+  AquariumBackground,
+  AssetBackground,
+  ConsumableBackground,
+  LivestockBackground,
 } from "@/components/illustrations/AnimatedCardBackgrounds";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
-    type PhotoSource,
-    PhotoSourceDialog,
+  type PhotoSource,
+  PhotoSourceDialog,
 } from "@/components/ui/photo-source-dialog";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
@@ -52,14 +52,14 @@ import { formatCurrencyAmount } from "@/services/localization";
 import { isTaskDue, toIsoDate } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
-    type Aquarium,
-    type EntityRef,
-    type Issue,
-    IssueStatus,
-    type Livestock,
-    TaskFrequency,
-    type TaskTemplate,
-    type WaterParameterLog,
+  type Aquarium,
+  type EntityRef,
+  type Issue,
+  IssueStatus,
+  type Livestock,
+  TaskFrequency,
+  type TaskTemplate,
+  type WaterParameterLog,
 } from "@/types/aquapt";
 
 const WATER_TYPES = ["freshwater", "marine", "brackish"] as const;
@@ -978,6 +978,8 @@ export default function HomeScreen() {
   const [newAssetPurchasedAt, setNewAssetPurchasedAt] = useState(
     toIsoDate(new Date()),
   );
+  const [newAssetPurchasedAtValue, setNewAssetPurchasedAtValue] = useState(new Date());
+  const [isAssetDatePickerOpen, setAssetDatePickerOpen] = useState(false);
   const [newAssetPrice, setNewAssetPrice] = useState("");
   const [newAssetPhotoUri, setNewAssetPhotoUri] = useState("");
   const [selectedAssetTaskTemplateIds, setSelectedAssetTaskTemplateIds] =
@@ -1619,6 +1621,7 @@ export default function HomeScreen() {
     setNewAssetModel("");
     setNewAssetCategory("other");
     setNewAssetPurchasedAt(toIsoDate(new Date()));
+    setNewAssetPurchasedAtValue(new Date());
     setNewAssetPrice("");
     setNewAssetPhotoUri("");
     setSelectedAssetTaskTemplateIds([]);
@@ -2984,12 +2987,13 @@ export default function HomeScreen() {
               value: category,
             }))}
           />
-          <TextInput
+          <Button
             mode="outlined"
-            label="Purchased date (YYYY-MM-DD)"
-            value={newAssetPurchasedAt}
-            onChangeText={setNewAssetPurchasedAt}
-          />
+            icon="calendar"
+            onPress={() => setAssetDatePickerOpen(true)}
+          >
+            Purchased: {newAssetPurchasedAt}
+          </Button>
           <TextInput
             mode="outlined"
             label={getCurrencyFieldLabel("Asset price", true)}
@@ -3167,6 +3171,21 @@ export default function HomeScreen() {
           />
         )}
       </editAquariumForm.Subscribe>
+
+      <DatePickerModal
+        locale="en"
+        mode="single"
+        visible={isAssetDatePickerOpen}
+        date={newAssetPurchasedAtValue}
+        onDismiss={() => setAssetDatePickerOpen(false)}
+        onConfirm={({ date }) => {
+          if (date) {
+            setNewAssetPurchasedAtValue(date);
+            setNewAssetPurchasedAt(toIsoDate(date));
+          }
+          setAssetDatePickerOpen(false);
+        }}
+      />
 
       <BottomSheet
         visible={isDialogOpen}

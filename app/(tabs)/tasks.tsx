@@ -12,6 +12,7 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
+import { DatePickerModal, TimePickerModal } from "react-native-paper-dates";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
@@ -40,12 +41,18 @@ export default function TasksScreen() {
     logDosing,
   } = useAquapt();
   const [isDialogOpen, setDialogOpen] = useState(false);
+  const [isTaskDatePickerOpen, setTaskDatePickerOpen] = useState(false);
   const [completionNoteDraft, setCompletionNoteDraft] = useState<
     Record<string, string>
   >({});
   const [completionDateDraft, setCompletionDateDraft] = useState<
     Record<string, string>
   >({});
+  const [completionDateValueDraft, setCompletionDateValueDraft] = useState<
+    Record<string, Date>
+  >({});
+  const [activeCompletionDateKey, setActiveCompletionDateKey] = useState<string | null>(null);
+  const [isCompletionTimePickerOpen, setCompletionTimePickerOpen] = useState(false);
 
   const form = useForm({
     defaultValues: {
@@ -58,6 +65,7 @@ export default function TasksScreen() {
         aquariumIds: aquariums[0]?.id ? [aquariums[0].id] : [],
         timesPerDay: 1,
         startDate: new Date().toISOString().split("T")[0],
+        startDateValue: new Date(),
       },
       dosing: {
         product: "",
@@ -93,6 +101,7 @@ export default function TasksScreen() {
         form.setFieldValue("task.aquariumIds", [value.selectedAquariumId]);
         form.setFieldValue("task.timesPerDay", 1);
         form.setFieldValue("task.startDate", new Date().toISOString().split("T")[0]);
+        form.setFieldValue("task.startDateValue", new Date());
         setDialogOpen(false);
         return;
       }
@@ -129,6 +138,7 @@ export default function TasksScreen() {
     form.setFieldValue("task.aquariumIds", aquariumId ? [aquariumId] : []);
     form.setFieldValue("task.timesPerDay", 1);
     form.setFieldValue("task.startDate", new Date().toISOString().split("T")[0]);
+    form.setFieldValue("task.startDateValue", new Date());
     form.setFieldValue("dosing.product", "");
     form.setFieldValue("dosing.amount", "");
     form.setFieldValue("dosing.note", "");
@@ -392,19 +402,22 @@ export default function TasksScreen() {
                       Complete
                     </Button>
                   </View>
-                  <TextInput
-                    mode="outlined"
-                    label="Completion date (optional, backdate)"
-                    value={completionDateDraft[key] ?? ""}
-                    onChangeText={(value) =>
-                      setCompletionDateDraft((prev) => ({
-                        ...prev,
-                        [key]: value,
-                      }))
-                    }
-                    placeholder="YYYY-MM-DDTHH:mm"
-                    style={styles.completionDateInput}
-                  />
+                    <Button
+                      mode="outlined"
+                      icon="calendar"
+                      onPress={() => {
+                        const currentDate = completionDateDraft[key]
+                          ? new Date(completionDateDraft[key])
+                          : new Date();
+                        setCompletionDateValueDraft((prev) => ({
+                          ...prev,
+                          [key]: currentDate,
+                        }));
+                        setActiveCompletionDateKey(key);
+                      }}
+                    >
+                      Backdate: {completionDateDraft[key] || "Not set"}
+                    </Button>
                   <TextInput
                     mode="outlined"
                     label="Completion note (optional)"
@@ -754,17 +767,17 @@ export default function TasksScreen() {
                     ) : null
                   }
                 </form.Subscribe>
-                <form.Field name="task.startDate">
-                  {(field) => (
-                    <TextInput
+                <form.Subscribe selector={(state) => state.values.task.startDate}>
+                  {(startDate) => (
+                    <Button
                       mode="outlined"
-                      label="Start date"
-                      value={field.state.value}
-                      onChangeText={field.handleChange}
-                      placeholder="YYYY-MM-DD"
-                    />
+                      icon="calendar"
+                      onPress={() => setTaskDatePickerOpen(true)}
+                    >
+                      Start date: {startDate}
+                    </Button>
                   )}
-                </form.Field>
+                </form.Subscribe>
                 <form.Field name="task.description">
                   {(field) => (
                     <TextInput
@@ -830,6 +843,74 @@ export default function TasksScreen() {
           setDialogOpen(true);
         }}
       />
+      <form.Subscribe selector={(state) => state.values.task.startDateValue}>
+        {(startDateValue) => (
+          <DatePickerModal
+            locale="en"
+            mode="single"
+            visible={isTaskDatePickerOpen}
+            date={startDateValue}
+            onDismiss={() => setTaskDatePickerOpen(false)}
+            onConfirm={({ date }: { date: Date | undefined }) => {
+              if (date) {
+                form.setFieldValue("task.startDateValue", date);
+                form.setFieldValue("task.startDate", date.toISOString().split("T")[0]);
+              }
+              setTaskDatePickerOpen(false);
+            }}
+          />
+        )}
+      </form.Subscribe>
+
+      {activeCompletionDateKey && (
+        <DatePickerModal
+          locale="en"
+          mode="single"
+          visible={Boolean(activeCompletionDateKey) && !isCompletionTimePickerOpen}
+          date={completionDateValueDraft[activeCompletionDateKey] || new Date()}
+          onDismiss={() => setActiveCompletionDateKey(null)}
+          onConfirm={({ date }: { date: Date | undefined }) => {
+            if (date && activeCompletionDateKey) {
+              setCompletionDateValueDraft((prev) => ({
+                ...prev,
+                [activeCompletionDateKey]: date,
+              }));
+              setCompletionTimePickerOpen(true);
+            }
+          }}
+        />
+      )}
+
+      {activeCompletionDateKey && isCompletionTimePickerOpen && (
+        <TimePickerModal
+          locale="en"
+          visible={isCompletionTimePickerOpen}
+          onDismiss={() => {
+            setCompletionTimePickerOpen(false);
+            setActiveCompletionDateKey(null);
+          }}
+          onConfirm={({ hours, minutes }: { hours: number; minutes: number }) => {
+            if (activeCompletionDateKey) {
+              const currentDate = completionDateValueDraft[activeCompletionDateKey] || new Date();
+              const newDate = new Date(currentDate);
+              newDate.setHours(hours);
+              newDate.setMinutes(minutes);
+              setCompletionDateValueDraft((prev) => ({
+                ...prev,
+                [activeCompletionDateKey]: newDate,
+              }));
+              setCompletionDateDraft((prev) => ({
+                ...prev,
+                [activeCompletionDateKey]: newDate.toISOString(),
+              }));
+            }
+            setCompletionTimePickerOpen(false);
+            setActiveCompletionDateKey(null);
+          }}
+          hours={completionDateValueDraft[activeCompletionDateKey]?.getHours() || new Date().getHours()}
+          minutes={completionDateValueDraft[activeCompletionDateKey]?.getMinutes() || new Date().getMinutes()}
+        />
+      )}
     </>
   );
 }
