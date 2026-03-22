@@ -7,38 +7,38 @@ import { Button, Card, Chip, Text, useTheme } from "react-native-paper";
 
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
-  DashboardHero,
-  DashboardScrollView,
-  DashboardSection,
+    DashboardHero,
+    DashboardScrollView,
+    DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
 import {
-  AquaptEntityStore,
-  createEntityRef,
-  getAquariumCollections,
-  getEntityHref,
-  getLivestockFeedingTasks,
-  getLivestockOffspring,
-  getRelatedTimelineEvents,
-  getTaskExecutionHistory,
-  getTimelineEventTarget,
-  parseEntityKind,
-  resolveEntityRef,
+    AquaptEntityStore,
+    createEntityRef,
+    getAquariumCollections,
+    getEntityHref,
+    getLivestockFeedingTasks,
+    getLivestockOffspring,
+    getRelatedTimelineEvents,
+    getTaskExecutionHistory,
+    getTimelineEventTarget,
+    parseEntityKind,
+    resolveEntityRef,
 } from "@/services/entity-links";
 import { formatCurrencyAmount } from "@/services/localization";
 import { isTaskDue } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
-  Asset,
-  Consumable,
-  DosingLog,
-  EntityRef,
-  Issue,
-  Livestock,
-  Memo,
-  TaskTemplate,
-  WaterParameterLog,
-  WaterParameters,
+    Asset,
+    Consumable,
+    DosingLog,
+    EntityRef,
+    Issue,
+    Livestock,
+    Memo,
+    TaskTemplate,
+    WaterParameterLog,
+    WaterParameters,
 } from "@/types/aquapt";
 
 const PARAMETER_LABELS: Record<keyof WaterParameters, string> = {
@@ -163,6 +163,44 @@ function ParameterChips({ values }: { values: WaterParameters }) {
   );
 }
 
+type QuickAction = {
+  label: string;
+  icon: string;
+  onPress: () => void;
+  variant?: "primary" | "secondary" | "tertiary";
+};
+
+function QuickActions({ actions }: { actions: QuickAction[] }) {
+  const theme = useTheme();
+
+  if (actions.length === 0) return null;
+
+  return (
+    <View style={styles.quickActionsRow}>
+      {actions.map((action, index) => (
+        <Button
+          key={index}
+          mode="contained-tonal"
+          icon={action.icon}
+          onPress={action.onPress}
+          style={[
+            styles.quickActionButton,
+            action.variant === "secondary" && {
+              backgroundColor: theme.colors.secondaryContainer,
+            },
+            action.variant === "tertiary" && {
+              backgroundColor: theme.colors.tertiaryContainer,
+            },
+          ]}
+          compact
+        >
+          {action.label}
+        </Button>
+      ))}
+    </View>
+  );
+}
+
 type GalleryItem = {
   uri: string;
   label: string;
@@ -223,7 +261,7 @@ export default function EntityDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
   const store = useAquaptStore();
-  const { settings } = useAquapt();
+  const { settings, setLivestockStatus, setIssueStatus } = useAquapt();
   const userCurrencyCode = settings.defaultCurrency ?? "USD";
   const userLocale = settings.defaultLocale;
 
@@ -484,6 +522,74 @@ export default function EntityDetailScreen() {
           )}
 
           <DashboardSection
+            title="Quick actions"
+            description="Common actions for this aquarium."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label: "Add livestock",
+                  icon: "fish",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/livestock",
+                      params: { aquariumId: aquariumCollections.aquarium.id },
+                    } as never),
+                  variant: "tertiary",
+                },
+                {
+                  label: "Log task",
+                  icon: "check-circle",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/task-execution",
+                      params: { aquariumId: aquariumCollections.aquarium.id },
+                    } as never),
+                },
+                {
+                  label: "Parameters",
+                  icon: "test-tube",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/parameter-log",
+                      params: { aquariumId: aquariumCollections.aquarium.id },
+                    } as never),
+                  variant: "secondary",
+                },
+                {
+                  label: "Dosing",
+                  icon: "flask",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/dosing",
+                      params: { aquariumId: aquariumCollections.aquarium.id },
+                    } as never),
+                  variant: "tertiary",
+                },
+                {
+                  label: "Memo",
+                  icon: "note",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/memo",
+                      params: { aquariumId: aquariumCollections.aquarium.id },
+                    } as never),
+                },
+                {
+                  label: "Issue",
+                  icon: "alert",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/issue",
+                      params: { aquariumId: aquariumCollections.aquarium.id },
+                    } as never),
+                  variant: "secondary",
+                },
+              ]}
+            />
+          </DashboardSection>
+
+          <DashboardSection
             title="Current focus"
             description="Due tasks and active issues for this aquarium."
           >
@@ -730,6 +836,46 @@ export default function EntityDetailScreen() {
             }
           />
           <DashboardSection
+            title="Quick actions"
+            description="Common actions for this task."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label: "Execute",
+                  icon: "check-circle",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/task-execution",
+                      params: {
+                        taskTemplateId: taskItem.id,
+                        aquariumId: taskItem.aquariumIds[0],
+                      },
+                    } as never),
+                  variant: "secondary",
+                },
+                {
+                  label: "Open tasks",
+                  icon: "format-list-bulleted",
+                  onPress: () => router.push("/tasks" as never),
+                },
+                {
+                  label: "View aquarium",
+                  icon: "fishbowl",
+                  onPress: () =>
+                    openEntity(
+                      createEntityRef(
+                        "aquarium",
+                        taskItem.aquariumIds[0],
+                        taskItem.aquariumIds[0],
+                      ),
+                    ),
+                  variant: "tertiary",
+                },
+              ]}
+            />
+          </DashboardSection>
+          <DashboardSection
             title="Linked aquariums"
             description="Aquarium-specific state for this task."
           >
@@ -846,6 +992,72 @@ export default function EntityDetailScreen() {
             </Card>
           ) : null}
           <DashboardSection
+            title="Quick actions"
+            description="Common actions for this livestock."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label:
+                    livestockItem.status === "deceased"
+                      ? "Revive"
+                      : "Mark deceased",
+                  icon:
+                    livestockItem.status === "deceased" ? "refresh" : "skull",
+                  onPress: () => {
+                    const newStatus =
+                      livestockItem.status === "deceased"
+                        ? "active"
+                        : "deceased";
+                    setLivestockStatus(livestockItem.id, newStatus);
+                  },
+                  variant:
+                    livestockItem.status === "deceased"
+                      ? "secondary"
+                      : undefined,
+                },
+                {
+                  label:
+                    livestockItem.status === "ill"
+                      ? "Mark healthy"
+                      : "Mark ill",
+                  icon: "medical-bag",
+                  onPress: () => {
+                    const newStatus =
+                      livestockItem.status === "ill" ? "active" : "ill";
+                    setLivestockStatus(livestockItem.id, newStatus);
+                  },
+                  variant: "secondary",
+                },
+                {
+                  label: "Add offspring",
+                  icon: "baby-face-outline",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/livestock",
+                      params: {
+                        aquariumId: livestockItem.aquariumId,
+                        parentId: livestockItem.id,
+                      },
+                    } as never),
+                  variant: "tertiary",
+                },
+                {
+                  label: "Add memo",
+                  icon: "note",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/memo",
+                      params: {
+                        aquariumId: livestockItem.aquariumId,
+                        content: `${livestockItem.name}: `,
+                      },
+                    } as never),
+                },
+              ]}
+            />
+          </DashboardSection>
+          <DashboardSection
             title="Related links"
             description="Family and feeding connections for this livestock."
           >
@@ -916,6 +1128,53 @@ export default function EntityDetailScreen() {
             }
           />
           <DashboardSection
+            title="Quick actions"
+            description="Common actions for this asset."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label: "Log maintenance",
+                  icon: "wrench",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/task-execution",
+                      params: {
+                        aquariumId: assetItem.aquariumId,
+                        assetId: assetItem.id,
+                      },
+                    } as never),
+                  variant: "secondary",
+                },
+                {
+                  label: "View aquarium",
+                  icon: "fishbowl",
+                  onPress: () =>
+                    openEntity(
+                      createEntityRef(
+                        "aquarium",
+                        assetItem.aquariumId,
+                        assetItem.aquariumId,
+                      ),
+                    ),
+                  variant: "tertiary",
+                },
+                {
+                  label: "Log memo",
+                  icon: "note",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/memo",
+                      params: {
+                        aquariumId: assetItem.aquariumId,
+                        content: `${assetItem.brandModel}: `,
+                      },
+                    } as never),
+                },
+              ]}
+            />
+          </DashboardSection>
+          <DashboardSection
             title="Asset details"
             description="Purchase data and linked maintenance tasks."
           >
@@ -976,6 +1235,50 @@ export default function EntityDetailScreen() {
             }
           />
           <DashboardSection
+            title="Quick actions"
+            description="Common actions for this consumable."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label: "Use stock",
+                  icon: "minus-circle",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/consumable",
+                      params: { id: consumableItem.id },
+                    } as never),
+                  variant: "secondary",
+                },
+                {
+                  label: "View aquarium",
+                  icon: "fishbowl",
+                  onPress: () =>
+                    openEntity(
+                      createEntityRef(
+                        "aquarium",
+                        consumableItem.aquariumId,
+                        consumableItem.aquariumId,
+                      ),
+                    ),
+                  variant: "tertiary",
+                },
+                {
+                  label: "Report issue",
+                  icon: "alert",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/issue",
+                      params: {
+                        aquariumId: consumableItem.aquariumId,
+                        title: `${consumableItem.name}: `,
+                      },
+                    } as never),
+                },
+              ]}
+            />
+          </DashboardSection>
+          <DashboardSection
             title="Stock state"
             description="Current amount and reorder threshold."
           >
@@ -993,64 +1296,186 @@ export default function EntityDetailScreen() {
         </>
       ) : null}
       {issueItem ? (
-        <DashboardHero
-          title={issueItem.title}
-          subtitle={`${issueItem.status} • ${new Date(issueItem.createdAt).toLocaleString()}`}
-          tone="error"
-          chips={
-            <>
-              <LinkChip
-                label={resolved.aquarium?.name ?? "Aquarium"}
-                icon="fishbowl"
-                entityRef={createEntityRef(
-                  "aquarium",
-                  issueItem.aquariumId,
-                  issueItem.aquariumId,
-                )}
-              />
-            </>
-          }
-        />
+        <>
+          <DashboardHero
+            title={issueItem.title}
+            subtitle={`${issueItem.status} • ${new Date(issueItem.createdAt).toLocaleString()}`}
+            tone="error"
+            chips={
+              <>
+                <LinkChip
+                  label={resolved.aquarium?.name ?? "Aquarium"}
+                  icon="fishbowl"
+                  entityRef={createEntityRef(
+                    "aquarium",
+                    issueItem.aquariumId,
+                    issueItem.aquariumId,
+                  )}
+                />
+              </>
+            }
+          />
+          <DashboardSection
+            title="Quick actions"
+            description="Common actions for this issue."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label: issueItem.status === "resolved" ? "Reopen" : "Resolve",
+                  icon:
+                    issueItem.status === "resolved"
+                      ? "refresh"
+                      : "check-circle",
+                  onPress: () =>
+                    setIssueStatus(
+                      issueItem.id,
+                      issueItem.status === "resolved" ? "open" : "resolved",
+                    ),
+                  variant:
+                    issueItem.status === "resolved" ? undefined : "secondary",
+                },
+                {
+                  label:
+                    issueItem.status === "monitoring"
+                      ? "Stop monitoring"
+                      : "Monitor",
+                  icon: "eye",
+                  onPress: () =>
+                    setIssueStatus(
+                      issueItem.id,
+                      issueItem.status === "monitoring" ? "open" : "monitoring",
+                    ),
+                  variant: "tertiary",
+                },
+                {
+                  label: "View aquarium",
+                  icon: "fishbowl",
+                  onPress: () =>
+                    openEntity(
+                      createEntityRef(
+                        "aquarium",
+                        issueItem.aquariumId,
+                        issueItem.aquariumId,
+                      ),
+                    ),
+                },
+              ]}
+            />
+          </DashboardSection>
+        </>
       ) : null}
       {memoItem ? (
-        <DashboardHero
-          title="Memo"
-          subtitle={new Date(memoItem.createdAt).toLocaleString()}
-          tone="surfaceVariant"
-          chips={
-            <>
-              <LinkChip
-                label={resolved.aquarium?.name ?? "Aquarium"}
-                icon="fishbowl"
-                entityRef={createEntityRef(
-                  "aquarium",
-                  memoItem.aquariumId,
-                  memoItem.aquariumId,
-                )}
-              />
-            </>
-          }
-        />
+        <>
+          <DashboardHero
+            title="Memo"
+            subtitle={new Date(memoItem.createdAt).toLocaleString()}
+            tone="surfaceVariant"
+            chips={
+              <>
+                <LinkChip
+                  label={resolved.aquarium?.name ?? "Aquarium"}
+                  icon="fishbowl"
+                  entityRef={createEntityRef(
+                    "aquarium",
+                    memoItem.aquariumId,
+                    memoItem.aquariumId,
+                  )}
+                />
+              </>
+            }
+          />
+          <DashboardSection
+            title="Quick actions"
+            description="Common actions for this memo."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label: "View aquarium",
+                  icon: "fishbowl",
+                  onPress: () =>
+                    openEntity(
+                      createEntityRef(
+                        "aquarium",
+                        memoItem.aquariumId,
+                        memoItem.aquariumId,
+                      ),
+                    ),
+                  variant: "tertiary",
+                },
+                {
+                  label: "Add follow-up",
+                  icon: "note-plus",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/memo",
+                      params: {
+                        aquariumId: memoItem.aquariumId,
+                        content: `${memoItem.content}\n\nFollow-up: `,
+                      },
+                    } as never),
+                },
+              ]}
+            />
+          </DashboardSection>
+        </>
       ) : null}
       {dosingItem ? (
-        <DashboardHero
-          title={dosingItem.product}
-          subtitle={`${dosingItem.amountMl}ml • ${new Date(dosingItem.createdAt).toLocaleString()}`}
-          tone="tertiary"
-          chips={
-            <>
-              <LinkChip
-                label={resolved.aquarium?.name ?? "Aquarium"}
-                icon="fishbowl"
-                entityRef={createEntityRef(
-                  "aquarium",
-                  dosingItem.aquariumId,
-                  dosingItem.aquariumId,
-                )}
-              />
-            </>
-          }
-        />
+        <>
+          <DashboardHero
+            title={dosingItem.product}
+            subtitle={`${dosingItem.amountMl}ml • ${new Date(dosingItem.createdAt).toLocaleString()}`}
+            tone="tertiary"
+            chips={
+              <>
+                <LinkChip
+                  label={resolved.aquarium?.name ?? "Aquarium"}
+                  icon="fishbowl"
+                  entityRef={createEntityRef(
+                    "aquarium",
+                    dosingItem.aquariumId,
+                    dosingItem.aquariumId,
+                  )}
+                />
+              </>
+            }
+          />
+          <DashboardSection
+            title="Quick actions"
+            description="Common actions for this dosing log."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label: "Dose again",
+                  icon: "flask",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/dosing",
+                      params: {
+                        aquariumId: dosingItem.aquariumId,
+                        product: dosingItem.product,
+                      },
+                    } as never),
+                  variant: "tertiary",
+                },
+                {
+                  label: "View aquarium",
+                  icon: "fishbowl",
+                  onPress: () =>
+                    openEntity(
+                      createEntityRef(
+                        "aquarium",
+                        dosingItem.aquariumId,
+                        dosingItem.aquariumId,
+                      ),
+                    ),
+                },
+              ]}
+            />
+          </DashboardSection>
+        </>
       ) : null}
       {parameterLogItem ? (
         <>
@@ -1081,6 +1506,40 @@ export default function EntityDetailScreen() {
               </>
             }
           />
+          <DashboardSection
+            title="Quick actions"
+            description="Common actions for this parameter log."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label: "Log new",
+                  icon: "test-tube",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-form/parameter-log",
+                      params: {
+                        aquariumId: parameterLogItem.aquariumId,
+                      },
+                    } as never),
+                  variant: "secondary",
+                },
+                {
+                  label: "View aquarium",
+                  icon: "fishbowl",
+                  onPress: () =>
+                    openEntity(
+                      createEntityRef(
+                        "aquarium",
+                        parameterLogItem.aquariumId,
+                        parameterLogItem.aquariumId,
+                      ),
+                    ),
+                  variant: "tertiary",
+                },
+              ]}
+            />
+          </DashboardSection>
           <DashboardSection
             title="Recorded values"
             description="Full values saved in this entry."
@@ -1258,5 +1717,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
+  },
+  quickActionsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  quickActionButton: {
+    borderRadius: 20,
   },
 });
