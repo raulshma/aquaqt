@@ -10,6 +10,7 @@ import {
     TextInput,
     useTheme,
 } from "react-native-paper";
+import { DatePickerModal, TimePickerModal } from "react-native-paper-dates";
 
 import {
     DashboardHero,
@@ -28,14 +29,20 @@ import type {
     WaterParameters,
 } from "@/types/aquapt";
 
-type SupportedFormKind =
-  | "livestock"
-  | "task-execution"
-  | "parameter-log"
-  | "dosing"
-  | "memo"
-  | "issue"
-  | "consumable";
+const SUPPORTED_FORM_KINDS = [
+  "livestock",
+  "task-execution",
+  "parameter-log",
+  "dosing",
+  "memo",
+  "issue",
+  "consumable",
+] as const;
+
+type SupportedFormKind = (typeof SUPPORTED_FORM_KINDS)[number];
+type AquaptApi = ReturnType<typeof useAquapt>;
+type AddLivestockInput = Parameters<AquaptApi["addLivestock"]>[0];
+type AddConsumableInput = Parameters<AquaptApi["addConsumable"]>[0];
 
 type PropertyType = "string" | "number" | "datetime" | "enum";
 type FieldSection = "core" | "optional";
@@ -57,8 +64,8 @@ interface DynamicField<TFieldKey extends string = string> {
   options?: FieldOption[];
 }
 
-type LivestockFormModel = Pick<
-  Livestock,
+type LivestockFieldShape = Pick<
+  AddLivestockInput,
   | "kind"
   | "name"
   | "species"
@@ -70,20 +77,20 @@ type LivestockFormModel = Pick<
   | "photoUri"
 >;
 
-type TaskExecutionFormModel = Pick<
+type TaskExecutionFieldShape = Pick<
   TaskExecution,
   "taskTemplateId" | "completedAt" | "note"
 >;
 
-type DosingFormModel = Pick<DosingLog, "product" | "amountMl" | "note">;
-type MemoFormModel = Pick<Memo, "content" | "photoUri" | "createdAt">;
-type IssueFormModel = Pick<Issue, "title">;
-type ConsumableFormModel = Pick<
-  Consumable,
+type DosingFieldShape = Pick<DosingLog, "product" | "amountMl" | "note">;
+type MemoFieldShape = Pick<Memo, "content" | "photoUri" | "createdAt">;
+type IssueFieldShape = Pick<Issue, "title">;
+type ConsumableFieldShape = Pick<
+  AddConsumableInput,
   "name" | "unit" | "remaining" | "reorderAt" | "photoUri"
 >;
-type ConsumableUseFormModel = {
-  amountUsed: number;
+type ConsumableUseFieldShape = {
+  amountUsed: string;
   note?: string;
 };
 
@@ -134,7 +141,7 @@ const WATER_PARAMETER_KEYS: (keyof WaterParameters)[] = [
   "alkalinity",
 ];
 
-const LIVESTOCK_FIELDS: DynamicField<keyof LivestockFormModel>[] = [
+const LIVESTOCK_FIELDS: DynamicField<keyof LivestockFieldShape>[] = [
   { key: "name", label: "Name", propertyType: "string", required: true },
   {
     key: "species",
@@ -190,7 +197,7 @@ const LIVESTOCK_FIELDS: DynamicField<keyof LivestockFormModel>[] = [
   },
 ];
 
-const DOSING_FIELDS: DynamicField<keyof DosingFormModel>[] = [
+const DOSING_FIELDS: DynamicField<keyof DosingFieldShape>[] = [
   {
     key: "product",
     label: "Product",
@@ -212,7 +219,7 @@ const DOSING_FIELDS: DynamicField<keyof DosingFormModel>[] = [
   },
 ];
 
-const MEMO_FIELDS: DynamicField<keyof MemoFormModel>[] = [
+const MEMO_FIELDS: DynamicField<keyof MemoFieldShape>[] = [
   {
     key: "content",
     label: "Content",
@@ -235,7 +242,7 @@ const MEMO_FIELDS: DynamicField<keyof MemoFormModel>[] = [
   },
 ];
 
-const ISSUE_FIELDS: DynamicField<keyof IssueFormModel>[] = [
+const ISSUE_FIELDS: DynamicField<keyof IssueFieldShape>[] = [
   {
     key: "title",
     label: "Title",
@@ -244,7 +251,7 @@ const ISSUE_FIELDS: DynamicField<keyof IssueFormModel>[] = [
   },
 ];
 
-const CONSUMABLE_FIELDS: DynamicField<keyof ConsumableFormModel>[] = [
+const CONSUMABLE_FIELDS: DynamicField<keyof ConsumableFieldShape>[] = [
   {
     key: "name",
     label: "Name",
@@ -278,7 +285,7 @@ const CONSUMABLE_FIELDS: DynamicField<keyof ConsumableFormModel>[] = [
   },
 ];
 
-const CONSUMABLE_USE_FIELDS: DynamicField<keyof ConsumableUseFormModel>[] = [
+const CONSUMABLE_USE_FIELDS: DynamicField<keyof ConsumableUseFieldShape>[] = [
   {
     key: "amountUsed",
     label: "Amount used",
@@ -312,6 +319,42 @@ function parseNumberOrNaN(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : NaN;
 }
 
+function parseDateValue(value: string | undefined) {
+  if (!value?.trim()) {
+    return new Date();
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date();
+  }
+
+  return parsed;
+}
+
+function formatDateTimeLabel(value: string | undefined) {
+  if (!value?.trim()) {
+    return "Select date & time";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Select date & time";
+  }
+
+  return parsed.toLocaleString();
+}
+
+function isSupportedFormKind(
+  value: string | undefined,
+): value is SupportedFormKind {
+  if (!value) {
+    return false;
+  }
+
+  return (SUPPORTED_FORM_KINDS as readonly string[]).includes(value);
+}
+
 function fieldKeyboardType(
   field: DynamicField,
 ): "default" | "decimal-pad" | "numeric" {
@@ -333,7 +376,7 @@ function buildParameterFields(): DynamicField<keyof WaterParameters>[] {
 
 function buildTaskExecutionFields(
   taskOptions: FieldOption[],
-): DynamicField<keyof TaskExecutionFormModel>[] {
+): DynamicField<keyof TaskExecutionFieldShape>[] {
   return [
     {
       key: "taskTemplateId",
@@ -468,16 +511,7 @@ export default function EntityFormScreen() {
   } = useAquapt();
 
   const kindParam = getSingleParam(params.kind);
-  const formKind =
-    kindParam === "livestock" ||
-    kindParam === "task-execution" ||
-    kindParam === "parameter-log" ||
-    kindParam === "dosing" ||
-    kindParam === "memo" ||
-    kindParam === "issue" ||
-    kindParam === "consumable"
-      ? kindParam
-      : undefined;
+  const formKind = isSupportedFormKind(kindParam) ? kindParam : undefined;
 
   const parentId = getSingleParam(params.parentId);
   const consumableId = getSingleParam(params.id);
@@ -490,6 +524,12 @@ export default function EntityFormScreen() {
   );
   const [errorText, setErrorText] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
+  const [activeDateTimeField, setActiveDateTimeField] = useState<string | null>(
+    null,
+  );
+  const [isDatePickerOpen, setDatePickerOpen] = useState(false);
+  const [isTimePickerOpen, setTimePickerOpen] = useState(false);
+  const [dateTimeDraft, setDateTimeDraft] = useState(new Date());
 
   useEffect(() => {
     const selectedExists = aquariums.some((aq) => aq.id === selectedAquariumId);
@@ -613,6 +653,18 @@ export default function EntityFormScreen() {
     setValues((prev) => ({ ...prev, [key]: value }));
   };
 
+  const openDateTimePicker = (fieldKey: string) => {
+    setActiveDateTimeField(fieldKey);
+    setDateTimeDraft(parseDateValue(values[fieldKey]));
+    setDatePickerOpen(true);
+  };
+
+  const closeDateTimePicker = () => {
+    setDatePickerOpen(false);
+    setTimePickerOpen(false);
+    setActiveDateTimeField(null);
+  };
+
   const renderField = (field: DynamicField) => {
     const currentValue = values[field.key] ?? "";
 
@@ -632,6 +684,30 @@ export default function EntityFormScreen() {
               </Chip>
             ))}
           </View>
+          {field.helperText ? (
+            <Text variant="bodySmall" style={styles.helperMuted}>
+              {field.helperText}
+            </Text>
+          ) : null}
+        </View>
+      );
+    }
+
+    if (field.propertyType === "datetime") {
+      return (
+        <View key={field.key} style={styles.fieldBlock}>
+          <Text variant="labelLarge">
+            {field.label}
+            {field.required ? " *" : ""}
+          </Text>
+          <Button
+            mode="outlined"
+            icon="calendar-clock"
+            onPress={() => openDateTimePicker(field.key)}
+            contentStyle={styles.dateButtonContent}
+          >
+            {formatDateTimeLabel(currentValue)}
+          </Button>
           {field.helperText ? (
             <Text variant="bodySmall" style={styles.helperMuted}>
               {field.helperText}
@@ -830,7 +906,7 @@ export default function EntityFormScreen() {
   if (!formKind) {
     return (
       <DashboardScrollView>
-        <Stack.Screen options={{ title: "Entity form" }} />
+        <Stack.Screen options={{ headerShown: false }} />
         <DashboardHero
           title="Invalid action"
           subtitle="This action link is missing a valid form type."
@@ -842,7 +918,7 @@ export default function EntityFormScreen() {
 
   return (
     <DashboardScrollView>
-      <Stack.Screen options={{ title: formTitle }} />
+      <Stack.Screen options={{ headerShown: false }} />
       <DashboardHero
         title={formTitle}
         subtitle={
@@ -855,7 +931,7 @@ export default function EntityFormScreen() {
 
       <DashboardSection
         title="Form"
-        description="Inputs are generated from each entity property's type."
+        description="Inputs are generated from each entity property type, including native date-time pickers."
       >
         <Card
           mode="contained"
@@ -931,6 +1007,45 @@ export default function EntityFormScreen() {
           </Card.Content>
         </Card>
       </DashboardSection>
+
+      <DatePickerModal
+        locale="en"
+        mode="single"
+        visible={isDatePickerOpen}
+        date={dateTimeDraft}
+        onDismiss={closeDateTimePicker}
+        onConfirm={({ date }: { date: Date | undefined }) => {
+          if (date) {
+            setDateTimeDraft(date);
+            setDatePickerOpen(false);
+            setTimePickerOpen(true);
+            return;
+          }
+
+          closeDateTimePicker();
+        }}
+      />
+
+      <TimePickerModal
+        locale="en"
+        visible={isTimePickerOpen}
+        onDismiss={closeDateTimePicker}
+        onConfirm={({ hours, minutes }: { hours: number; minutes: number }) => {
+          const nextDate = new Date(dateTimeDraft);
+          nextDate.setHours(hours);
+          nextDate.setMinutes(minutes);
+          nextDate.setSeconds(0);
+          nextDate.setMilliseconds(0);
+
+          if (activeDateTimeField) {
+            setFieldValue(activeDateTimeField, nextDate.toISOString());
+          }
+
+          closeDateTimePicker();
+        }}
+        hours={dateTimeDraft.getHours()}
+        minutes={dateTimeDraft.getMinutes()}
+      />
     </DashboardScrollView>
   );
 }
@@ -944,6 +1059,9 @@ const styles = StyleSheet.create({
   },
   fieldBlock: {
     gap: 8,
+  },
+  dateButtonContent: {
+    justifyContent: "flex-start",
   },
   helperMuted: {
     opacity: 0.7,
