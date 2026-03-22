@@ -1,31 +1,38 @@
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
-    Button,
-    Card,
-    Chip,
-    HelperText,
-    Text,
-    TextInput,
-    useTheme,
+  Button,
+  Card,
+  Chip,
+  HelperText,
+  IconButton,
+  Text,
+  TextInput,
+  useTheme
 } from "react-native-paper";
 import { DatePickerModal, TimePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-    DashboardHero,
-    DashboardSection,
+  DashboardHero,
+  DashboardSection,
 } from "@/components/ui/dashboard-shell";
+import {
+  type PhotoSource,
+  PhotoSourceDialog,
+} from "@/components/ui/photo-source-dialog";
 import { useAquapt } from "@/context/aquapt-context";
 import type {
-    Consumable,
-    DosingLog,
-    Issue,
-    Livestock,
-    Memo,
-    TaskExecution,
-    WaterParameters,
+  Consumable,
+  DosingLog,
+  Issue,
+  Livestock,
+  Memo,
+  TaskExecution,
+  WaterParameters,
 } from "@/types/aquapt";
 
 const SUPPORTED_FORM_KINDS = [
@@ -43,7 +50,7 @@ type AquaptApi = ReturnType<typeof useAquapt>;
 type AddLivestockInput = Parameters<AquaptApi["addLivestock"]>[0];
 type AddConsumableInput = Parameters<AquaptApi["addConsumable"]>[0];
 
-type PropertyType = "string" | "number" | "datetime" | "enum";
+type PropertyType = "string" | "number" | "datetime" | "enum" | "photo";
 type FieldSection = "core" | "optional";
 
 interface FieldOption {
@@ -181,8 +188,8 @@ const LIVESTOCK_FIELDS: DynamicField<keyof LivestockFieldShape>[] = [
   },
   {
     key: "photoUri",
-    label: "Photo URI",
-    propertyType: "string",
+    label: "Photo",
+    propertyType: "photo",
     section: "optional",
   },
 ];
@@ -221,8 +228,8 @@ const MEMO_FIELDS: DynamicField<keyof MemoFieldShape>[] = [
   },
   {
     key: "photoUri",
-    label: "Photo URI",
-    propertyType: "string",
+    label: "Photo",
+    propertyType: "photo",
     section: "optional",
   },
 ];
@@ -254,8 +261,8 @@ const CONSUMABLE_FIELDS: DynamicField<keyof ConsumableFieldShape>[] = [
   },
   {
     key: "photoUri",
-    label: "Photo URI",
-    propertyType: "string",
+    label: "Photo",
+    propertyType: "photo",
     section: "optional",
   },
 ];
@@ -462,6 +469,8 @@ export default function EntityFormScreen() {
   const [isDatePickerOpen, setDatePickerOpen] = useState(false);
   const [isTimePickerOpen, setTimePickerOpen] = useState(false);
   const [dateTimeDraft, setDateTimeDraft] = useState(new Date());
+  const [photoDialogField, setPhotoDialogField] = useState<string | null>(null);
+  const [isPhotoLoading, setPhotoLoading] = useState(false);
 
   useEffect(() => {
     const selectedExists = aquariums.some((aq) => aq.id === selectedAquariumId);
@@ -568,6 +577,58 @@ export default function EntityFormScreen() {
     setActiveDateTimeField(null);
   };
 
+  const pickPhotoFromSource = async (source: PhotoSource) => {
+    if (!photoDialogField) return;
+
+    setPhotoDialogField(null);
+    setPhotoLoading(true);
+
+    try {
+      const permission =
+        source === "camera"
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        return;
+      }
+
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: ["images"],
+              allowsEditing: true,
+              quality: 0.7,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ["images"],
+              allowsEditing: true,
+              quality: 0.7,
+            });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setFieldValue(photoDialogField, result.assets[0].uri);
+      }
+    } finally {
+      setPhotoLoading(false);
+    }
+  };
+
+  const openPhotoDialog = (fieldKey: string) => {
+    setPhotoDialogField(fieldKey);
+  };
+
+  const closePhotoDialog = () => {
+    setPhotoDialogField(null);
+  };
+
+  const removePhoto = () => {
+    if (photoDialogField) {
+      setFieldValue(photoDialogField, "");
+    }
+    setPhotoDialogField(null);
+  };
+
   const renderField = (field: DynamicField) => {
     const currentValue = values[field.key] ?? "";
 
@@ -587,6 +648,53 @@ export default function EntityFormScreen() {
               </Chip>
             ))}
           </View>
+          {field.helperText ? (
+            <Text variant="bodySmall" style={styles.helperMuted}>
+              {field.helperText}
+            </Text>
+          ) : null}
+        </View>
+      );
+    }
+
+    if (field.propertyType === "photo") {
+      const hasPhoto = !!currentValue;
+      return (
+        <View key={field.key} style={styles.fieldBlock}>
+          <Text variant="labelLarge">{field.label}</Text>
+          {hasPhoto ? (
+            <View style={styles.photoContainer}>
+              <Image
+                source={{ uri: currentValue }}
+                style={styles.photoPreview}
+                contentFit="cover"
+              />
+              <View style={styles.photoActions}>
+                <IconButton
+                  icon="camera"
+                  mode="contained-tonal"
+                  size={20}
+                  onPress={() => openPhotoDialog(field.key)}
+                />
+                <IconButton
+                  icon="delete-outline"
+                  mode="contained-tonal"
+                  size={20}
+                  iconColor={theme.colors.error}
+                  onPress={() => setFieldValue(field.key, "")}
+                />
+              </View>
+            </View>
+          ) : (
+            <Button
+              mode="outlined"
+              icon="camera"
+              onPress={() => openPhotoDialog(field.key)}
+              style={styles.photoButton}
+            >
+              Add photo
+            </Button>
+          )}
           {field.helperText ? (
             <Text variant="bodySmall" style={styles.helperMuted}>
               {field.helperText}
@@ -945,6 +1053,16 @@ export default function EntityFormScreen() {
         minutes={dateTimeDraft.getMinutes()}
       />
 
+      <PhotoSourceDialog
+        visible={photoDialogField !== null}
+        title={`${fields.find((f) => f.key === photoDialogField)?.label ?? "Photo"}`}
+        hasCurrentPhoto={!!(photoDialogField && values[photoDialogField])}
+        loading={isPhotoLoading}
+        onDismiss={closePhotoDialog}
+        onPickSource={pickPhotoFromSource}
+        onRemovePhoto={removePhoto}
+      />
+
       <View
         style={[
           styles.footer,
@@ -1018,5 +1136,22 @@ const styles = StyleSheet.create({
   },
   footerButton: {
     flex: 1,
+  },
+  photoContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  photoPreview: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+  },
+  photoActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  photoButton: {
+    alignSelf: "flex-start",
   },
 });
