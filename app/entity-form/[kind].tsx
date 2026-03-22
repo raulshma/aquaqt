@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import {
     Button,
     Card,
@@ -11,10 +11,10 @@ import {
     useTheme,
 } from "react-native-paper";
 import { DatePickerModal, TimePickerModal } from "react-native-paper-dates";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
     DashboardHero,
-    DashboardScrollView,
     DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
@@ -25,7 +25,6 @@ import type {
     Livestock,
     Memo,
     TaskExecution,
-    TaskTemplate,
     WaterParameters,
 } from "@/types/aquapt";
 
@@ -81,7 +80,6 @@ type TaskExecutionFieldShape = Pick<
   TaskExecution,
   "taskTemplateId" | "completedAt" | "note"
 >;
-
 type DosingFieldShape = Pick<DosingLog, "product" | "amountMl" | "note">;
 type MemoFieldShape = Pick<Memo, "content" | "photoUri" | "createdAt">;
 type IssueFieldShape = Pick<Issue, "title">;
@@ -89,10 +87,7 @@ type ConsumableFieldShape = Pick<
   AddConsumableInput,
   "name" | "unit" | "remaining" | "reorderAt" | "photoUri"
 >;
-type ConsumableUseFieldShape = {
-  amountUsed: string;
-  note?: string;
-};
+type ConsumableUseFieldShape = { amountUsed: string; note?: string };
 
 const LIVESTOCK_KIND_OPTIONS: FieldOption[] = [
   { label: "Fish", value: "fish" },
@@ -143,12 +138,7 @@ const WATER_PARAMETER_KEYS: (keyof WaterParameters)[] = [
 
 const LIVESTOCK_FIELDS: DynamicField<keyof LivestockFieldShape>[] = [
   { key: "name", label: "Name", propertyType: "string", required: true },
-  {
-    key: "species",
-    label: "Species",
-    propertyType: "string",
-    required: true,
-  },
+  { key: "species", label: "Species", propertyType: "string", required: true },
   {
     key: "quantity",
     label: "Quantity",
@@ -174,7 +164,7 @@ const LIVESTOCK_FIELDS: DynamicField<keyof LivestockFieldShape>[] = [
     label: "Acquired at",
     propertyType: "datetime",
     required: true,
-    helperText: "ISO date/time preferred (e.g. 2026-03-22T08:15:00.000Z)",
+    helperText: "Choose date and time",
   },
   {
     key: "purchasePrice",
@@ -198,12 +188,7 @@ const LIVESTOCK_FIELDS: DynamicField<keyof LivestockFieldShape>[] = [
 ];
 
 const DOSING_FIELDS: DynamicField<keyof DosingFieldShape>[] = [
-  {
-    key: "product",
-    label: "Product",
-    propertyType: "string",
-    required: true,
-  },
+  { key: "product", label: "Product", propertyType: "string", required: true },
   {
     key: "amountMl",
     label: "Amount (ml)",
@@ -232,7 +217,7 @@ const MEMO_FIELDS: DynamicField<keyof MemoFieldShape>[] = [
     label: "Created at",
     propertyType: "datetime",
     section: "optional",
-    helperText: "Optional. If blank, current time is used.",
+    helperText: "Optional; defaults to now",
   },
   {
     key: "photoUri",
@@ -243,21 +228,11 @@ const MEMO_FIELDS: DynamicField<keyof MemoFieldShape>[] = [
 ];
 
 const ISSUE_FIELDS: DynamicField<keyof IssueFieldShape>[] = [
-  {
-    key: "title",
-    label: "Title",
-    propertyType: "string",
-    required: true,
-  },
+  { key: "title", label: "Title", propertyType: "string", required: true },
 ];
 
 const CONSUMABLE_FIELDS: DynamicField<keyof ConsumableFieldShape>[] = [
-  {
-    key: "name",
-    label: "Name",
-    propertyType: "string",
-    required: true,
-  },
+  { key: "name", label: "Name", propertyType: "string", required: true },
   {
     key: "unit",
     label: "Unit",
@@ -305,11 +280,14 @@ function getSingleParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function parseOptionalNumber(value: string | undefined) {
-  if (!value?.trim()) {
-    return undefined;
-  }
+function isSupportedFormKind(
+  value: string | undefined,
+): value is SupportedFormKind {
+  return !!value && (SUPPORTED_FORM_KINDS as readonly string[]).includes(value);
+}
 
+function parseOptionalNumber(value: string | undefined) {
+  if (!value?.trim()) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
@@ -320,49 +298,23 @@ function parseNumberOrNaN(value: string | undefined) {
 }
 
 function parseDateValue(value: string | undefined) {
-  if (!value?.trim()) {
-    return new Date();
-  }
-
+  if (!value?.trim()) return new Date();
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return new Date();
-  }
-
-  return parsed;
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 function formatDateTimeLabel(value: string | undefined) {
-  if (!value?.trim()) {
-    return "Select date & time";
-  }
-
+  if (!value?.trim()) return "Select date & time";
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "Select date & time";
-  }
-
-  return parsed.toLocaleString();
-}
-
-function isSupportedFormKind(
-  value: string | undefined,
-): value is SupportedFormKind {
-  if (!value) {
-    return false;
-  }
-
-  return (SUPPORTED_FORM_KINDS as readonly string[]).includes(value);
+  return Number.isNaN(parsed.getTime())
+    ? "Select date & time"
+    : parsed.toLocaleString();
 }
 
 function fieldKeyboardType(
   field: DynamicField,
 ): "default" | "decimal-pad" | "numeric" {
-  if (field.propertyType === "number") {
-    return "decimal-pad";
-  }
-
-  return "default";
+  return field.propertyType === "number" ? "decimal-pad" : "default";
 }
 
 function buildParameterFields(): DynamicField<keyof WaterParameters>[] {
@@ -390,7 +342,7 @@ function buildTaskExecutionFields(
       label: "Completed at",
       propertyType: "datetime",
       section: "optional",
-      helperText: "Optional. If blank, current time is used.",
+      helperText: "Optional; defaults to now",
     },
     {
       key: "note",
@@ -403,10 +355,9 @@ function buildTaskExecutionFields(
 }
 
 function hasAnyWaterParameter(values: Record<string, string>) {
-  return WATER_PARAMETER_KEYS.some((key) => {
-    const numberValue = parseOptionalNumber(values[key]);
-    return numberValue !== undefined;
-  });
+  return WATER_PARAMETER_KEYS.some(
+    (key) => parseOptionalNumber(values[key]) !== undefined,
+  );
 }
 
 function buildInitialValues(
@@ -441,16 +392,12 @@ function buildInitialValues(
         note: "",
       };
     case "parameter-log":
-      return WATER_PARAMETER_KEYS.reduce<Record<string, string>>((acc, key) => {
-        acc[key] = "";
-        return acc;
-      }, {});
+      return WATER_PARAMETER_KEYS.reduce<Record<string, string>>(
+        (acc, key) => ({ ...acc, [key]: "" }),
+        {},
+      );
     case "dosing":
-      return {
-        product: options.product ?? "",
-        amountMl: "",
-        note: "",
-      };
+      return { product: options.product ?? "", amountMl: "", note: "" };
     case "memo":
       return {
         content: options.content ?? "",
@@ -458,32 +405,18 @@ function buildInitialValues(
         photoUri: "",
       };
     case "issue":
-      return {
-        title: options.title ?? "",
-      };
+      return { title: options.title ?? "" };
     case "consumable":
-      if (options.targetConsumable) {
-        return {
-          amountUsed: "",
-          note: "",
-        };
-      }
-
-      return {
-        name: "",
-        unit: "ml",
-        remaining: "",
-        reorderAt: "",
-        photoUri: "",
-      };
-    default:
-      return {};
+      return options.targetConsumable
+        ? { amountUsed: "", note: "" }
+        : { name: "", unit: "ml", remaining: "", reorderAt: "", photoUri: "" };
   }
 }
 
 export default function EntityFormScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     kind?: string;
     aquariumId?: string;
@@ -512,7 +445,6 @@ export default function EntityFormScreen() {
 
   const kindParam = getSingleParam(params.kind);
   const formKind = isSupportedFormKind(kindParam) ? kindParam : undefined;
-
   const parentId = getSingleParam(params.parentId);
   const consumableId = getSingleParam(params.id);
   const targetConsumable = consumableId
@@ -533,11 +465,9 @@ export default function EntityFormScreen() {
 
   useEffect(() => {
     const selectedExists = aquariums.some((aq) => aq.id === selectedAquariumId);
-
     if (!selectedExists && aquariums.length > 0 && !targetConsumable) {
       setSelectedAquariumId(aquariums[0].id);
     }
-
     if (
       targetConsumable &&
       selectedAquariumId !== targetConsumable.aquariumId
@@ -570,55 +500,30 @@ export default function EntityFormScreen() {
     targetConsumable,
   ]);
 
-  const tasksForAquarium = useMemo<TaskTemplate[]>(() => {
-    if (!selectedAquariumId) {
-      return taskTemplates;
-    }
-
+  const tasksForAquarium = useMemo(() => {
+    if (!selectedAquariumId) return taskTemplates;
     return taskTemplates.filter((task) =>
       task.aquariumIds.includes(selectedAquariumId),
     );
   }, [selectedAquariumId, taskTemplates]);
 
-  const taskOptions = useMemo<FieldOption[]>(
+  const taskOptions = useMemo(
     () =>
       tasksForAquarium.map((task) => ({ label: task.title, value: task.id })),
     [tasksForAquarium],
   );
 
   const fields = useMemo<DynamicField[]>(() => {
-    if (!formKind) {
-      return [];
-    }
-
-    if (formKind === "livestock") {
-      return LIVESTOCK_FIELDS;
-    }
-
-    if (formKind === "task-execution") {
+    if (!formKind) return [];
+    if (formKind === "livestock") return LIVESTOCK_FIELDS;
+    if (formKind === "task-execution")
       return buildTaskExecutionFields(taskOptions);
-    }
-
-    if (formKind === "parameter-log") {
-      return buildParameterFields();
-    }
-
-    if (formKind === "dosing") {
-      return DOSING_FIELDS;
-    }
-
-    if (formKind === "memo") {
-      return MEMO_FIELDS;
-    }
-
-    if (formKind === "issue") {
-      return ISSUE_FIELDS;
-    }
-
-    if (formKind === "consumable" && targetConsumable) {
+    if (formKind === "parameter-log") return buildParameterFields();
+    if (formKind === "dosing") return DOSING_FIELDS;
+    if (formKind === "memo") return MEMO_FIELDS;
+    if (formKind === "issue") return ISSUE_FIELDS;
+    if (formKind === "consumable" && targetConsumable)
       return CONSUMABLE_USE_FIELDS;
-    }
-
     return CONSUMABLE_FIELDS;
   }, [formKind, targetConsumable, taskOptions]);
 
@@ -645,13 +550,11 @@ export default function EntityFormScreen() {
 
   const aquariumName =
     aquariums.find((entry) => entry.id === selectedAquariumId)?.name ?? "";
-
   const coreFields = fields.filter((field) => field.section !== "optional");
   const optionalFields = fields.filter((field) => field.section === "optional");
 
-  const setFieldValue = (key: string, value: string) => {
+  const setFieldValue = (key: string, value: string) =>
     setValues((prev) => ({ ...prev, [key]: value }));
-  };
 
   const openDateTimePicker = (fieldKey: string) => {
     setActiveDateTimeField(fieldKey);
@@ -739,14 +642,12 @@ export default function EntityFormScreen() {
 
   const submit = () => {
     setErrorText("");
-
     if (!formKind) {
       setErrorText("Unknown form type.");
       return;
     }
 
     const aquariumId = targetConsumable?.aquariumId ?? selectedAquariumId;
-
     if (!aquariumId) {
       setErrorText("Please select an aquarium first.");
       return;
@@ -755,7 +656,6 @@ export default function EntityFormScreen() {
     if (formKind === "livestock") {
       const quantity = parseNumberOrNaN(values.quantity);
       const purchasePrice = parseOptionalNumber(values.purchasePrice);
-
       if (!values.name?.trim() || !values.species?.trim() || quantity <= 0) {
         setErrorText(
           "Name, species, and quantity greater than 0 are required.",
@@ -775,12 +675,8 @@ export default function EntityFormScreen() {
         photoUri: values.photoUri?.trim() || undefined,
       };
 
-      if (parentId) {
-        addOffspring(parentId, { ...input, aquariumId });
-      } else {
-        addLivestock({ ...input, aquariumId });
-      }
-
+      if (parentId) addOffspring(parentId, { ...input, aquariumId });
+      else addLivestock({ ...input, aquariumId });
       router.back();
       return;
     }
@@ -791,7 +687,6 @@ export default function EntityFormScreen() {
         setErrorText("Task selection is required.");
         return;
       }
-
       completeTask(
         taskTemplateId,
         aquariumId,
@@ -807,18 +702,14 @@ export default function EntityFormScreen() {
         setErrorText("Add at least one water parameter value.");
         return;
       }
-
       const parameters = WATER_PARAMETER_KEYS.reduce<WaterParameters>(
         (acc, key) => {
           const value = parseOptionalNumber(values[key]);
-          if (value !== undefined) {
-            acc[key] = value;
-          }
+          if (value !== undefined) acc[key] = value;
           return acc;
         },
         {},
       );
-
       logParameters(aquariumId, parameters);
       router.back();
       return;
@@ -830,7 +721,6 @@ export default function EntityFormScreen() {
         setErrorText("Product and amount greater than 0 are required.");
         return;
       }
-
       logDosing(
         aquariumId,
         values.product.trim(),
@@ -846,7 +736,6 @@ export default function EntityFormScreen() {
         setErrorText("Memo content is required.");
         return;
       }
-
       addMemo(
         aquariumId,
         values.content.trim(),
@@ -862,7 +751,6 @@ export default function EntityFormScreen() {
         setErrorText("Issue title is required.");
         return;
       }
-
       addIssue(aquariumId, values.title.trim());
       router.back();
       return;
@@ -874,7 +762,6 @@ export default function EntityFormScreen() {
         setErrorText("Amount used must be greater than 0.");
         return;
       }
-
       consumeConsumable(
         targetConsumable.id,
         amountUsed,
@@ -886,7 +773,6 @@ export default function EntityFormScreen() {
 
     const remaining = parseNumberOrNaN(values.remaining);
     const reorderAt = parseOptionalNumber(values.reorderAt);
-
     if (!values.name?.trim() || remaining < 0 || Number.isNaN(remaining)) {
       setErrorText("Name and remaining amount (0 or more) are required.");
       return;
@@ -903,22 +789,8 @@ export default function EntityFormScreen() {
     router.back();
   };
 
-  if (!formKind) {
-    return (
-      <DashboardScrollView>
-        <Stack.Screen options={{ headerShown: false }} />
-        <DashboardHero
-          title="Invalid action"
-          subtitle="This action link is missing a valid form type."
-          tone="error"
-        />
-      </DashboardScrollView>
-    );
-  }
-
-  return (
-    <DashboardScrollView>
-      <Stack.Screen options={{ headerShown: false }} />
+  const renderBody = () => (
+    <>
       <DashboardHero
         title={formTitle}
         subtitle={
@@ -995,18 +867,47 @@ export default function EntityFormScreen() {
             <HelperText type="error" visible={!!errorText}>
               {errorText}
             </HelperText>
-
-            <View style={styles.actionsRow}>
-              <Button mode="outlined" onPress={() => router.back()}>
-                Cancel
-              </Button>
-              <Button mode="contained" onPress={submit}>
-                Save
-              </Button>
-            </View>
           </Card.Content>
         </Card>
       </DashboardSection>
+    </>
+  );
+
+  if (!formKind) {
+    return (
+      <View style={styles.screen}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: 16 + insets.top, paddingBottom: 24 + insets.bottom },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <DashboardHero
+            title="Invalid action"
+            subtitle="This action link is missing a valid form type."
+            tone="error"
+          />
+        </ScrollView>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.screen}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: 16 + insets.top, paddingBottom: 144 + insets.bottom },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {renderBody()}
+      </ScrollView>
 
       <DatePickerModal
         locale="en"
@@ -1021,7 +922,6 @@ export default function EntityFormScreen() {
             setTimePickerOpen(true);
             return;
           }
-
           closeDateTimePicker();
         }}
       />
@@ -1036,21 +936,49 @@ export default function EntityFormScreen() {
           nextDate.setMinutes(minutes);
           nextDate.setSeconds(0);
           nextDate.setMilliseconds(0);
-
           if (activeDateTimeField) {
             setFieldValue(activeDateTimeField, nextDate.toISOString());
           }
-
           closeDateTimePicker();
         }}
         hours={dateTimeDraft.getHours()}
         minutes={dateTimeDraft.getMinutes()}
       />
-    </DashboardScrollView>
+
+      <View
+        style={[
+          styles.footer,
+          {
+            paddingBottom: Math.max(insets.bottom, 16),
+            backgroundColor: theme.colors.surface,
+            borderTopColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <View style={styles.footerButtons}>
+          <Button
+            mode="outlined"
+            onPress={() => router.back()}
+            style={styles.footerButton}
+          >
+            Cancel
+          </Button>
+          <Button mode="contained" onPress={submit} style={styles.footerButton}>
+            Save
+          </Button>
+        </View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
   card: {
     borderRadius: 24,
   },
@@ -1059,9 +987,6 @@ const styles = StyleSheet.create({
   },
   fieldBlock: {
     gap: 8,
-  },
-  dateButtonContent: {
-    justifyContent: "flex-start",
   },
   helperMuted: {
     opacity: 0.7,
@@ -1074,10 +999,24 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
-  actionsRow: {
+  dateButtonContent: {
+    justifyContent: "flex-start",
+  },
+  footer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    elevation: 8,
+  },
+  footerButtons: {
     flexDirection: "row",
-    justifyContent: "flex-end",
     gap: 10,
-    marginTop: 8,
+  },
+  footerButton: {
+    flex: 1,
   },
 });
