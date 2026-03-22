@@ -177,26 +177,39 @@ function QuickActions({ actions }: { actions: QuickAction[] }) {
 
   return (
     <View style={styles.quickActionsRow}>
-      {actions.map((action, index) => (
-        <Button
-          key={index}
-          mode="contained-tonal"
-          icon={action.icon}
-          onPress={action.onPress}
-          style={[
-            styles.quickActionButton,
-            action.variant === "secondary" && {
-              backgroundColor: theme.colors.secondaryContainer,
-            },
-            action.variant === "tertiary" && {
-              backgroundColor: theme.colors.tertiaryContainer,
-            },
-          ]}
-          compact
-        >
-          {action.label}
-        </Button>
-      ))}
+      {actions.map((action, index) => {
+        const isSecondary = action.variant === "secondary";
+        const isTertiary = action.variant === "tertiary";
+
+        const backgroundColor = isSecondary
+          ? theme.colors.secondaryContainer
+          : isTertiary
+            ? theme.colors.tertiaryContainer
+            : theme.colors.primaryContainer;
+
+        const textColor = isSecondary
+          ? theme.colors.onSecondaryContainer
+          : isTertiary
+            ? theme.colors.onTertiaryContainer
+            : theme.colors.onPrimaryContainer;
+
+        return (
+          <Button
+            key={index}
+            mode="contained-tonal"
+            icon={action.icon}
+            onPress={action.onPress}
+            style={styles.quickActionButton}
+            contentStyle={styles.quickActionButtonContent}
+            labelStyle={styles.quickActionButtonLabel}
+            buttonColor={backgroundColor}
+            textColor={textColor}
+            compact
+          >
+            {action.label}
+          </Button>
+        );
+      })}
     </View>
   );
 }
@@ -1721,10 +1734,19 @@ const styles = StyleSheet.create({
   quickActionsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 8,
+    gap: 6,
+    marginTop: 6,
   },
   quickActionButton: {
-    borderRadius: 20,
+    borderRadius: 14,
+  },
+  quickActionButtonContent: {
+    minHeight: 32,
+    paddingHorizontal: 6,
+  },
+  quickActionButtonLabel: {
+    fontSize: 12,
+    lineHeight: 14,
+    marginVertical: 0,
   },
 });
