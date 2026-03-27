@@ -20,7 +20,7 @@ const splashImage = isDevelopment
 const config: ExpoConfig = {
   name: appName,
   slug: "aquapt",
-  version: "0.1.2",
+  version: "0.1.3",
   orientation: "portrait",
   icon,
   scheme: "aquapt",
