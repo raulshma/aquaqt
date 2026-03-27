@@ -1,5 +1,9 @@
 import {
+    AssetCategory,
+    ConsumableUnit,
     IssueStatus,
+    LivestockKind,
+    LivestockStatus,
     TaskFrequency,
     WaterParameters,
     WaterType,
@@ -88,18 +92,18 @@ export interface AssistantDetectedAction {
   livestockName?: string;
   species?: string;
   quantity?: number;
-  livestockKind?: "fish" | "shrimp" | "snail" | "coral" | "plant" | "other";
-  livestockStatus?: "active" | "ill" | "deceased";
+  livestockKind?: LivestockKind;
+  livestockStatus?: LivestockStatus;
   issueId?: string;
   issueStatus?: IssueStatus;
   resolutionNote?: string;
-  assetCategory?: "filter" | "heater" | "light" | "co2" | "other";
+  assetCategory?: AssetCategory;
   brandModel?: string;
   purchasedAt?: string;
   price?: number;
   consumableId?: string;
   consumableName?: string;
-  consumableUnit?: "g" | "ml" | "pcs";
+  consumableUnit?: ConsumableUnit;
   remaining?: number;
   reorderAt?: number;
   amountUsed?: number;

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { Text } from "react-native-paper";
+import { Text, useTheme } from "react-native-paper";
 import { useAquapt } from "@/context/aquapt-context";
+import { withAlpha } from "@/constants/theme";
 import {
   convertCurrencyAmount,
   formatCurrencyAmount,
@@ -15,6 +16,7 @@ interface AssistantTelemetryProps {
 
 export function AssistantTelemetry({ telemetry }: AssistantTelemetryProps) {
   const { settings } = useAquapt();
+  const theme = useTheme();
   const [localizedCost, setLocalizedCost] = useState("—");
 
   useEffect(() => {
@@ -75,7 +77,7 @@ export function AssistantTelemetry({ telemetry }: AssistantTelemetryProps) {
   ];
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { backgroundColor: withAlpha(theme.colors.onSurface, 0.06) }]}>
       <Text variant="labelSmall" style={styles.label}>
         AI runtime metadata
       </Text>
@@ -98,7 +100,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderRadius: 10,
     padding: 8,
-    backgroundColor: "rgba(127,127,127,0.12)",
     gap: 1,
   },
   label: {

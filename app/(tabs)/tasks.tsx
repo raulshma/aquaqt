@@ -3,23 +3,23 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import {
-  Button,
-  Card,
-  Chip,
-  Divider,
-  FAB,
-  Text,
-  TextInput,
-  useTheme,
+    Button,
+    Card,
+    Chip,
+    Divider,
+    FAB,
+    Text,
+    TextInput,
+    useTheme,
 } from "react-native-paper";
 import { DatePickerModal, TimePickerModal } from "react-native-paper-dates";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
-  DashboardHero,
-  DashboardScrollView,
-  DashboardSection,
+    DashboardHero,
+    DashboardScrollView,
+    DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
@@ -51,8 +51,11 @@ export default function TasksScreen() {
   const [completionDateValueDraft, setCompletionDateValueDraft] = useState<
     Record<string, Date>
   >({});
-  const [activeCompletionDateKey, setActiveCompletionDateKey] = useState<string | null>(null);
-  const [isCompletionTimePickerOpen, setCompletionTimePickerOpen] = useState(false);
+  const [activeCompletionDateKey, setActiveCompletionDateKey] = useState<
+    string | null
+  >(null);
+  const [isCompletionTimePickerOpen, setCompletionTimePickerOpen] =
+    useState(false);
 
   const form = useForm({
     defaultValues: {
@@ -100,7 +103,10 @@ export default function TasksScreen() {
         form.setFieldValue("task.frequency", "weekly");
         form.setFieldValue("task.aquariumIds", [value.selectedAquariumId]);
         form.setFieldValue("task.timesPerDay", 1);
-        form.setFieldValue("task.startDate", new Date().toISOString().split("T")[0]);
+        form.setFieldValue(
+          "task.startDate",
+          new Date().toISOString().split("T")[0],
+        );
         form.setFieldValue("task.startDateValue", new Date());
         setDialogOpen(false);
         return;
@@ -137,7 +143,10 @@ export default function TasksScreen() {
     form.setFieldValue("task.frequency", "weekly");
     form.setFieldValue("task.aquariumIds", aquariumId ? [aquariumId] : []);
     form.setFieldValue("task.timesPerDay", 1);
-    form.setFieldValue("task.startDate", new Date().toISOString().split("T")[0]);
+    form.setFieldValue(
+      "task.startDate",
+      new Date().toISOString().split("T")[0],
+    );
     form.setFieldValue("task.startDateValue", new Date());
     form.setFieldValue("dosing.product", "");
     form.setFieldValue("dosing.amount", "");
@@ -288,8 +297,7 @@ export default function TasksScreen() {
               new Date(),
             );
             const timesPerDay = task.timesPerDay ?? 1;
-            const showProgress =
-              task.frequency === "daily" && timesPerDay > 1;
+            const showProgress = task.frequency === "daily" && timesPerDay > 1;
 
             return (
               <Card
@@ -298,7 +306,9 @@ export default function TasksScreen() {
                 mode="contained"
                 onPress={() =>
                   router.push(
-                    getEntityHref(createEntityRef("task", task.id, aquariumId)) as never,
+                    getEntityHref(
+                      createEntityRef("task", task.id, aquariumId),
+                    ) as never,
                   )
                 }
               >
@@ -402,22 +412,22 @@ export default function TasksScreen() {
                       Complete
                     </Button>
                   </View>
-                    <Button
-                      mode="outlined"
-                      icon="calendar"
-                      onPress={() => {
-                        const currentDate = completionDateDraft[key]
-                          ? new Date(completionDateDraft[key])
-                          : new Date();
-                        setCompletionDateValueDraft((prev) => ({
-                          ...prev,
-                          [key]: currentDate,
-                        }));
-                        setActiveCompletionDateKey(key);
-                      }}
-                    >
-                      Backdate: {completionDateDraft[key] || "Not set"}
-                    </Button>
+                  <Button
+                    mode="outlined"
+                    icon="calendar"
+                    onPress={() => {
+                      const currentDate = completionDateDraft[key]
+                        ? new Date(completionDateDraft[key])
+                        : new Date();
+                      setCompletionDateValueDraft((prev) => ({
+                        ...prev,
+                        [key]: currentDate,
+                      }));
+                      setActiveCompletionDateKey(key);
+                    }}
+                  >
+                    Backdate: {completionDateDraft[key] || "Not set"}
+                  </Button>
                   <TextInput
                     mode="outlined"
                     label="Completion note (optional)"
@@ -604,6 +614,22 @@ export default function TasksScreen() {
                         Target livestock: {targetLivestock.name}
                       </Text>
                     ) : null}
+                    <View style={styles.actionsRow}>
+                      <Button
+                        mode="text"
+                        compact
+                        icon="pencil"
+                        onPress={() =>
+                          router.push({
+                            pathname: "/entity-edit/task-execution",
+                            params: { id: execution.id },
+                          } as never)
+                        }
+                        textColor={textColor}
+                      >
+                        Edit
+                      </Button>
+                    </View>
                   </Card.Content>
                 </Card>
               );
@@ -745,7 +771,9 @@ export default function TasksScreen() {
                     />
                   )}
                 </form.Field>
-                <form.Subscribe selector={(state) => state.values.task.frequency}>
+                <form.Subscribe
+                  selector={(state) => state.values.task.frequency}
+                >
                   {(frequency) =>
                     frequency === "daily" ? (
                       <form.Field name="task.timesPerDay">
@@ -767,7 +795,9 @@ export default function TasksScreen() {
                     ) : null
                   }
                 </form.Subscribe>
-                <form.Subscribe selector={(state) => state.values.task.startDate}>
+                <form.Subscribe
+                  selector={(state) => state.values.task.startDate}
+                >
                   {(startDate) => (
                     <Button
                       mode="outlined"
@@ -833,10 +863,7 @@ export default function TasksScreen() {
       <FAB
         icon="plus"
         label="Add"
-        style={[
-          styles.fab,
-          { backgroundColor: theme.colors.primaryContainer },
-        ]}
+        style={[styles.fab, { backgroundColor: theme.colors.primaryContainer }]}
         color={theme.colors.onPrimaryContainer}
         onPress={() => {
           resetDialogForm(aquariums[0]?.id ?? "");
@@ -854,7 +881,10 @@ export default function TasksScreen() {
             onConfirm={({ date }: { date: Date | undefined }) => {
               if (date) {
                 form.setFieldValue("task.startDateValue", date);
-                form.setFieldValue("task.startDate", date.toISOString().split("T")[0]);
+                form.setFieldValue(
+                  "task.startDate",
+                  date.toISOString().split("T")[0],
+                );
               }
               setTaskDatePickerOpen(false);
             }}
@@ -866,7 +896,9 @@ export default function TasksScreen() {
         <DatePickerModal
           locale="en"
           mode="single"
-          visible={Boolean(activeCompletionDateKey) && !isCompletionTimePickerOpen}
+          visible={
+            Boolean(activeCompletionDateKey) && !isCompletionTimePickerOpen
+          }
           date={completionDateValueDraft[activeCompletionDateKey] || new Date()}
           onDismiss={() => setActiveCompletionDateKey(null)}
           onConfirm={({ date }: { date: Date | undefined }) => {
@@ -889,9 +921,16 @@ export default function TasksScreen() {
             setCompletionTimePickerOpen(false);
             setActiveCompletionDateKey(null);
           }}
-          onConfirm={({ hours, minutes }: { hours: number; minutes: number }) => {
+          onConfirm={({
+            hours,
+            minutes,
+          }: {
+            hours: number;
+            minutes: number;
+          }) => {
             if (activeCompletionDateKey) {
-              const currentDate = completionDateValueDraft[activeCompletionDateKey] || new Date();
+              const currentDate =
+                completionDateValueDraft[activeCompletionDateKey] || new Date();
               const newDate = new Date(currentDate);
               newDate.setHours(hours);
               newDate.setMinutes(minutes);
@@ -907,8 +946,14 @@ export default function TasksScreen() {
             setCompletionTimePickerOpen(false);
             setActiveCompletionDateKey(null);
           }}
-          hours={completionDateValueDraft[activeCompletionDateKey]?.getHours() || new Date().getHours()}
-          minutes={completionDateValueDraft[activeCompletionDateKey]?.getMinutes() || new Date().getMinutes()}
+          hours={
+            completionDateValueDraft[activeCompletionDateKey]?.getHours() ||
+            new Date().getHours()
+          }
+          minutes={
+            completionDateValueDraft[activeCompletionDateKey]?.getMinutes() ||
+            new Date().getMinutes()
+          }
         />
       )}
     </>

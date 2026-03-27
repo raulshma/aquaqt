@@ -1,6 +1,7 @@
 import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { Button, Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { withAlpha } from "@/constants/theme";
 
 export type PhotoSource = "camera" | "library";
 
@@ -29,12 +30,10 @@ export function PhotoSourceDialog({
   const insets = useSafeAreaInsets();
   const backdropColor = theme.dark
     ? "rgba(0, 0, 0, 0.72)"
-    : "rgba(15, 23, 42, 0.45)";
+    : "rgba(0, 0, 0, 0.45)";
   const sheetBackgroundColor =
     theme.colors.elevation?.level2 ?? theme.colors.surface;
-  const handleColor = theme.colors.onSurfaceVariant
-    ? `${theme.colors.onSurfaceVariant}80`
-    : "rgba(120,120,120,0.5)";
+  const handleColor = withAlpha(theme.colors.onSurfaceVariant, 0.35);
 
   return (
     <Modal

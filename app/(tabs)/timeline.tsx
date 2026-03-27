@@ -15,6 +15,7 @@ import {
     useTheme,
 } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
@@ -59,6 +60,7 @@ const EVENT_LABELS: Record<TimelineEventType, string> = {
 export default function TimelineScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { bottom } = useSafeAreaInsets();
   const {
     timeline,
     aquariums,
@@ -310,13 +312,13 @@ export default function TimelineScreen() {
       case "memo":
         return theme.colors.tertiaryContainer;
       case "livestock":
-        return "#dff7e2";
+        return theme.colors.surfaceVariant;
       case "asset":
-        return "#dbeafe";
+        return theme.colors.secondaryContainer;
       case "consumable":
-        return "#fff4cc";
+        return theme.colors.primaryContainer;
       case "dosing":
-        return "#f3e8ff";
+        return theme.colors.tertiaryContainer;
       default:
         return theme.colors.surfaceVariant;
     }
@@ -797,7 +799,13 @@ export default function TimelineScreen() {
           resetQuickLogForm(aquariums[0]?.id ?? "");
           setDialogOpen(true);
         }}
-        style={[styles.fab, { backgroundColor: theme.colors.primaryContainer }]}
+        style={[
+          styles.fab,
+          {
+            backgroundColor: theme.colors.primaryContainer,
+            bottom: 88 + bottom,
+          },
+        ]}
         color={theme.colors.onPrimaryContainer}
       />
     </>

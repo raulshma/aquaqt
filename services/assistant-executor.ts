@@ -1,9 +1,14 @@
 import {
     Aquarium,
+    AssetCategory,
     Consumable,
+    ConsumableUnit,
     Issue,
     Livestock,
+    TaskCategory,
+    TaskFrequency,
     TaskTemplate,
+    WaterParameters,
 } from "@/types/aquapt";
 import {
     AssistantDetectedAction,
@@ -19,10 +24,10 @@ interface ExecuteApprovedActionsOptions {
   existingConsumables: Consumable[];
   addTaskTemplate: (input: {
     title: string;
-    frequency: "daily" | "weekly" | "bi-weekly" | "monthly";
+    frequency: TaskFrequency;
     aquariumIds: string[];
     description?: string;
-    category?: "maintenance" | "feeding";
+    category?: TaskCategory;
     livestockId?: string;
   }) => void;
   completeTask: (
@@ -38,18 +43,7 @@ interface ExecuteApprovedActionsOptions {
   ) => void;
   logParameters: (
     aquariumId: string,
-    values: {
-      ammonia?: number;
-      nitrite?: number;
-      nitrate?: number;
-      ph?: number;
-      temperatureC?: number;
-      gh?: number;
-      kh?: number;
-      salinity?: number;
-      calcium?: number;
-      alkalinity?: number;
-    },
+    values: WaterParameters,
   ) => void;
   addIssue: (aquariumId: string, title: string) => void;
   addMemo: (
@@ -80,7 +74,7 @@ interface ExecuteApprovedActionsOptions {
   ) => void;
   addAsset: (input: {
     aquariumId: string;
-    category: "filter" | "heater" | "light" | "co2" | "other";
+    category: AssetCategory;
     brandModel: string;
     purchasedAt?: string;
     price?: number;
@@ -89,7 +83,7 @@ interface ExecuteApprovedActionsOptions {
   addConsumable: (input: {
     aquariumId: string;
     name: string;
-    unit: "g" | "ml" | "pcs";
+    unit: ConsumableUnit;
     remaining: number;
     reorderAt?: number;
   }) => void;

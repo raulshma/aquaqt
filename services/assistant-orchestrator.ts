@@ -9,6 +9,7 @@ import {
     AssistantActionExtractionResult,
     AssistantChatMessage,
     AssistantMemorySnippet,
+    AssistantMessageRole,
     AssistantResponseTelemetry,
 } from "@/types/assistant";
 
@@ -47,7 +48,7 @@ const stringifyContext = (value: unknown) => {
 
 const toOpenRouterRole = (
   role: AssistantChatMessage["role"],
-): "system" | "user" | "assistant" => {
+): AssistantMessageRole => {
   if (role === "user") {
     return "user";
   }

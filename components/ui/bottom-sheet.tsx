@@ -6,7 +6,7 @@ import {
     View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { Modal, Portal, Surface, Text } from "react-native-paper";
+import { Modal, Portal, Surface, Text, useTheme } from "react-native-paper";
 import Animated, {
     interpolate,
     runOnJS,
@@ -15,6 +15,8 @@ import Animated, {
     withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { withAlpha } from "@/constants/theme";
 
 interface BottomSheetProps {
   visible: boolean;
@@ -41,6 +43,7 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const { height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const translateY = useSharedValue(screenHeight);
   const isClosing = useSharedValue(false);
   const maxSheetHeight = Math.max(320, screenHeight - insets.top - 12);
@@ -154,7 +157,7 @@ export function BottomSheet({
           >
             <GestureDetector gesture={panGesture}>
               <View style={styles.handleArea}>
-                <View style={styles.handle} />
+                <View style={[styles.handle, { backgroundColor: withAlpha(theme.colors.onSurfaceVariant, 0.35) }]} />
               </View>
             </GestureDetector>
             <Text variant="titleMedium" style={styles.title}>
@@ -204,7 +207,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 4,
     borderRadius: 999,
-    backgroundColor: "rgba(120,120,120,0.5)",
   },
   title: {
     marginBottom: 8,

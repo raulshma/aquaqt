@@ -1,5 +1,5 @@
 import { StyleSheet, View } from "react-native";
-import { Card, Chip, Text, TextInput } from "react-native-paper";
+import { Card, Chip, Text, TextInput, useTheme } from "react-native-paper";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import type { AssistantDetectedAction } from "@/types/assistant";
 import { useAquapt } from "@/context/aquapt-context";
@@ -27,6 +27,7 @@ export function ActionReviewForm({
   updateParameterField,
 }: ActionReviewFormProps) {
   const { aquariums } = useAquapt();
+  const theme = useTheme();
 
   return (
     <>
@@ -565,7 +566,7 @@ export function ActionReviewForm({
             </View>
 
             {action.validationErrors.length > 0 ? (
-              <Text variant="bodySmall" style={styles.errorText}>
+              <Text variant="bodySmall" style={[styles.errorText, { color: theme.colors.error }]}>
                 {action.validationErrors.join("\n")}
               </Text>
             ) : null}
@@ -591,7 +592,6 @@ const styles = StyleSheet.create({
   },
   errorText: {
     marginTop: 10,
-    color: "#b00020",
   },
   actionCard: {
     marginTop: 10,

@@ -50,6 +50,7 @@ import {
   Issue,
   Livestock,
   Memo,
+  TaskCategory,
   TaskExecution,
   TaskFrequency,
   TaskTemplate,
@@ -169,12 +170,22 @@ interface AquaptContextValue {
     aquariumId: string,
     updates: Partial<Omit<Aquarium, "id">>,
   ) => void;
+  editTaskTemplate: (
+    taskTemplateId: string,
+    updates: Partial<Omit<TaskTemplate, "id">>,
+  ) => void;
+  deleteTaskTemplate: (taskTemplateId: string) => void;
+  editTaskExecution: (
+    executionId: string,
+    updates: Partial<Omit<TaskExecution, "id">>,
+  ) => void;
+  deleteTaskExecution: (executionId: string) => void;
   addTaskTemplate: (input: {
     title: string;
     frequency: TaskFrequency;
     aquariumIds: string[];
     description?: string;
-    category?: "maintenance" | "feeding";
+    category?: TaskCategory;
     livestockId?: string;
     startDate?: string;
     timesPerDay?: number;
@@ -472,13 +483,101 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const editTaskTemplate = useCallback(
+    (taskTemplateId: string, updates: Partial<Omit<TaskTemplate, "id">>) => {
+      const template = taskTemplates.find((t) => t.id === taskTemplateId);
+      setTaskTemplates((prev) =>
+        prev.map((task) =>
+          task.id === taskTemplateId ? { ...task, ...updates } : task,
+        ),
+      );
+      if (template && updates.title) {
+        setTimeline((prev) =>
+          prev.map((event) =>
+            event.type === "task" && event.source?.id === taskTemplateId
+              ? { ...event, title: `${updates.title} completed` }
+              : event,
+          ),
+        );
+      }
+    },
+    [taskTemplates],
+  );
+
+  const deleteTaskTemplate = useCallback((taskTemplateId: string) => {
+    setTaskTemplates((prev) => prev.filter((t) => t.id !== taskTemplateId));
+    setTaskExecutions((prev) =>
+      prev.filter((e) => e.taskTemplateId !== taskTemplateId),
+    );
+    setTimeline((prev) =>
+      prev.filter(
+        (event) =>
+          !(event.type === "task" && event.source?.id === taskTemplateId),
+      ),
+    );
+  }, []);
+
+  const editTaskExecution = useCallback(
+    (executionId: string, updates: Partial<Omit<TaskExecution, "id">>) => {
+      const execution = taskExecutions.find((e) => e.id === executionId);
+      setTaskExecutions((prev) =>
+        prev.map((exec) =>
+          exec.id === executionId ? { ...exec, ...updates } : exec,
+        ),
+      );
+      if (execution) {
+        setTimeline((prev) =>
+          prev.map((event) => {
+            if (
+              event.type === "task" &&
+              event.source?.id === execution.taskTemplateId &&
+              event.source?.aquariumId === execution.aquariumId &&
+              event.createdAt === execution.completedAt
+            ) {
+              return {
+                ...event,
+                ...(updates.completedAt ? { createdAt: updates.completedAt } : {}),
+                ...(updates.note !== undefined
+                  ? { description: updates.note }
+                  : {}),
+              };
+            }
+            return event;
+          }),
+        );
+      }
+    },
+    [taskExecutions],
+  );
+
+  const deleteTaskExecution = useCallback(
+    (executionId: string) => {
+      const execution = taskExecutions.find((e) => e.id === executionId);
+      setTaskExecutions((prev) => prev.filter((e) => e.id !== executionId));
+      if (execution) {
+        setTimeline((prev) =>
+          prev.filter(
+            (event) =>
+              !(
+                event.type === "task" &&
+                event.source?.id === execution.taskTemplateId &&
+                event.source?.aquariumId === execution.aquariumId &&
+                event.createdAt === execution.completedAt
+              ),
+          ),
+        );
+      }
+    },
+    [taskExecutions],
+  );
+
   const addTaskTemplate = useCallback(
     (input: {
       title: string;
       frequency: TaskFrequency;
       aquariumIds: string[];
       description?: string;
-      category?: "maintenance" | "feeding";
+      category?: TaskCategory;
       livestockId?: string;
       startDate?: string;
       timesPerDay?: number;
@@ -531,7 +630,12 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
   );
 
   const completeTask = useCallback(
-    (taskTemplateId: string, aquariumId: string, note?: string, completedAtInput?: string) => {
+    (
+      taskTemplateId: string,
+      aquariumId: string,
+      note?: string,
+      completedAtInput?: string,
+    ) => {
       const completedAt = completedAtInput ?? new Date().toISOString();
       const execution: TaskExecution = {
         id: nowId("exec"),
@@ -1701,6 +1805,10 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       openIssuesByAquarium,
       addAquarium,
       editAquarium,
+      editTaskTemplate,
+      deleteTaskTemplate,
+      editTaskExecution,
+      deleteTaskExecution,
       addTaskTemplate,
       addLivestockFeedingTask,
       completeTask,
@@ -1752,6 +1860,10 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       openIssuesByAquarium,
       addAquarium,
       editAquarium,
+      editTaskTemplate,
+      deleteTaskTemplate,
+      editTaskExecution,
+      deleteTaskExecution,
       addTaskTemplate,
       addLivestockFeedingTask,
       completeTask,

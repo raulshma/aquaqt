@@ -274,7 +274,8 @@ export default function EntityDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
   const store = useAquaptStore();
-  const { settings, setLivestockStatus, setIssueStatus } = useAquapt();
+  const { settings, setLivestockStatus, setIssueStatus, deleteTaskTemplate } =
+    useAquapt();
   const userCurrencyCode = settings.defaultCurrency ?? "USD";
   const userLocale = settings.defaultLocale;
 
@@ -855,6 +856,15 @@ export default function EntityDetailScreen() {
             <QuickActions
               actions={[
                 {
+                  label: "Edit",
+                  icon: "pencil",
+                  onPress: () =>
+                    router.push({
+                      pathname: "/entity-edit/task-template",
+                      params: { id: taskItem.id },
+                    } as never),
+                },
+                {
                   label: "Execute",
                   icon: "check-circle",
                   onPress: () =>
@@ -884,6 +894,23 @@ export default function EntityDetailScreen() {
                       ),
                     ),
                   variant: "tertiary",
+                },
+              ]}
+            />
+          </DashboardSection>
+          <DashboardSection
+            title="Danger zone"
+            description="Permanently delete this task and all its execution history."
+          >
+            <QuickActions
+              actions={[
+                {
+                  label: "Delete task",
+                  icon: "delete",
+                  onPress: () => {
+                    deleteTaskTemplate(taskItem.id);
+                    router.back();
+                  },
                 },
               ]}
             />
@@ -971,7 +998,23 @@ export default function EntityDetailScreen() {
                     ),
                   )
                 }
-              />
+              >
+                <Button
+                  mode="text"
+                  compact
+                  icon="pencil"
+                  onPress={() =>
+                    router.push({
+                      pathname: "/entity-edit/task-execution",
+                      params: { id: execution.id },
+                    } as never)
+                  }
+                  textColor={theme.colors.onSurfaceVariant}
+                  style={{ marginTop: 4, alignSelf: "flex-start" }}
+                >
+                  Edit
+                </Button>
+              </MiniCard>
             ))}
           </DashboardSection>
         </>
@@ -1698,9 +1741,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 7,
-  },
-  classificationErrorText: {
-    color: "#dc2626",
   },
   gallerySection: {
     marginTop: 12,

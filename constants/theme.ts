@@ -27,6 +27,14 @@ export const Colors = {
   },
 };
 
+export function withAlpha(hexColor: string, alpha: number): string {
+  const clamped = Math.max(0, Math.min(1, alpha));
+  const hex = Math.round(clamped * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `${hexColor}${hex}`;
+}
+
 export const Fonts = Platform.select({
   ios: {
     /** iOS `UIFontDescriptorSystemDesignDefault` */

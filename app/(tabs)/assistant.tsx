@@ -32,6 +32,7 @@ import {
 import { ActionReviewForm } from "@/components/assistant/action-review-form";
 import { ChatMessage } from "@/components/assistant/chat-message";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { withAlpha } from "@/constants/theme";
 import { useAquapt } from "@/context/aquapt-context";
 import { askAssistantWithTaskDetection } from "@/services/assistant-orchestrator";
 import {
@@ -794,7 +795,7 @@ export default function AssistantScreen() {
             <View
               style={[
                 styles.dictationLiveBanner,
-                { backgroundColor: `${theme.colors.primary}12` },
+                { backgroundColor: withAlpha(theme.colors.primary, 0.07) },
               ]}
             >
               <ActivityIndicator size={14} color={theme.colors.primary} />
@@ -852,7 +853,7 @@ export default function AssistantScreen() {
               onPress={() => setReviewVisible(true)}
               style={[
                 styles.pendingBar,
-                { backgroundColor: `${theme.colors.primary}15` },
+                { backgroundColor: withAlpha(theme.colors.primary, 0.08) },
               ]}
             >
               <IconButton
@@ -1057,7 +1058,7 @@ export default function AssistantScreen() {
         <Animated.View
           style={[
             StyleSheet.absoluteFillObject,
-            { backgroundColor: "#000" },
+            { backgroundColor: withAlpha(theme.colors.background, 0.6) },
             backdropAnimStyle,
           ]}
         >
@@ -1103,7 +1104,7 @@ export default function AssistantScreen() {
         ) : null}
 
         {activeWarnings.length > 0 ? (
-          <Text variant="bodySmall" style={styles.warningText}>
+          <Text variant="bodySmall" style={[styles.warningText, { color: theme.colors.onErrorContainer }]}>
             {activeWarnings.join("\n")}
           </Text>
         ) : null}
@@ -1240,7 +1241,6 @@ const styles = StyleSheet.create({
   },
   warningText: {
     marginTop: 10,
-    color: "#8a6d00",
   },
   helperText: {
     marginTop: 8,

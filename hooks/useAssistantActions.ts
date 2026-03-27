@@ -4,7 +4,7 @@ import { useAquapt } from "@/context/aquapt-context";
 import { executeApprovedActions } from "@/services/assistant-executor";
 import { validateAction, applyActionDefaults } from "@/utils/assistant-validation";
 import { nowId } from "@/utils/assistant-constants";
-import type { TaskFrequency } from "@/types/aquapt";
+import type { TaskFrequency, IssueStatus, WaterType, LivestockKind, LivestockStatus, AssetCategory, ConsumableUnit } from "@/types/aquapt";
 
 interface UseAssistantActionsProps {
   activeConversation: AssistantConversation | undefined;
@@ -30,7 +30,7 @@ interface ActionUpdatePayload {
   memoContent?: string;
   reminderEnabled?: boolean;
   reminderHour?: number;
-  waterType?: "freshwater" | "marine" | "brackish";
+  waterType?: WaterType;
   volumeLiters?: number;
   dimensions?: string;
   setupDate?: string;
@@ -41,18 +41,18 @@ interface ActionUpdatePayload {
   livestockName?: string;
   species?: string;
   quantity?: number;
-  livestockKind?: "fish" | "shrimp" | "snail" | "coral" | "plant" | "other";
-  livestockStatus?: "active" | "ill" | "deceased";
+  livestockKind?: LivestockKind;
+  livestockStatus?: LivestockStatus;
   issueId?: string;
-  issueStatus?: "open" | "monitoring" | "resolved";
+  issueStatus?: IssueStatus;
   resolutionNote?: string;
-  assetCategory?: "filter" | "heater" | "light" | "co2" | "other";
+  assetCategory?: AssetCategory;
   brandModel?: string;
   purchasedAt?: string;
   price?: number;
   consumableId?: string;
   consumableName?: string;
-  consumableUnit?: "g" | "ml" | "pcs";
+  consumableUnit?: ConsumableUnit;
   remaining?: number;
   reorderAt?: number;
   amountUsed?: number;

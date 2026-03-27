@@ -3,63 +3,67 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import {
-  type Dispatch,
-  memo,
-  type SetStateAction,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    type Dispatch,
+    memo,
+    type SetStateAction,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    useWindowDimensions,
+    View,
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import {
-  Button,
-  Card,
-  Chip,
-  FAB,
-  IconButton,
-  Portal,
-  Surface,
-  Text,
-  TextInput,
-  useTheme,
+    Button,
+    Card,
+    Chip,
+    FAB,
+    IconButton,
+    Portal,
+    Surface,
+    Text,
+    TextInput,
+    useTheme,
 } from "react-native-paper";
 import { DatePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  AquariumBackground,
-  AssetBackground,
-  ConsumableBackground,
-  LivestockBackground,
+    AquariumBackground,
+    AssetBackground,
+    ConsumableBackground,
+    LivestockBackground,
 } from "@/components/illustrations/AnimatedCardBackgrounds";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
-  type PhotoSource,
-  PhotoSourceDialog,
+    type PhotoSource,
+    PhotoSourceDialog,
 } from "@/components/ui/photo-source-dialog";
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
+import { withAlpha } from "@/constants/theme";
 import { createEntityRef, getEntityHref } from "@/services/entity-links";
 import { formatCurrencyAmount } from "@/services/localization";
 import { isTaskDue, toIsoDate } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
-  type Aquarium,
-  type EntityRef,
-  type Issue,
-  IssueStatus,
-  type Livestock,
-  TaskFrequency,
-  type TaskTemplate,
-  type WaterParameterLog,
+    type Aquarium,
+    type EntityRef,
+    type Issue,
+    AssetCategory,
+    IssueStatus,
+    type Livestock,
+    TaskFrequency,
+    type TaskTemplate,
+    type WaterParameterLog,
+    WaterType,
 } from "@/types/aquapt";
 
 const WATER_TYPES = ["freshwater", "marine", "brackish"] as const;
@@ -277,8 +281,12 @@ type LivestockCardProps = {
   setFeedingTaskFrequencyDraft: Dispatch<
     SetStateAction<Record<string, TaskFrequency>>
   >;
-  setFeedingTaskStartDateDraft: Dispatch<SetStateAction<Record<string, string>>>;
-  setFeedingTaskTimesPerDayDraft: Dispatch<SetStateAction<Record<string, string>>>;
+  setFeedingTaskStartDateDraft: Dispatch<
+    SetStateAction<Record<string, string>>
+  >;
+  setFeedingTaskTimesPerDayDraft: Dispatch<
+    SetStateAction<Record<string, string>>
+  >;
   setLivestockFeedingNotes: (livestockId: string, dietaryNotes: string) => void;
   setLivestockStatus: (
     livestockId: string,
@@ -613,8 +621,12 @@ const LivestockCard = memo(function LivestockCard({
           style={styles.issueSaveButton}
           onPress={() => {
             const customTitle = feedingTaskTitle.trim();
-            const timesPerDay = Math.max(1, Math.floor(Number(feedingTaskTimesPerDay) || 1));
-            const startDateValue = feedingTaskStartDate.trim() || toIsoDate(new Date());
+            const timesPerDay = Math.max(
+              1,
+              Math.floor(Number(feedingTaskTimesPerDay) || 1),
+            );
+            const startDateValue =
+              feedingTaskStartDate.trim() || toIsoDate(new Date());
             addLivestockFeedingTask({
               livestockId: item.id,
               title: customTitle || `Feed ${item.name}`,
@@ -624,7 +636,8 @@ const LivestockCard = memo(function LivestockCard({
                 item.dietaryNotes ||
                 `Targeted feeding regimen for ${item.name}`,
               startDate: startDateValue,
-              timesPerDay: feedingTaskFrequency === "daily" ? timesPerDay : undefined,
+              timesPerDay:
+                feedingTaskFrequency === "daily" ? timesPerDay : undefined,
             });
 
             setFeedingTaskTitleDraft((prev) => ({
@@ -808,6 +821,7 @@ type TodayFocusPanelItem = {
   title: string;
   caption: string;
   accentColor: string;
+  onPress?: () => void;
 };
 
 type TodayFocusPanelProps = {
@@ -857,32 +871,44 @@ const TodayFocusPanel = memo(function TodayFocusPanel({
 
       {items.length > 0 ? (
         <View style={styles.todayFocusList}>
-          {items.map((item) => (
-            <View key={item.id} style={styles.todayFocusItem}>
-              <View
-                style={[
-                  styles.todayFocusItemAccent,
-                  { backgroundColor: item.accentColor },
-                ]}
-              />
-              <View style={styles.todayFocusItemCopy}>
-                <Text
-                  variant="bodyMedium"
-                  numberOfLines={1}
-                  style={{ color: textColor }}
-                >
-                  {item.title}
-                </Text>
-                <Text
-                  variant="bodySmall"
-                  numberOfLines={1}
-                  style={[styles.todayFocusItemCaption, { color: textColor }]}
-                >
-                  {item.caption}
-                </Text>
+          {items.map((item) => {
+            const itemContent = (
+              <View style={styles.todayFocusItem}>
+                <View
+                  style={[
+                    styles.todayFocusItemAccent,
+                    { backgroundColor: item.accentColor },
+                  ]}
+                />
+                <View style={styles.todayFocusItemCopy}>
+                  <Text
+                    variant="bodyMedium"
+                    numberOfLines={1}
+                    style={{ color: textColor }}
+                  >
+                    {item.title}
+                  </Text>
+                  <Text
+                    variant="bodySmall"
+                    numberOfLines={1}
+                    style={[styles.todayFocusItemCaption, { color: textColor }]}
+                  >
+                    {item.caption}
+                  </Text>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+
+            if (!item.onPress) {
+              return <View key={item.id}>{itemContent}</View>;
+            }
+
+            return (
+              <Pressable key={item.id} onPress={item.onPress}>
+                {itemContent}
+              </Pressable>
+            );
+          })}
         </View>
       ) : (
         <View style={styles.todayFocusEmpty}>
@@ -972,13 +998,13 @@ export default function HomeScreen() {
   const [isPickingAssetPhoto, setPickingAssetPhoto] = useState(false);
   const [isPickingConsumablePhoto, setPickingConsumablePhoto] = useState(false);
   const [newAssetModel, setNewAssetModel] = useState("");
-  const [newAssetCategory, setNewAssetCategory] = useState<
-    "filter" | "heater" | "light" | "co2" | "other"
-  >("other");
+  const [newAssetCategory, setNewAssetCategory] = useState<AssetCategory>("other");
   const [newAssetPurchasedAt, setNewAssetPurchasedAt] = useState(
     toIsoDate(new Date()),
   );
-  const [newAssetPurchasedAtValue, setNewAssetPurchasedAtValue] = useState(new Date());
+  const [newAssetPurchasedAtValue, setNewAssetPurchasedAtValue] = useState(
+    new Date(),
+  );
   const [isAssetDatePickerOpen, setAssetDatePickerOpen] = useState(false);
   const [newAssetPrice, setNewAssetPrice] = useState("");
   const [newAssetPhotoUri, setNewAssetPhotoUri] = useState("");
@@ -1011,9 +1037,8 @@ export default function HomeScreen() {
   const [feedingTaskStartDateDraft, setFeedingTaskStartDateDraft] = useState<
     Record<string, string>
   >({});
-  const [feedingTaskTimesPerDayDraft, setFeedingTaskTimesPerDayDraft] = useState<
-    Record<string, string>
-  >({});
+  const [feedingTaskTimesPerDayDraft, setFeedingTaskTimesPerDayDraft] =
+    useState<Record<string, string>>({});
   const [resolutionNoteDraft, setResolutionNoteDraft] = useState<
     Record<string, string>
   >({});
@@ -1038,7 +1063,7 @@ export default function HomeScreen() {
       setupDate: toIsoDate(new Date()),
       setupDateValue: new Date(),
       investment: "",
-      waterType: "freshwater" as "freshwater" | "marine" | "brackish",
+      waterType: "freshwater" as WaterType,
       photoUri: "",
     },
     onSubmit: ({ value }) => {
@@ -1799,12 +1824,20 @@ export default function HomeScreen() {
     caption: `${entry.status === "high" ? "High" : "Low"} at ${entry.value}${entry.unit ? ` ${entry.unit}` : ""}`,
     accentColor:
       entry.status === "high" ? theme.colors.error : theme.colors.tertiary,
+    onPress: () =>
+      router.push(
+        getEntityHref(createEntityRef("aquarium", entry.aquariumId)) as never,
+      ),
   }));
   const todayTaskItems = pendingTasksToday.slice(0, 3).map((entry) => ({
     id: `${entry.taskId}-${entry.aquariumId}`,
     title: entry.taskTitle,
     caption: aquariumNameById[entry.aquariumId] ?? "Unknown tank",
     accentColor: theme.colors.secondary,
+    onPress: () =>
+      router.push(
+        getEntityHref(createEntityRef("task", entry.taskId)) as never,
+      ),
   }));
   const isWideTodayGlanceLayout = width >= 720;
   const todayMetricWidth = isWideTodayGlanceLayout ? "24%" : "48.5%";
@@ -2274,9 +2307,9 @@ export default function HomeScreen() {
                       endOpacity={0.04}
                       hideDataPoints={false}
                       dataPointsColor={METRIC_COLORS[selectedMetric]}
-                      yAxisTextStyle={styles.chartAxisLabel}
-                      xAxisLabelTextStyle={styles.chartAxisLabel}
-                      rulesColor="rgba(120,120,120,0.2)"
+                      yAxisTextStyle={{ color: theme.colors.onSurfaceVariant, fontSize: 10 }}
+                      xAxisLabelTextStyle={{ color: theme.colors.onSurfaceVariant, fontSize: 10 }}
+                      rulesColor={withAlpha(theme.colors.onSurfaceVariant, 0.15)}
                     />
                     <Text variant="bodySmall" style={styles.chartUnitLabel}>
                       Unit: {METRIC_UNITS[selectedMetric] || "value"}
@@ -2371,8 +2404,12 @@ export default function HomeScreen() {
                     feedingTaskFrequency={
                       feedingTaskFrequencyDraft[item.id] ?? "daily"
                     }
-                    feedingTaskStartDate={feedingTaskStartDateDraft[item.id] ?? ""}
-                    feedingTaskTimesPerDay={feedingTaskTimesPerDayDraft[item.id] ?? ""}
+                    feedingTaskStartDate={
+                      feedingTaskStartDateDraft[item.id] ?? ""
+                    }
+                    feedingTaskTimesPerDay={
+                      feedingTaskTimesPerDayDraft[item.id] ?? ""
+                    }
                     cardBackground={cardBackground}
                     parentEntity={
                       parentEntity
@@ -2396,7 +2433,9 @@ export default function HomeScreen() {
                     setFeedingTaskTitleDraft={setFeedingTaskTitleDraft}
                     setFeedingTaskFrequencyDraft={setFeedingTaskFrequencyDraft}
                     setFeedingTaskStartDateDraft={setFeedingTaskStartDateDraft}
-                    setFeedingTaskTimesPerDayDraft={setFeedingTaskTimesPerDayDraft}
+                    setFeedingTaskTimesPerDayDraft={
+                      setFeedingTaskTimesPerDayDraft
+                    }
                     setLivestockFeedingNotes={setLivestockFeedingNotes}
                     setLivestockStatus={setLivestockStatus}
                     transferLivestock={transferLivestock}
@@ -2978,9 +3017,7 @@ export default function HomeScreen() {
           <ScrollableSegmentedButtons
             value={newAssetCategory}
             onValueChange={(value) =>
-              setNewAssetCategory(
-                value as "filter" | "heater" | "light" | "co2" | "other",
-              )
+              setNewAssetCategory(value as AssetCategory)
             }
             buttons={ASSET_CATEGORIES.map((category) => ({
               label: category,
@@ -3542,7 +3579,7 @@ export default function HomeScreen() {
 
       <FAB
         icon="plus"
-        style={styles.fab}
+        style={[styles.fab, { bottom: 88 + insets.bottom }]}
         onPress={handleQuickLogFabPress}
         onLongPress={handleQuickLogFabLongPress}
         delayLongPress={250}
@@ -3831,18 +3868,6 @@ const styles = StyleSheet.create({
     height: 160,
     borderRadius: 18,
   },
-  classificationPanel: {
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(120,120,120,0.35)",
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  classificationErrorText: {
-    color: "#dc2626",
-    marginTop: 2,
-  },
   aquariumCardPhoto: {
     width: "100%",
     height: 110,
@@ -3869,10 +3894,6 @@ const styles = StyleSheet.create({
   },
   metricSelector: {
     marginTop: 12,
-  },
-  chartAxisLabel: {
-    color: "rgba(120,120,120,0.9)",
-    fontSize: 10,
   },
   chartUnitLabel: {
     marginTop: 8,

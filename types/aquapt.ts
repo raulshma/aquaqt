@@ -4,6 +4,14 @@ export type IssueStatus = "open" | "monitoring" | "resolved";
 
 export type TaskFrequency = "daily" | "weekly" | "bi-weekly" | "monthly";
 
+export type TaskCategory = "maintenance" | "feeding";
+export type LivestockKind = "fish" | "shrimp" | "snail" | "coral" | "plant" | "other";
+export type LivestockStatus = "active" | "ill" | "deceased";
+export type AssetCategory = "filter" | "heater" | "light" | "co2" | "other";
+export type ConsumableUnit = "g" | "ml" | "pcs";
+
+export type EditKind = "task-template" | "task-execution";
+
 export type TimelineEventType =
   | "task"
   | "parameter"
@@ -68,7 +76,7 @@ export interface WaterParameterLog {
 export interface Livestock {
   id: string;
   aquariumId: string;
-  kind: "fish" | "shrimp" | "snail" | "coral" | "plant" | "other";
+  kind: LivestockKind;
   name: string;
   species: string;
   quantity: number;
@@ -77,7 +85,7 @@ export interface Livestock {
   photoUri?: string;
   dietaryNotes?: string;
   parentId?: string;
-  status?: "active" | "ill" | "deceased";
+  status?: LivestockStatus;
 }
 
 export interface DosingLog {
@@ -92,7 +100,7 @@ export interface DosingLog {
 export interface Asset {
   id: string;
   aquariumId: string;
-  category: "filter" | "heater" | "light" | "co2" | "other";
+  category: AssetCategory;
   brandModel: string;
   purchasedAt?: string;
   price?: number;
@@ -104,7 +112,7 @@ export interface Consumable {
   id: string;
   aquariumId: string;
   name: string;
-  unit: "g" | "ml" | "pcs";
+  unit: ConsumableUnit;
   remaining: number;
   reorderAt?: number;
   updatedAt: string;
@@ -115,7 +123,7 @@ export interface TaskTemplate {
   id: string;
   title: string;
   description?: string;
-  category?: "maintenance" | "feeding";
+  category?: TaskCategory;
   livestockId?: string;
   frequency: TaskFrequency;
   aquariumIds: string[];

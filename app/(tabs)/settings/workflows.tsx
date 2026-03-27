@@ -17,6 +17,7 @@ import {
 import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import { requestOpenRouterCompletion } from "@/services/assistant-ai";
+import { LivestockKind } from "@/types/aquapt";
 import {
     ASSISTANT_MODE_PROMPTS,
     ASSISTANT_QUESTION_PRESETS,
@@ -55,9 +56,7 @@ export default function WorkflowSettingsScreen() {
     aquariums[0]?.id ?? "",
   );
   const [compatibilitySpecies, setCompatibilitySpecies] = useState("");
-  const [compatibilityKind, setCompatibilityKind] = useState<
-    "fish" | "shrimp" | "snail" | "coral" | "plant" | "other"
-  >("shrimp");
+  const [compatibilityKind, setCompatibilityKind] = useState<LivestockKind>("shrimp");
   const [compatibilityQuantity, setCompatibilityQuantity] = useState("1");
   const [compatibilityNotes, setCompatibilityNotes] = useState("");
 

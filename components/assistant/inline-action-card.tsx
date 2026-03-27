@@ -3,6 +3,7 @@ import { IconButton, Text, useTheme } from "react-native-paper";
 import type { AssistantDetectedAction } from "@/types/assistant";
 import { ACTION_ICONS, HUMANIZED_TYPES } from "./conversation-drawer";
 import { getActionSummary } from "@/utils/assistant-constants";
+import { withAlpha } from "@/constants/theme";
 
 interface InlineActionCardProps {
   action: AssistantDetectedAction;
@@ -28,7 +29,7 @@ export function InlineActionCard({
         styles.card,
         {
           backgroundColor: action.approved
-            ? `${theme.colors.primary}18`
+            ? withAlpha(theme.colors.primary, 0.09)
             : theme.colors.surfaceVariant,
           borderColor: action.approved
             ? theme.colors.primary

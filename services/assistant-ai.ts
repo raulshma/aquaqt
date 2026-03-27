@@ -1,7 +1,7 @@
-type OpenRouterRole = "system" | "user" | "assistant";
+import type { AssistantMessageRole } from "@/types/assistant";
 
 export interface OpenRouterMessage {
-  role: OpenRouterRole;
+  role: AssistantMessageRole;
   content: string;
 }
 
