@@ -1,13 +1,14 @@
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import {
     Button,
     Card,
     Chip,
     Divider,
     FAB,
+    IconButton,
     Text,
     TextInput,
     useTheme,
@@ -251,6 +252,21 @@ export default function TasksScreen() {
     return tones[index % tones.length];
   };
 
+  const formatRelativeTime = (dateStr: string): string => {
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const min = Math.floor(diffMs / 60000);
+    if (min < 1) return "Just now";
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    if (day < 7) return `${day}d ago`;
+    return new Date(dateStr).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  };
+
   return (
     <>
       <DashboardScrollView>
@@ -325,47 +341,24 @@ export default function TasksScreen() {
                   >
                     {getAquariumName(aquariumId)}
                   </Text>
-                  <View style={styles.metaChipRow}>
+                  {targetLivestock ? (
                     <Chip
                       compact
-                      icon="fishbowl"
+                      icon="fish"
                       onPress={() =>
                         router.push(
                           getEntityHref(
-                            createEntityRef("aquarium", aquariumId, aquariumId),
+                            createEntityRef(
+                              "livestock",
+                              targetLivestock.id,
+                              aquariumId,
+                            ),
                           ) as never,
                         )
                       }
                     >
-                      Aquarium
+                      {targetLivestock.name}
                     </Chip>
-                    {targetLivestock ? (
-                      <Chip
-                        compact
-                        icon="fish"
-                        onPress={() =>
-                          router.push(
-                            getEntityHref(
-                              createEntityRef(
-                                "livestock",
-                                targetLivestock.id,
-                                aquariumId,
-                              ),
-                            ) as never,
-                          )
-                        }
-                      >
-                        {targetLivestock.name}
-                      </Chip>
-                    ) : null}
-                  </View>
-                  {targetLivestock ? (
-                    <Text
-                      variant="bodySmall"
-                      style={[styles.targetTank, { color: textColor }]}
-                    >
-                      Target livestock: {targetLivestock.name}
-                    </Text>
                   ) : null}
                   {task.description ? (
                     <Text variant="bodyMedium" style={{ color: textColor }}>
@@ -474,10 +467,8 @@ export default function TasksScreen() {
             );
 
             return (
-              <Card
+              <Pressable
                 key={aquarium.id}
-                style={[styles.card, { backgroundColor }]}
-                mode="contained"
                 onPress={() =>
                   router.push(
                     getEntityHref(
@@ -486,19 +477,39 @@ export default function TasksScreen() {
                   )
                 }
               >
-                <Card.Title
-                  title={aquarium.name}
-                  subtitle={aquarium.waterType}
-                  titleStyle={{ color: textColor }}
-                  subtitleStyle={{ color: textColor, opacity: 0.8 }}
-                />
-                <Card.Content>
-                  <Text variant="bodyMedium" style={{ color: textColor }}>
+                <View style={[styles.dosingRow, { backgroundColor }]}>
+                  <View style={styles.dosingRowTitleLine}>
+                    <Text
+                      variant="titleSmall"
+                      numberOfLines={1}
+                      style={{ color: textColor }}
+                    >
+                      {aquarium.name}
+                    </Text>
+                    <View
+                      style={[
+                        styles.waterBadge,
+                        { backgroundColor: theme.colors.surface },
+                      ]}
+                    >
+                      <Text
+                        variant="labelSmall"
+                        style={{ color: theme.colors.onSurface }}
+                      >
+                        {aquarium.waterType}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text
+                    variant="bodySmall"
+                    numberOfLines={1}
+                    style={{ color: textColor, opacity: 0.78 }}
+                  >
                     {latestDosingByAquarium[aquarium.id] ??
                       "No dosing recorded yet."}
                   </Text>
-                </Card.Content>
-              </Card>
+                </View>
+              </Pressable>
             );
           })}
         </DashboardSection>
@@ -534,10 +545,8 @@ export default function TasksScreen() {
               );
 
               return (
-                <Card
+                <Pressable
                   key={execution.id}
-                  style={[styles.card, { backgroundColor }]}
-                  mode="contained"
                   onPress={() =>
                     task
                       ? router.push(
@@ -552,86 +561,53 @@ export default function TasksScreen() {
                       : undefined
                   }
                 >
-                  <Card.Content>
-                    <Text variant="titleSmall" style={{ color: textColor }}>
-                      {task?.title ?? "Task"}
-                    </Text>
-                    <Text
-                      variant="bodySmall"
-                      style={[styles.targetTank, { color: textColor }]}
-                    >
-                      {getAquariumName(execution.aquariumId)} •{" "}
-                      {new Date(execution.completedAt).toLocaleString()}
-                    </Text>
-                    <View style={styles.metaChipRow}>
-                      <Chip
-                        compact
-                        icon="fishbowl"
-                        onPress={() =>
-                          router.push(
-                            getEntityHref(
-                              createEntityRef(
-                                "aquarium",
-                                execution.aquariumId,
-                                execution.aquariumId,
-                              ),
-                            ) as never,
-                          )
-                        }
-                      >
-                        Aquarium
-                      </Chip>
-                      {targetLivestock ? (
-                        <Chip
-                          compact
-                          icon="fish"
-                          onPress={() =>
-                            router.push(
-                              getEntityHref(
-                                createEntityRef(
-                                  "livestock",
-                                  targetLivestock.id,
-                                  execution.aquariumId,
-                                ),
-                              ) as never,
-                            )
-                          }
+                  <View style={[styles.historyRow, { backgroundColor }]}>
+                    <View style={styles.historyRowBody}>
+                      <View style={styles.historyRowTitleLine}>
+                        <Text
+                          variant="titleSmall"
+                          numberOfLines={1}
+                          style={{ color: textColor, flex: 1 }}
                         >
-                          {targetLivestock.name}
-                        </Chip>
-                      ) : null}
-                    </View>
-                    {execution.note ? (
-                      <Text variant="bodyMedium" style={{ color: textColor }}>
-                        {execution.note}
-                      </Text>
-                    ) : null}
-                    {targetLivestock ? (
+                          {task?.title ?? "Task"}
+                        </Text>
+                        <IconButton
+                          icon="pencil-outline"
+                          size={14}
+                          iconColor={textColor}
+                          onPress={() =>
+                            router.push({
+                              pathname: "/entity-edit/task-execution",
+                              params: { id: execution.id },
+                            } as never)
+                          }
+                          style={styles.historyEditBtn}
+                        />
+                      </View>
                       <Text
                         variant="bodySmall"
-                        style={[styles.targetTank, { color: textColor }]}
+                        numberOfLines={1}
+                        style={{ color: textColor, opacity: 0.72 }}
                       >
-                        Target livestock: {targetLivestock.name}
+                        {getAquariumName(execution.aquariumId)}
+                        {" \u2022 "}
+                        {formatRelativeTime(execution.completedAt)}
+                        {targetLivestock
+                          ? ` \u2022 ${targetLivestock.name}`
+                          : ""}
                       </Text>
-                    ) : null}
-                    <View style={styles.actionsRow}>
-                      <Button
-                        mode="text"
-                        compact
-                        icon="pencil"
-                        onPress={() =>
-                          router.push({
-                            pathname: "/entity-edit/task-execution",
-                            params: { id: execution.id },
-                          } as never)
-                        }
-                        textColor={textColor}
-                      >
-                        Edit
-                      </Button>
+                      {execution.note ? (
+                        <Text
+                          variant="bodySmall"
+                          numberOfLines={1}
+                          style={{ color: textColor, opacity: 0.56 }}
+                        >
+                          {execution.note}
+                        </Text>
+                      ) : null}
                     </View>
-                  </Card.Content>
-                </Card>
+                  </View>
+                </Pressable>
               );
             })
           )}
@@ -1011,6 +987,42 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
     marginBottom: 8,
+  },
+  dosingRow: {
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  dosingRowTitleLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  waterBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 999,
+  },
+  historyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+  },
+  historyRowBody: {
+    flex: 1,
+    gap: 1,
+    minWidth: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  historyRowTitleLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  historyEditBtn: {
+    margin: 0,
+    marginRight: -8,
   },
   fab: {
     position: "absolute",

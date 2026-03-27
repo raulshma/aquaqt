@@ -1,13 +1,11 @@
 import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import {
     Button,
-    Card,
     Chip,
     FAB,
     Text,
@@ -18,7 +16,6 @@ import { DatePickerModal } from "react-native-paper-dates";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomSheet } from "@/components/ui/bottom-sheet";
-import { getCardTextColorForBackground } from "@/components/ui/card-tone";
 import {
     DashboardHero,
     DashboardScrollView,
@@ -32,7 +29,7 @@ import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented
 import { useAquapt } from "@/context/aquapt-context";
 import { getEntityHref, getTimelineEventTarget } from "@/services/entity-links";
 import { isTaskDue } from "@/services/scheduling";
-import { TimelineEventType } from "@/types/aquapt";
+import { TimelineEventType, TimelineEvent } from "@/types/aquapt";
 
 const filters: { value: TimelineEventType | "all"; label: string }[] = [
   { value: "all", label: "All" },
@@ -56,6 +53,51 @@ const EVENT_LABELS: Record<TimelineEventType, string> = {
   asset: "Asset",
   consumable: "Consumable",
 };
+
+function formatRelativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function groupEventsByDate(events: TimelineEvent[]) {
+  const groups: { label: string; events: TimelineEvent[] }[] = [];
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+
+  for (const event of events) {
+    const d = new Date(event.createdAt);
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+    let label: string;
+    if (day.getTime() === today.getTime()) {
+      label = "Today";
+    } else if (day.getTime() === yesterday.getTime()) {
+      label = "Yesterday";
+    } else {
+      label = day.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) {
+      last.events.push(event);
+    } else {
+      groups.push({ label, events: [event] });
+    }
+  }
+  return groups;
+}
 
 export default function TimelineScreen() {
   const router = useRouter();
@@ -301,28 +343,33 @@ export default function TimelineScreen() {
     void form.handleSubmit();
   };
 
-  const getEventBackground = (eventType: TimelineEventType) => {
+  const getEventAccentColor = (eventType: TimelineEventType) => {
     switch (eventType) {
       case "issue":
-        return theme.colors.errorContainer;
+        return theme.colors.error;
       case "parameter":
-        return theme.colors.secondaryContainer;
+        return theme.colors.secondary;
       case "task":
-        return theme.colors.primaryContainer;
+        return theme.colors.primary;
       case "memo":
-        return theme.colors.tertiaryContainer;
+        return theme.colors.tertiary;
       case "livestock":
-        return theme.colors.surfaceVariant;
+        return theme.colors.onSurfaceVariant;
       case "asset":
-        return theme.colors.secondaryContainer;
+        return theme.colors.secondary;
       case "consumable":
-        return theme.colors.primaryContainer;
+        return theme.colors.primary;
       case "dosing":
-        return theme.colors.tertiaryContainer;
+        return theme.colors.tertiary;
       default:
-        return theme.colors.surfaceVariant;
+        return theme.colors.onSurfaceVariant;
     }
   };
+
+  const groupedEvents = useMemo(
+    () => groupEventsByDate(filteredTimeline),
+    [filteredTimeline],
+  );
 
   return (
     <>
@@ -390,139 +437,95 @@ export default function TimelineScreen() {
           title="Event stream"
           description="The latest cross-app activity, ordered most recent first."
         >
-          {filteredTimeline.map((event) => {
-            const eventImageUri =
-              event.photoUri ||
-              aquariumPhotoById[event.aquariumId] ||
-              undefined;
-            const backgroundColor = getEventBackground(event.type);
-            const cardBackground = eventImageUri
-              ? theme.colors.surface
-              : backgroundColor;
-            const textColor = getCardTextColorForBackground(
-              theme,
-              cardBackground,
-            );
-            const sourceTarget = getTimelineEventTarget(event);
-
-            return (
-              <Card
-                key={event.id}
-                style={[styles.eventCard, { backgroundColor: cardBackground }]}
-                mode="contained"
-                onPress={() =>
-                  router.push(getEntityHref(sourceTarget) as never)
-                }
+          {groupedEvents.map((group) => (
+            <View key={group.label}>
+              <Text
+                variant="labelMedium"
+                style={[
+                  styles.feedDateHeader,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
               >
-                {eventImageUri ? (
-                  <View style={styles.eventPhotoShell}>
-                    <Image
-                      source={{ uri: eventImageUri }}
-                      style={styles.eventPhoto}
-                      contentFit="cover"
-                    />
-                    <LinearGradient
-                      colors={["rgba(15,23,42,0.08)", "rgba(15,23,42,0.84)"]}
-                      style={styles.eventPhotoOverlay}
-                    />
-                    <View style={styles.eventPhotoHeader}>
-                      <View style={styles.eventPhotoTypePill}>
-                        <Text
-                          variant="labelSmall"
-                          style={styles.eventPhotoTypeText}
-                        >
-                          {EVENT_LABELS[event.type]}
-                        </Text>
-                      </View>
-                      <Text
-                        variant="labelSmall"
-                        style={styles.eventPhotoTimestamp}
-                      >
-                        {new Date(event.createdAt).toLocaleString()}
-                      </Text>
-                    </View>
-                    <View style={styles.eventPhotoFooter}>
-                      <Text
-                        variant="labelLarge"
-                        style={styles.eventPhotoAquarium}
-                      >
-                        {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-                <Card.Content>
-                  {!eventImageUri ? (
-                    <View style={styles.eventHeader}>
-                      <View style={[styles.eventTypePill, { backgroundColor }]}>
-                        <Text
-                          variant="labelSmall"
-                          style={{
-                            color: getCardTextColorForBackground(
-                              theme,
-                              backgroundColor,
-                            ),
-                          }}
-                        >
-                          {EVENT_LABELS[event.type]}
-                        </Text>
-                      </View>
-                      <Text variant="labelSmall" style={{ color: textColor }}>
-                        {new Date(event.createdAt).toLocaleString()}
-                      </Text>
-                    </View>
-                  ) : null}
-                  <Text
-                    variant="titleSmall"
-                    style={[styles.eventTitle, { color: textColor }]}
+                {group.label}
+              </Text>
+              {group.events.map((event, index) => {
+                const accentColor = getEventAccentColor(event.type);
+                const sourceTarget = getTimelineEventTarget(event);
+                const thumbUri =
+                  event.photoUri || aquariumPhotoById[event.aquariumId];
+                const isLast = index === group.events.length - 1;
+
+                return (
+                  <Pressable
+                    key={event.id}
+                    style={!isLast ? styles.feedDivider : undefined}
+                    onPress={() =>
+                      router.push(getEntityHref(sourceTarget) as never)
+                    }
                   >
-                    {event.title}
-                  </Text>
-                  {!eventImageUri ? (
-                    <Text
-                      variant="bodySmall"
-                      style={[styles.aquariumName, { color: textColor }]}
-                    >
-                      {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
-                    </Text>
-                  ) : null}
-                  {event.description ? (
-                    <Text variant="bodyMedium" style={{ color: textColor }}>
-                      {event.description}
-                    </Text>
-                  ) : null}
-                  <View style={styles.eventFooter}>
-                    <Chip
-                      compact
-                      icon="arrow-top-right"
-                      onPress={() =>
-                        router.push(getEntityHref(sourceTarget) as never)
-                      }
-                    >
-                      {sourceTarget.kind === "aquarium"
-                        ? "Open aquarium"
-                        : "Open linked record"}
-                    </Chip>
-                  </View>
-                </Card.Content>
-              </Card>
-            );
-          })}
+                    <View style={styles.feedRow}>
+                      <View
+                        style={[
+                          styles.feedAccent,
+                          { backgroundColor: accentColor },
+                        ]}
+                      />
+                      {thumbUri ? (
+                        <Image
+                          source={{ uri: thumbUri }}
+                          style={styles.feedThumbnail}
+                          contentFit="cover"
+                        />
+                      ) : null}
+                      <View style={styles.feedContent}>
+                        <View style={styles.feedMeta}>
+                          <Text
+                            variant="labelSmall"
+                            style={{ color: accentColor }}
+                            numberOfLines={1}
+                          >
+                            {EVENT_LABELS[event.type]}
+                          </Text>
+                          <Text
+                            variant="labelSmall"
+                            style={{ color: theme.colors.onSurfaceVariant }}
+                            numberOfLines={1}
+                          >
+                            {formatRelativeTime(event.createdAt)}
+                          </Text>
+                        </View>
+                        <Text
+                          variant="bodyMedium"
+                          style={{ color: theme.colors.onSurface }}
+                          numberOfLines={2}
+                        >
+                          {event.title}
+                        </Text>
+                        <Text
+                          variant="bodySmall"
+                          style={{ color: theme.colors.onSurfaceVariant }}
+                          numberOfLines={1}
+                        >
+                          {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
+                          {event.description
+                            ? ` · ${event.description}`
+                            : ""}
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
 
           {filteredTimeline.length === 0 ? (
-            <Card
-              style={[
-                styles.eventCard,
-                { backgroundColor: theme.colors.surfaceVariant },
-              ]}
-              mode="contained"
+            <Text
+              variant="bodyMedium"
+              style={{ color: theme.colors.onSurfaceVariant }}
             >
-              <Card.Content>
-                <Text variant="bodyMedium">
-                  No timeline events for this filter yet.
-                </Text>
-              </Card.Content>
-            </Card>
+              No timeline events for this filter yet.
+            </Text>
           ) : null}
         </DashboardSection>
       </DashboardScrollView>
@@ -680,7 +683,7 @@ export default function TimelineScreen() {
                     {values.memo.photoUri ? (
                       <Image
                         source={{ uri: values.memo.photoUri }}
-                        style={styles.eventPhoto}
+                        style={styles.memoPreviewPhoto}
                       />
                     ) : null}
                   </View>
@@ -831,78 +834,48 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 10,
   },
-  eventCard: {
-    marginTop: 0,
-    borderRadius: 24,
-    overflow: "hidden",
-  },
-  eventPhoto: {
+  memoPreviewPhoto: {
     width: "100%",
-    height: 220,
+    height: 160,
+    borderRadius: 12,
   },
-  eventPhotoShell: {
-    position: "relative",
+  feedDateHeader: {
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    marginTop: 4,
   },
-  eventPhotoOverlay: {
-    ...StyleSheet.absoluteFillObject,
+  feedDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(128,128,128,0.2)",
   },
-  eventPhotoHeader: {
-    position: "absolute",
-    top: 14,
-    left: 14,
-    right: 14,
+  feedRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 10,
+    paddingVertical: 10,
   },
-  eventPhotoFooter: {
-    position: "absolute",
-    left: 14,
-    right: 14,
-    bottom: 14,
+  feedAccent: {
+    width: 3,
+    height: 32,
+    borderRadius: 2,
+    marginTop: 2,
+    flexShrink: 0,
   },
-  eventPhotoTypePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.18)",
+  feedThumbnail: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    flexShrink: 0,
   },
-  eventPhotoTypeText: {
-    color: "#fff",
-    fontWeight: "700",
-  },
-  eventPhotoTimestamp: {
-    color: "rgba(255,255,255,0.9)",
-    textAlign: "right",
+  feedContent: {
     flex: 1,
+    gap: 2,
   },
-  eventPhotoAquarium: {
-    color: "#fff",
-    fontWeight: "700",
-  },
-  eventTypePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  eventHeader: {
+  feedMeta: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
-  },
-  eventTitle: {
-    marginBottom: 2,
-  },
-  aquariumName: {
-    opacity: 0.75,
-    marginBottom: 8,
-  },
-  eventFooter: {
-    marginTop: 10,
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: 8,
   },
   fab: {

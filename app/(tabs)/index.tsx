@@ -191,68 +191,123 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
 }: AquariumOverviewCardProps) {
   const theme = useTheme();
   const textColor = getCardTextColorForBackground(theme, backgroundColor);
+  const surfaceBg = theme.colors.surface;
+  const onSurface = theme.colors.onSurface;
+
+  const nitrateShort = nitrateTrend.startsWith("Not enough")
+    ? "—"
+    : nitrateTrend.split(" ").slice(0, 2).join(" ");
 
   return (
-    <Card
-      style={[styles.keepCard, { backgroundColor }]}
-      mode="contained"
-      onPress={() => onOpenDetails(aquarium.id)}
-    >
-      {aquarium.photoUri ? (
-        <Image
-          source={{ uri: aquarium.photoUri }}
-          style={styles.aquariumCardPhoto}
-          contentFit="cover"
-        />
-      ) : null}
-      <Card.Title
-        title={aquarium.name}
-        subtitle={`${aquarium.volumeLiters}L • ${aquarium.waterType}`}
-        titleStyle={{ color: textColor }}
-        subtitleStyle={{ color: textColor, opacity: 0.8 }}
-      />
-      <Card.Content style={styles.aquariumCardContent}>
-        <Text variant="bodySmall" style={{ color: textColor, opacity: 0.95 }}>
-          {latestParameterSummary}
-        </Text>
-        <Text
-          variant="bodySmall"
-          style={[styles.aquariumCardMeta, { color: textColor }]}
-        >
-          {aquarium.dimensions} • Setup {aquarium.setupDate}
-          {investmentCostText ? ` • ${investmentCostText}` : ""}
-        </Text>
-
-        <View style={styles.aquariumStatusRow}>
-          <Chip compact icon="fish">
-            {livestockCount}
-          </Chip>
-          <Chip compact icon="alert-circle">
-            {openIssueCount}
-          </Chip>
-          <Chip compact icon="chart-line">
-            NO3 {nitrateTrend}
-          </Chip>
-        </View>
-
-        <View style={styles.aquariumActionRow}>
-          <IconButton
-            icon="pencil"
-            mode="contained"
-            size={20}
-            onPress={() => onEdit(aquarium.id)}
-            accessibilityLabel="Edit aquarium specs"
+    <Pressable onPress={() => onOpenDetails(aquarium.id)}>
+      <Surface
+        elevation={1}
+        style={[styles.aquariumCard, { backgroundColor }]}
+      >
+        {aquarium.photoUri ? (
+          <Image
+            source={{ uri: aquarium.photoUri }}
+            style={styles.aquariumThumb}
+            contentFit="cover"
           />
-          <IconButton
-            icon="open-in-new"
-            mode="contained"
-            size={20}
-            onPress={() => onOpenDetails(aquarium.id)}
-            accessibilityLabel="Open aquarium hub"
-          />
+        ) : (
+          <View
+            style={[
+              styles.aquariumThumbPlaceholder,
+              { backgroundColor: surfaceBg },
+            ]}
+          >
+            <IconButton
+              icon="fishbowl-outline"
+              size={22}
+              iconColor={textColor}
+            />
+          </View>
+        )}
+
+        <View style={styles.aquariumCardBody}>
+          <View style={styles.aquariumCardHeader}>
+            <View style={styles.aquariumCardTitleRow}>
+              <Text
+                variant="titleSmall"
+                numberOfLines={1}
+                style={{ color: textColor }}
+              >
+                {aquarium.name}
+              </Text>
+              <View
+                style={[
+                  styles.aquariumBadge,
+                  { backgroundColor: surfaceBg },
+                ]}
+              >
+                <Text
+                  variant="labelSmall"
+                  style={{ color: onSurface }}
+                >
+                  {aquarium.volumeLiters}L
+                </Text>
+              </View>
+            </View>
+            <Text
+              variant="bodySmall"
+              numberOfLines={1}
+              style={{ color: textColor, opacity: 0.78 }}
+            >
+              {aquarium.waterType}
+              {investmentCostText ? ` • ${investmentCostText}` : ""}
+            </Text>
+          </View>
+
+          <Text
+            variant="bodySmall"
+            numberOfLines={1}
+            style={{ color: textColor, opacity: 0.88 }}
+          >
+            {latestParameterSummary}
+          </Text>
+
+          <View style={styles.aquariumCardFooter}>
+            <View style={styles.aquariumStatRow}>
+              <Text
+                variant="labelSmall"
+                style={[styles.aquariumStat, { color: textColor }]}
+              >
+                {aquarium.dimensions}
+              </Text>
+              <Text
+                variant="labelSmall"
+                style={[styles.aquariumStat, { color: textColor }]}
+              >
+                Setup {aquarium.setupDate}
+              </Text>
+            </View>
+
+            <View style={styles.aquariumCardActions}>
+              <Text
+                variant="labelSmall"
+                style={[styles.aquariumStat, { color: textColor }]}
+              >
+                {livestockCount}
+                <Text style={{ fontSize: 10 }}> {"\uD83D\uDC1F"}</Text>
+                {"  "}
+                {openIssueCount}
+                <Text style={{ fontSize: 10 }}> {"\u26A0"}</Text>
+                {"  "}NO3 {nitrateShort}
+              </Text>
+              <IconButton
+                icon="pencil"
+                mode="contained"
+                size={16}
+                onPress={() => onEdit(aquarium.id)}
+                accessibilityLabel="Edit aquarium specs"
+                style={styles.aquariumCardIconButton}
+              />
+            </View>
+          </View>
         </View>
-      </Card.Content>
-    </Card>
+      </Surface>
+    </Pressable>
   );
 });
 
@@ -3556,7 +3611,67 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   aquariumList: {
-    gap: 10,
+    gap: 8,
+  },
+  aquariumCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  aquariumThumb: {
+    width: 88,
+    height: 88,
+  },
+  aquariumThumbPlaceholder: {
+    width: 88,
+    height: 88,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aquariumCardBody: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 3,
+    minWidth: 0,
+  },
+  aquariumCardHeader: {
+    gap: 1,
+  },
+  aquariumCardTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  aquariumBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  aquariumCardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 4,
+  },
+  aquariumStatRow: {
+    flexDirection: "row",
+    gap: 8,
+    flex: 1,
+    minWidth: 0,
+  },
+  aquariumStat: {
+    opacity: 0.72,
+    lineHeight: 14,
+  },
+  aquariumCardActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  aquariumCardIconButton: {
+    margin: 0,
   },
   keepCard: {
     borderRadius: 18,
@@ -3760,22 +3875,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   aquariumCardContent: {
-    gap: 6,
-    paddingBottom: 8,
-  },
-  aquariumCardMeta: {
-    opacity: 0.75,
-  },
-  aquariumStatusRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 6,
-  },
-  aquariumActionRow: {
-    flexDirection: "row",
-    gap: 6,
-    marginTop: 8,
+    gap: 4,
   },
   actionSelector: {
     marginTop: 12,
@@ -3821,10 +3921,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 160,
     borderRadius: 18,
-  },
-  aquariumCardPhoto: {
-    width: "100%",
-    height: 110,
   },
   entityPhoto: {
     width: "100%",
