@@ -1752,16 +1752,7 @@ export default function HomeScreen() {
       }));
   }, [chartAquariumId, parameterLogsByAquarium, selectedMetric]);
 
-  const aquariumColumns = useMemo(() => {
-    return aquariums.reduce<[Aquarium[], Aquarium[]]>(
-      (columns, aquarium, index) => {
-        columns[index % 2].push(aquarium);
-        return columns;
-      },
-      [[], []],
-    );
-  }, [aquariums]);
-  const [leftColumnAquariums, rightColumnAquariums] = aquariumColumns;
+
 
   const getAquariumCardBackgroundColor = (cardIndex: number) => {
     const keepTones = [
@@ -2007,80 +1998,40 @@ export default function HomeScreen() {
           </Card.Content>
         </Card>
 
-        <View style={styles.keepGrid}>
-          <View style={styles.keepColumn}>
-            {leftColumnAquariums.map((aquarium, index) => {
-              const insight = aquariumInsightsById[aquarium.id];
+        <View style={styles.aquariumList}>
+          {aquariums.map((aquarium, index) => {
+            const insight = aquariumInsightsById[aquarium.id];
 
-              return (
-                <AquariumOverviewCard
-                  key={aquarium.id}
-                  aquarium={aquarium}
-                  backgroundColor={getAquariumCardBackgroundColor(index)}
-                  latestParameterSummary={
-                    insight?.latestParameterSummary ??
-                    "No measurements logged yet"
-                  }
-                  investmentCostText={
-                    aquarium.investmentCost !== undefined
-                      ? formatCurrencyAmount(
-                          aquarium.investmentCost,
-                          userCurrencyCode,
-                          userLocale,
-                        )
-                      : undefined
-                  }
-                  livestockCount={livestockCountByAquarium[aquarium.id] ?? 0}
-                  openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
-                  nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
-                  onEdit={openEditAquarium}
-                  onOpenDetails={(aquariumId) =>
-                    openEntity(
-                      createEntityRef("aquarium", aquariumId, aquariumId),
-                    )
-                  }
-                />
-              );
-            })}
-          </View>
-
-          <View style={styles.keepColumn}>
-            {rightColumnAquariums.map((aquarium, index) => {
-              const insight = aquariumInsightsById[aquarium.id];
-
-              return (
-                <AquariumOverviewCard
-                  key={aquarium.id}
-                  aquarium={aquarium}
-                  backgroundColor={getAquariumCardBackgroundColor(
-                    index + leftColumnAquariums.length,
-                  )}
-                  latestParameterSummary={
-                    insight?.latestParameterSummary ??
-                    "No measurements logged yet"
-                  }
-                  investmentCostText={
-                    aquarium.investmentCost !== undefined
-                      ? formatCurrencyAmount(
-                          aquarium.investmentCost,
-                          userCurrencyCode,
-                          userLocale,
-                        )
-                      : undefined
-                  }
-                  livestockCount={livestockCountByAquarium[aquarium.id] ?? 0}
-                  openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
-                  nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
-                  onEdit={openEditAquarium}
-                  onOpenDetails={(aquariumId) =>
-                    openEntity(
-                      createEntityRef("aquarium", aquariumId, aquariumId),
-                    )
-                  }
-                />
-              );
-            })}
-          </View>
+            return (
+              <AquariumOverviewCard
+                key={aquarium.id}
+                aquarium={aquarium}
+                backgroundColor={getAquariumCardBackgroundColor(index)}
+                latestParameterSummary={
+                  insight?.latestParameterSummary ??
+                  "No measurements logged yet"
+                }
+                investmentCostText={
+                  aquarium.investmentCost !== undefined
+                    ? formatCurrencyAmount(
+                        aquarium.investmentCost,
+                        userCurrencyCode,
+                        userLocale,
+                      )
+                    : undefined
+                }
+                livestockCount={livestockCountByAquarium[aquarium.id] ?? 0}
+                openIssueCount={openIssuesByAquarium[aquarium.id] ?? 0}
+                nitrateTrend={insight?.nitrateTrend ?? "Not enough data yet"}
+                onEdit={openEditAquarium}
+                onOpenDetails={(aquariumId) =>
+                  openEntity(
+                    createEntityRef("aquarium", aquariumId, aquariumId),
+                  )
+                }
+              />
+            );
+          })}
         </View>
 
         <Text variant="titleMedium" style={styles.sectionTitle}>
@@ -3602,6 +3553,9 @@ const styles = StyleSheet.create({
   },
   keepColumn: {
     flex: 1,
+    gap: 10,
+  },
+  aquariumList: {
     gap: 10,
   },
   keepCard: {
