@@ -2,10 +2,12 @@ import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
     type Dispatch,
     memo,
     type SetStateAction,
+    useCallback,
     useEffect,
     useMemo,
     useRef,
@@ -877,6 +879,7 @@ type TodayFocusPanelItem = {
   caption: string;
   accentColor: string;
   onPress?: () => void;
+  onComplete?: () => void;
 };
 
 type TodayFocusPanelProps = {
@@ -951,6 +954,32 @@ const TodayFocusPanel = memo(function TodayFocusPanel({
                     {item.caption}
                   </Text>
                 </View>
+                {item.onComplete && (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      item.onComplete?.();
+                    }}
+                    hitSlop={4}
+                    style={({ pressed }) => [
+                      styles.todayFocusCompleteBtn,
+                      {
+                        borderColor: item.accentColor,
+                        backgroundColor: pressed
+                          ? item.accentColor
+                          : "transparent",
+                      },
+                    ]}
+                  >
+                    {({ pressed }) => (
+                      <MaterialCommunityIcons
+                        name="check"
+                        size={13}
+                        color={pressed ? "#fff" : item.accentColor}
+                      />
+                    )}
+                  </Pressable>
+                )}
               </View>
             );
 
@@ -1884,6 +1913,7 @@ export default function HomeScreen() {
       router.push(
         getEntityHref(createEntityRef("task", entry.taskId)) as never,
       ),
+    onComplete: () => completeTask(entry.taskId, entry.aquariumId),
   }));
   const isWideTodayGlanceLayout = width >= 720;
   const todayMetricWidth = isWideTodayGlanceLayout ? "24%" : "48.5%";
@@ -3825,6 +3855,15 @@ const styles = StyleSheet.create({
   },
   todayFocusItemCaption: {
     opacity: 0.66,
+  },
+  todayFocusCompleteBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
   },
   todayFocusEmpty: {
     flexDirection: "row",
