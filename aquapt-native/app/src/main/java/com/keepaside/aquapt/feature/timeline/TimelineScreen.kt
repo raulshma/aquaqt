@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,8 +44,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.repository.AquariumRepository
+import com.keepaside.aquapt.core.repository.DosingLogRepository
+import com.keepaside.aquapt.core.repository.IssueRepository
 import com.keepaside.aquapt.core.repository.MemoRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
+import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
 import org.koin.java.KoinJavaComponent
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,23 +66,42 @@ fun TimelineScreen(
     val memoRepository: MemoRepository = remember {
         KoinJavaComponent.get(MemoRepository::class.java)
     }
+    val issueRepository: IssueRepository = remember {
+        KoinJavaComponent.get(IssueRepository::class.java)
+    }
+    val dosingLogRepository: DosingLogRepository = remember {
+        KoinJavaComponent.get(DosingLogRepository::class.java)
+    }
+    val waterParameterLogRepository: WaterParameterLogRepository = remember {
+        KoinJavaComponent.get(WaterParameterLogRepository::class.java)
+    }
 
     val viewModel: TimelineViewModel = viewModel(
-        factory = remember(aquariumRepository, timelineEventRepository, memoRepository) {
+        factory = remember(
+            aquariumRepository,
+            timelineEventRepository,
+            memoRepository,
+            issueRepository,
+            dosingLogRepository,
+            waterParameterLogRepository
+        ) {
             TimelineViewModel.factory(
                 aquariumRepository = aquariumRepository,
                 timelineEventRepository = timelineEventRepository,
-                memoRepository = memoRepository
+                memoRepository = memoRepository,
+                issueRepository = issueRepository,
+                dosingLogRepository = dosingLogRepository,
+                waterParameterLogRepository = waterParameterLogRepository
             )
         }
     )
 
     val uiState by viewModel.uiState.collectAsState()
-    var showQuickMemoSheet by rememberSaveable { mutableStateOf(false) }
+    var showQuickLogSheet by rememberSaveable { mutableStateOf(false) }
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        viewModel.onQuickMemoPhotoUriChanged(uri?.toString())
+        viewModel.onQuickLogPhotoUriChanged(uri?.toString())
     }
 
     Box(
@@ -140,12 +164,12 @@ fun TimelineScreen(
 
                         FilledTonalButton(
                             onClick = {
-                                viewModel.prepareQuickMemo()
-                                showQuickMemoSheet = true
+                                viewModel.prepareQuickLog()
+                                showQuickLogSheet = true
                             },
                             enabled = uiState.aquariumFilters.isNotEmpty()
                         ) {
-                            Text("Quick memo")
+                            Text("Quick log")
                         }
                     }
                 }
@@ -211,15 +235,21 @@ fun TimelineScreen(
             }
         }
 
-        if (showQuickMemoSheet) {
+        if (showQuickLogSheet) {
             ModalBottomSheet(
-                onDismissRequest = { showQuickMemoSheet = false }
+                onDismissRequest = { showQuickLogSheet = false }
             ) {
-                QuickMemoSheet(
+                QuickLogSheet(
                     uiState = uiState,
-                    onAquariumSelected = viewModel::onQuickMemoAquariumSelected,
-                    onContentChanged = viewModel::onQuickMemoContentChanged,
-                    onCreatedAtChanged = viewModel::onQuickMemoCreatedAtChanged,
+                    onTypeSelected = viewModel::onQuickLogTypeSelected,
+                    onAquariumSelected = viewModel::onQuickLogAquariumSelected,
+                    onMemoContentChanged = viewModel::onQuickLogMemoContentChanged,
+                    onIssueTitleChanged = viewModel::onQuickLogIssueTitleChanged,
+                    onDosingProductChanged = viewModel::onQuickLogDosingProductChanged,
+                    onDosingAmountChanged = viewModel::onQuickLogDosingAmountChanged,
+                    onDosingNoteChanged = viewModel::onQuickLogDosingNoteChanged,
+                    onParameterValueChanged = viewModel::onQuickLogParameterValueChanged,
+                    onCreatedAtChanged = viewModel::onQuickLogCreatedAtChanged,
                     onPickPhoto = {
                         photoPickerLauncher.launch(
                             PickVisualMediaRequest.Builder()
@@ -227,12 +257,12 @@ fun TimelineScreen(
                                 .build()
                         )
                     },
-                    onRemovePhoto = { viewModel.onQuickMemoPhotoUriChanged(null) },
+                    onRemovePhoto = { viewModel.onQuickLogPhotoUriChanged(null) },
                     onSave = {
-                        viewModel.saveQuickMemo()
-                        showQuickMemoSheet = false
+                        viewModel.saveQuickLog()
+                        showQuickLogSheet = false
                     },
-                    onCancel = { showQuickMemoSheet = false }
+                    onCancel = { showQuickLogSheet = false }
                 )
             }
         }
@@ -367,77 +397,88 @@ private fun TimelineEventRow(event: TimelineEventItem) {
 }
 
 @Composable
-private fun QuickMemoSheet(
+private fun QuickLogSheet(
     uiState: TimelineUiState,
+    onTypeSelected: (TimelineQuickLogType) -> Unit,
     onAquariumSelected: (String) -> Unit,
-    onContentChanged: (String) -> Unit,
+    onMemoContentChanged: (String) -> Unit,
+    onIssueTitleChanged: (String) -> Unit,
+    onDosingProductChanged: (String) -> Unit,
+    onDosingAmountChanged: (String) -> Unit,
+    onDosingNoteChanged: (String) -> Unit,
+    onParameterValueChanged: (TimelineParameterField, String) -> Unit,
     onCreatedAtChanged: (String) -> Unit,
     onPickPhoto: () -> Unit,
     onRemovePhoto: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit
 ) {
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(scrollState)
             .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "Quick memo",
+            text = "Quick log",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
 
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(TimelineQuickLogType.entries, key = { it.name }) { type ->
+                FilterChip(
+                    selected = uiState.quickLogDraft.type == type,
+                    onClick = { onTypeSelected(type) },
+                    label = { Text(type.label) }
+                )
+            }
+        }
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(uiState.aquariumFilters, key = { it.aquariumId }) { aquarium ->
                 FilterChip(
-                    selected = uiState.quickMemoDraft.aquariumId == aquarium.aquariumId,
+                    selected = uiState.quickLogDraft.aquariumId == aquarium.aquariumId,
                     onClick = { onAquariumSelected(aquarium.aquariumId) },
                     label = { Text(aquarium.aquariumName, maxLines = 1) }
                 )
             }
         }
 
-        OutlinedTextField(
-            value = uiState.quickMemoDraft.content,
-            onValueChange = onContentChanged,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Memo") },
-            minLines = 3
-        )
+        when (uiState.quickLogDraft.type) {
+            TimelineQuickLogType.MEMO -> MemoQuickLogFields(
+                uiState = uiState,
+                onMemoContentChanged = onMemoContentChanged,
+                onPickPhoto = onPickPhoto,
+                onRemovePhoto = onRemovePhoto
+            )
+            TimelineQuickLogType.ISSUE -> IssueQuickLogFields(
+                uiState = uiState,
+                onIssueTitleChanged = onIssueTitleChanged
+            )
+            TimelineQuickLogType.PARAMETER -> ParameterQuickLogFields(
+                uiState = uiState,
+                onParameterValueChanged = onParameterValueChanged
+            )
+            TimelineQuickLogType.DOSING -> DosingQuickLogFields(
+                uiState = uiState,
+                onDosingProductChanged = onDosingProductChanged,
+                onDosingAmountChanged = onDosingAmountChanged,
+                onDosingNoteChanged = onDosingNoteChanged
+            )
+        }
 
         OutlinedTextField(
-            value = uiState.quickMemoDraft.createdAtInput,
+            value = uiState.quickLogDraft.createdAtInput,
             onValueChange = onCreatedAtChanged,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Memo time") },
+            label = { Text("${uiState.quickLogDraft.type.label} time") },
             supportingText = { Text("Use yyyy-MM-dd HH:mm") },
             singleLine = true
         )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedButton(onClick = onPickPhoto) {
-                Text(if (uiState.quickMemoDraft.photoUri == null) "Attach photo" else "Change photo")
-            }
-            uiState.quickMemoDraft.photoUri?.let {
-                TextButton(onClick = onRemovePhoto) {
-                    Text("Remove")
-                }
-            }
-        }
-
-        uiState.quickMemoDraft.photoUri?.let {
-            Text(
-                text = "Photo selected",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -448,12 +489,112 @@ private fun QuickMemoSheet(
             }
             FilledTonalButton(
                 onClick = onSave,
-                enabled = uiState.quickMemoDraft.aquariumId != null &&
-                    uiState.quickMemoDraft.content.isNotBlank() &&
-                    uiState.quickMemoDraft.createdAtInput.isNotBlank()
+                enabled = uiState.quickLogDraft.canAttemptSave()
             ) {
                 Text("Save")
             }
+        }
+    }
+}
+
+@Composable
+private fun MemoQuickLogFields(
+    uiState: TimelineUiState,
+    onMemoContentChanged: (String) -> Unit,
+    onPickPhoto: () -> Unit,
+    onRemovePhoto: () -> Unit
+) {
+    OutlinedTextField(
+        value = uiState.quickLogDraft.memoContent,
+        onValueChange = onMemoContentChanged,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Memo") },
+        minLines = 3
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedButton(onClick = onPickPhoto) {
+            Text(if (uiState.quickLogDraft.photoUri == null) "Attach photo" else "Change photo")
+        }
+        uiState.quickLogDraft.photoUri?.let {
+            TextButton(onClick = onRemovePhoto) {
+                Text("Remove")
+            }
+        }
+    }
+
+    uiState.quickLogDraft.photoUri?.let {
+        Text(
+            text = "Photo selected",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun IssueQuickLogFields(
+    uiState: TimelineUiState,
+    onIssueTitleChanged: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = uiState.quickLogDraft.issueTitle,
+        onValueChange = onIssueTitleChanged,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Issue") },
+        supportingText = { Text("Saved as an open issue") },
+        singleLine = true
+    )
+}
+
+@Composable
+private fun DosingQuickLogFields(
+    uiState: TimelineUiState,
+    onDosingProductChanged: (String) -> Unit,
+    onDosingAmountChanged: (String) -> Unit,
+    onDosingNoteChanged: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = uiState.quickLogDraft.dosingProduct,
+        onValueChange = onDosingProductChanged,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Product") },
+        singleLine = true
+    )
+    OutlinedTextField(
+        value = uiState.quickLogDraft.dosingAmountMl,
+        onValueChange = onDosingAmountChanged,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Amount ml") },
+        singleLine = true
+    )
+    OutlinedTextField(
+        value = uiState.quickLogDraft.dosingNote,
+        onValueChange = onDosingNoteChanged,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Note") },
+        minLines = 2
+    )
+}
+
+@Composable
+private fun ParameterQuickLogFields(
+    uiState: TimelineUiState,
+    onParameterValueChanged: (TimelineParameterField, String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TimelineParameterField.entries.forEach { field ->
+            OutlinedTextField(
+                value = uiState.quickLogDraft.parameterValue(field),
+                onValueChange = { onParameterValueChanged(field, it) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(field.label) },
+                singleLine = true
+            )
         }
     }
 }

@@ -21,7 +21,7 @@ class TimelineViewModelTest {
             events = emptyList(),
             selectedAquariumId = null,
             selectedType = null,
-            quickMemoDraft = TimelineQuickMemoDraft(),
+            quickLogDraft = TimelineQuickLogDraft(),
             zoneId = ZoneOffset.UTC,
             statusMessage = null
         )
@@ -61,7 +61,7 @@ class TimelineViewModelTest {
             events = listOf(older, newer),
             selectedAquariumId = null,
             selectedType = null,
-            quickMemoDraft = TimelineQuickMemoDraft(),
+            quickLogDraft = TimelineQuickLogDraft(),
             zoneId = ZoneOffset.UTC,
             statusMessage = null
         )
@@ -116,14 +116,14 @@ class TimelineViewModelTest {
             events = events,
             selectedAquariumId = display.id,
             selectedType = TimelineEventType.MEMO,
-            quickMemoDraft = TimelineQuickMemoDraft(aquariumId = display.id),
+            quickLogDraft = TimelineQuickLogDraft(aquariumId = display.id),
             zoneId = ZoneOffset.UTC,
             statusMessage = "Memo added to Display."
         )
 
         assertEquals(1, state.summary.visibleEventCount)
         assertEquals("Memo", state.dayGroups.single().events.single().title)
-        assertEquals(display.id, state.quickMemoDraft.aquariumId)
+        assertEquals(display.id, state.quickLogDraft.aquariumId)
         assertEquals("Memo added to Display.", state.statusMessage)
     }
 
@@ -135,9 +135,9 @@ class TimelineViewModelTest {
             volumeLiters = 180.0,
             waterType = WaterType.FRESHWATER
         )
-        val draft = TimelineQuickMemoDraft(
+        val draft = TimelineQuickLogDraft(
             aquariumId = aquarium.id,
-            content = "Trim plants after water change.",
+            memoContent = "Trim plants after water change.",
             createdAtInput = "2026-04-11 18:30",
             photoUri = "content://photos/memo-1"
         )
@@ -147,13 +147,13 @@ class TimelineViewModelTest {
             events = emptyList(),
             selectedAquariumId = aquarium.id,
             selectedType = null,
-            quickMemoDraft = draft,
+            quickLogDraft = draft,
             zoneId = ZoneOffset.UTC,
             statusMessage = null
         )
 
-        assertEquals("2026-04-11 18:30", state.quickMemoDraft.createdAtInput)
-        assertEquals("content://photos/memo-1", state.quickMemoDraft.photoUri)
+        assertEquals("2026-04-11 18:30", state.quickLogDraft.createdAtInput)
+        assertEquals("content://photos/memo-1", state.quickLogDraft.photoUri)
     }
 
     @Test
@@ -188,12 +188,47 @@ class TimelineViewModelTest {
             ),
             selectedAquariumId = null,
             selectedType = null,
-            quickMemoDraft = TimelineQuickMemoDraft(),
+            quickLogDraft = TimelineQuickLogDraft(),
             zoneId = ZoneOffset.UTC,
             statusMessage = null
         )
 
         assertEquals("Unknown date", state.dayGroups.single().dateLabel)
         assertEquals("Unknown tank", state.dayGroups.single().events.single().aquariumName)
+    }
+
+    @Test
+    fun `quick parameter draft parses valid finite values only`() {
+        val draft = TimelineQuickLogDraft(
+            type = TimelineQuickLogType.PARAMETER,
+            nitrate = "12.5",
+            ph = "7.4",
+            temperatureC = "26"
+        )
+
+        val values = draft.toWaterParameters()
+
+        assertEquals(12.5, values?.nitrate)
+        assertEquals(7.4, values?.ph)
+        assertEquals(26.0, values?.temperatureC)
+        assertEquals(parameterLogErrorMessage, validateQuickLogDraft(draft.copy(ph = "NaN")))
+        assertEquals(parameterLogErrorMessage, validateQuickLogDraft(TimelineQuickLogDraft(type = TimelineQuickLogType.PARAMETER)))
+    }
+
+    @Test
+    fun `quick dosing draft requires positive finite amount`() {
+        assertEquals(2.5, parsePositiveAmountMl("2.5"))
+        assertNull(parsePositiveAmountMl("0"))
+        assertNull(parsePositiveAmountMl("-1"))
+        assertNull(parsePositiveAmountMl("NaN"))
+
+        val draft = TimelineQuickLogDraft(
+            type = TimelineQuickLogType.DOSING,
+            dosingProduct = "Flourish",
+            dosingAmountMl = "1.5"
+        )
+
+        assertNull(validateQuickLogDraft(draft))
+        assertEquals(dosingAmountErrorMessage, validateQuickLogDraft(draft.copy(dosingAmountMl = "not a number")))
     }
 }
