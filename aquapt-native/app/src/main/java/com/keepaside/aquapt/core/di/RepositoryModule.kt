@@ -1,0 +1,20 @@
+package com.keepaside.aquapt.core.di
+
+import com.keepaside.aquapt.core.database.dao.*
+import com.keepaside.aquapt.core.repository.*
+import org.koin.dsl.module
+
+val repositoryModule = module {
+    single { AquariumRepository(get()) }
+    single { LivestockRepository(get()) }
+    single { TaskTemplateRepository(get()) }
+    single { TaskExecutionRepository(get()) }
+    single { WaterParameterLogRepository(get()) }
+    single { ReminderGroupRepository(get()) }
+    single { DosingLogRepository(get()) }
+    single { AssetRepository(get()) }
+    single { ConsumableRepository(get()) }
+    single { IssueRepository(get()) }
+    single { MemoRepository(get()) }
+    single { TimelineEventRepository(get()) }
+}

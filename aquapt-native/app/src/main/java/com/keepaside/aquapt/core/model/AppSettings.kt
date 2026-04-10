@@ -1,0 +1,32 @@
+package com.keepaside.aquapt.core.model
+
+data class AppSettings(
+    val openRouterApiKey: String = "",
+    val aiModel: String = "",
+    val assistantMemoryModel: String? = null,
+    val notificationsEnabled: Boolean = false,
+    val reminderHours: List<Int> = emptyList(),
+    val assistantMemoryEnabled: Boolean = false,
+    val backupSyncEnabled: Boolean = false,
+    val backupSyncHour: Int? = null,
+    val backupS3Endpoint: String? = null,
+    val backupS3Region: String? = null,
+    val backupS3Bucket: String? = null,
+    val backupS3ObjectKey: String? = null,
+    val backupS3ForcePathStyle: Boolean = false,
+    val backupUseVersionedKeys: Boolean = false,
+    val backupRetentionDays: Int? = null,
+    val backupMasterKeySet: Boolean = false,
+    val backupS3CredentialsSet: Boolean = false,
+    val backupLastSyncedAt: String? = null,
+    val backupLastRestoredAt: String? = null,
+    val backupLastAutoSyncDate: String? = null,
+    val backupLastError: String? = null,
+    val themePreference: AppThemePreference = AppThemePreference.SYSTEM,
+    val regionalPreferencesMode: RegionalPreferencesMode = RegionalPreferencesMode.AUTO,
+    val defaultLocale: String? = null,
+    val defaultTimezone: String? = null,
+    val defaultCountryCode: String? = null,
+    val defaultCountryName: String? = null,
+    val defaultCurrency: String? = null
+)
