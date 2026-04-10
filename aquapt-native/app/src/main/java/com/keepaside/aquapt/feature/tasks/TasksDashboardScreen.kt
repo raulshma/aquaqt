@@ -44,6 +44,7 @@ import com.keepaside.aquapt.core.model.TaskFrequency
 import com.keepaside.aquapt.core.model.TaskFrequencyKind
 import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
+import com.keepaside.aquapt.core.repository.ReminderGroupRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import org.koin.java.KoinJavaComponent
@@ -66,19 +67,24 @@ fun TasksDashboardScreen(
     val dosingLogRepository: DosingLogRepository = remember {
         KoinJavaComponent.get(DosingLogRepository::class.java)
     }
+    val reminderGroupRepository: ReminderGroupRepository = remember {
+        KoinJavaComponent.get(ReminderGroupRepository::class.java)
+    }
 
     val viewModel: TasksDashboardViewModel = viewModel(
         factory = remember(
             aquariumRepository,
             taskTemplateRepository,
             taskExecutionRepository,
-            dosingLogRepository
+            dosingLogRepository,
+            reminderGroupRepository
         ) {
             TasksDashboardViewModel.factory(
                 aquariumRepository = aquariumRepository,
                 taskTemplateRepository = taskTemplateRepository,
                 taskExecutionRepository = taskExecutionRepository,
-                dosingLogRepository = dosingLogRepository
+                dosingLogRepository = dosingLogRepository,
+                reminderGroupRepository = reminderGroupRepository
             )
         }
     )
@@ -321,6 +327,7 @@ fun TasksDashboardScreen(
             TaskTemplateDialog(
                 draft = dialogState,
                 aquariumOptions = uiState.aquariumOptions,
+                reminderGroupOptions = uiState.reminderGroupOptions,
                 onDraftChange = { next -> templateDialogState = next },
                 onDismiss = { templateDialogState = null },
                 onConfirm = {
@@ -475,6 +482,7 @@ private fun TaskTemplateRow(
                 }
                 if (template.startDate.isNotBlank()) add("Starts ${template.startDate}")
                 if (template.reminderHoursInput.isNotBlank()) add("Reminders ${template.reminderHoursInput}")
+                if (!template.reminderGroupLabel.isNullOrBlank()) add("Group ${template.reminderGroupLabel}")
             }.joinToString(" - "),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -538,6 +546,7 @@ private fun RecentExecutionRow(
 private fun TaskTemplateDialog(
     draft: TaskTemplateDraft,
     aquariumOptions: List<TaskTemplateAquariumOption>,
+    reminderGroupOptions: List<ReminderGroupOption>,
     onDraftChange: (TaskTemplateDraft) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
@@ -667,12 +676,55 @@ private fun TaskTemplateDialog(
                     singleLine = true
                 )
 
+                Text(
+                    text = "Reminder group",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        FilterChip(
+                            selected = draft.reminderGroupId == null,
+                            onClick = { onDraftChange(draft.copy(reminderGroupId = null)) },
+                            label = { Text("None") }
+                        )
+                    }
+                    items(reminderGroupOptions, key = { it.id }) { group ->
+                        FilterChip(
+                            selected = draft.reminderGroupId == group.id,
+                            onClick = { onDraftChange(draft.copy(reminderGroupId = group.id)) },
+                            label = {
+                                Text(
+                                    text = group.name,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        )
+                    }
+                }
+
+                reminderGroupOptions.firstOrNull { it.id == draft.reminderGroupId }?.let { selectedGroup ->
+                    val groupHours = if (selectedGroup.hours.isEmpty()) {
+                        "No default hours"
+                    } else {
+                        "Group hours: ${selectedGroup.hoursLabel}"
+                    }
+                    Text(
+                        text = groupHours,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 OutlinedTextField(
                     value = draft.reminderHours,
                     onValueChange = { value -> onDraftChange(draft.copy(reminderHours = value)) },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Reminder hours") },
-                    supportingText = { Text("Optional, for example 8, 18") },
+                    supportingText = {
+                        Text("Optional, for example 8, 18. Overrides reminder group when set.")
+                    },
                     singleLine = true
                 )
             }

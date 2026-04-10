@@ -7,6 +7,7 @@ import com.keepaside.aquapt.core.logic.getCompletionsToday
 import com.keepaside.aquapt.core.logic.isTaskDue
 import com.keepaside.aquapt.core.model.Aquarium
 import com.keepaside.aquapt.core.model.DosingLog
+import com.keepaside.aquapt.core.model.ReminderGroup
 import com.keepaside.aquapt.core.model.TaskCategory
 import com.keepaside.aquapt.core.model.TaskExecution
 import com.keepaside.aquapt.core.model.TaskFrequency
@@ -14,6 +15,7 @@ import com.keepaside.aquapt.core.model.TaskFrequencyKind
 import com.keepaside.aquapt.core.model.TaskTemplate
 import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
+import com.keepaside.aquapt.core.repository.ReminderGroupRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +73,13 @@ data class TaskTemplateAquariumOption(
     val aquariumName: String
 )
 
+data class ReminderGroupOption(
+    val id: String,
+    val name: String,
+    val hours: List<Int>,
+    val hoursLabel: String
+)
+
 data class TaskTemplateListItem(
     val id: String,
     val title: String,
@@ -84,7 +93,9 @@ data class TaskTemplateListItem(
     val customDaysInput: String,
     val startDate: String,
     val timesPerDayInput: String,
-    val reminderHoursInput: String
+    val reminderHoursInput: String,
+    val reminderGroupId: String?,
+    val reminderGroupLabel: String?
 )
 
 data class TaskTemplateDraft(
@@ -97,7 +108,8 @@ data class TaskTemplateDraft(
     val customDays: String = "1",
     val startDate: String = "",
     val timesPerDay: String = "1",
-    val reminderHours: String = ""
+    val reminderHours: String = "",
+    val reminderGroupId: String? = null
 )
 
 data class TasksDashboardUiState(
@@ -106,6 +118,7 @@ data class TasksDashboardUiState(
     val headline: String = "Loading tasks…",
     val summary: TasksSummaryMetrics = TasksSummaryMetrics(),
     val aquariumOptions: List<TaskTemplateAquariumOption> = emptyList(),
+    val reminderGroupOptions: List<ReminderGroupOption> = emptyList(),
     val taskTemplates: List<TaskTemplateListItem> = emptyList(),
     val dueTasks: List<DueTaskMatrixItem> = emptyList(),
     val dosingSnapshots: List<AquariumDosingSnapshotItem> = emptyList(),
@@ -118,6 +131,7 @@ class TasksDashboardViewModel(
     private val taskTemplateRepository: TaskTemplateRepository,
     private val taskExecutionRepository: TaskExecutionRepository,
     private val dosingLogRepository: DosingLogRepository,
+    private val reminderGroupRepository: ReminderGroupRepository,
     private val nowProvider: () -> Instant = { Instant.now() },
     private val idProvider: () -> String = { UUID.randomUUID().toString() },
     private val zoneId: ZoneId = ZoneId.systemDefault()
@@ -166,7 +180,8 @@ class TasksDashboardViewModel(
 
     fun saveTaskTemplate(draft: TaskTemplateDraft) {
         val aquariumOptions = _uiState.value.aquariumOptions
-        validateTaskTemplateDraft(draft, aquariumOptions)?.let { message ->
+        val reminderGroupOptions = _uiState.value.reminderGroupOptions
+        validateTaskTemplateDraft(draft, aquariumOptions, reminderGroupOptions)?.let { message ->
             _statusMessage.value = message
             return
         }
@@ -179,6 +194,8 @@ class TasksDashboardViewModel(
         val startDate = draft.startDate.trim().ifBlank { null }
         val reminderHours = parseReminderHoursInput(draft.reminderHours)
             ?: return _statusMessage.update { "Reminder hours must be between 0 and 23." }
+        val reminderGroupId = draft.reminderGroupId
+            ?.takeIf { selectedId -> reminderGroupOptions.any { it.id == selectedId } }
         val timesPerDay = if (frequency.kind == TaskFrequencyKind.DAILY) {
             draft.timesPerDay.trim().ifBlank { "1" }.toInt().coerceAtLeast(1)
         } else {
@@ -199,7 +216,7 @@ class TasksDashboardViewModel(
                     startDate = startDate,
                     timesPerDay = timesPerDay,
                     reminderHours = reminderHours,
-                    reminderGroupId = existing?.reminderGroupId
+                    reminderGroupId = reminderGroupId
                 )
 
                 taskTemplateRepository.upsert(
@@ -308,19 +325,33 @@ class TasksDashboardViewModel(
     }
 
     private fun observeTasksDashboard() {
+        val dashboardDataFlow = combine(
+            aquariumRepository.getAll(),
+            taskTemplateRepository.getAll(),
+            taskExecutionRepository.getAll(),
+            dosingLogRepository.getAll(),
+            reminderGroupRepository.getAll()
+        ) { aquariums, taskTemplates, taskExecutions, dosingLogs, reminderGroups ->
+            TasksDashboardBaseData(
+                aquariums = aquariums,
+                taskTemplates = taskTemplates,
+                taskExecutions = taskExecutions,
+                dosingLogs = dosingLogs,
+                reminderGroups = reminderGroups
+            )
+        }
+
         viewModelScope.launch {
             combine(
-                aquariumRepository.getAll(),
-                taskTemplateRepository.getAll(),
-                taskExecutionRepository.getAll(),
-                dosingLogRepository.getAll(),
+                dashboardDataFlow,
                 _statusMessage
-            ) { aquariums, taskTemplates, taskExecutions, dosingLogs, statusMessage ->
+            ) { base, statusMessage ->
                 assembleTasksDashboardUiState(
-                    aquariums = aquariums,
-                    taskTemplates = taskTemplates,
-                    taskExecutions = taskExecutions,
-                    dosingLogs = dosingLogs,
+                    aquariums = base.aquariums,
+                    taskTemplates = base.taskTemplates,
+                    taskExecutions = base.taskExecutions,
+                    dosingLogs = base.dosingLogs,
+                    reminderGroups = base.reminderGroups,
                     now = nowProvider(),
                     zoneId = zoneId,
                     statusMessage = statusMessage
@@ -333,12 +364,21 @@ class TasksDashboardViewModel(
         }
     }
 
+    private data class TasksDashboardBaseData(
+        val aquariums: List<Aquarium>,
+        val taskTemplates: List<TaskTemplate>,
+        val taskExecutions: List<TaskExecution>,
+        val dosingLogs: List<DosingLog>,
+        val reminderGroups: List<ReminderGroup>
+    )
+
     companion object {
         fun factory(
             aquariumRepository: AquariumRepository,
             taskTemplateRepository: TaskTemplateRepository,
             taskExecutionRepository: TaskExecutionRepository,
-            dosingLogRepository: DosingLogRepository
+            dosingLogRepository: DosingLogRepository,
+            reminderGroupRepository: ReminderGroupRepository
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -348,7 +388,8 @@ class TasksDashboardViewModel(
                             aquariumRepository = aquariumRepository,
                             taskTemplateRepository = taskTemplateRepository,
                             taskExecutionRepository = taskExecutionRepository,
-                            dosingLogRepository = dosingLogRepository
+                            dosingLogRepository = dosingLogRepository,
+                            reminderGroupRepository = reminderGroupRepository
                         ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -362,6 +403,7 @@ internal fun assembleTasksDashboardUiState(
     taskTemplates: List<TaskTemplate>,
     taskExecutions: List<TaskExecution>,
     dosingLogs: List<DosingLog>,
+    reminderGroups: List<ReminderGroup> = emptyList(),
     now: Instant,
     zoneId: ZoneId,
     statusMessage: String?
@@ -382,14 +424,36 @@ internal fun assembleTasksDashboardUiState(
     }
 
     val aquariumNameById = aquariums.associate { it.id to it.name }
+    val reminderGroupById = reminderGroups.associateBy { it.id }
     val taskTitleById = taskTemplates.associate { it.id to it.title }
     val aquariumOptions = aquariums
         .sortedBy { it.name.lowercase() }
         .map { TaskTemplateAquariumOption(it.id, it.name) }
+    val reminderGroupOptions = reminderGroups
+        .sortedBy { it.name.lowercase() }
+        .map { group ->
+            ReminderGroupOption(
+                id = group.id,
+                name = group.name,
+                hours = group.hours,
+                hoursLabel = group.hours.joinToString(", ")
+            )
+        }
     val taskTemplateItems = taskTemplates
         .sortedWith(compareBy<TaskTemplate> { it.title.lowercase() }.thenBy { it.id })
         .map { template ->
             val aquariumIds = template.aquariumIds
+            val reminderGroupLabel = template.reminderGroupId
+                ?.let { groupId ->
+                    val group = reminderGroupById[groupId]
+                    if (group == null) {
+                        "Unknown group"
+                    } else if (group.hours.isEmpty()) {
+                        group.name
+                    } else {
+                        "${group.name} (${group.hours.joinToString(", ")})"
+                    }
+                }
             TaskTemplateListItem(
                 id = template.id,
                 title = template.title,
@@ -405,7 +469,9 @@ internal fun assembleTasksDashboardUiState(
                 customDaysInput = (template.frequency.customDays ?: 1).toString(),
                 startDate = template.startDate.orEmpty(),
                 timesPerDayInput = (template.timesPerDay ?: 1).toString(),
-                reminderHoursInput = template.reminderHours.joinToString(", ")
+                reminderHoursInput = template.reminderHours.joinToString(", "),
+                reminderGroupId = template.reminderGroupId,
+                reminderGroupLabel = reminderGroupLabel
             )
         }
 
@@ -476,6 +542,7 @@ internal fun assembleTasksDashboardUiState(
             dosingLogCount = dosingLogs.size
         ),
         aquariumOptions = aquariumOptions,
+        reminderGroupOptions = reminderGroupOptions,
         taskTemplates = taskTemplateItems,
         dueTasks = dueTasks,
         dosingSnapshots = dosingSnapshots,
@@ -489,11 +556,15 @@ internal const val dateTimeErrorMessage =
 
 internal fun validateTaskTemplateDraft(
     draft: TaskTemplateDraft,
-    aquariumOptions: List<TaskTemplateAquariumOption>
+    aquariumOptions: List<TaskTemplateAquariumOption>,
+    reminderGroupOptions: List<ReminderGroupOption> = emptyList()
 ): String? {
     if (draft.title.isBlank()) return "Name the task before saving."
     if (draft.aquariumIds.none { aquariumId -> aquariumOptions.any { it.aquariumId == aquariumId } }) {
         return "Choose at least one tank for this task."
+    }
+    if (draft.reminderGroupId != null && reminderGroupOptions.none { it.id == draft.reminderGroupId }) {
+        return "Choose a valid reminder group."
     }
     if (resolveTaskTemplateFrequency(draft) == null) return "Custom frequency needs at least 1 day."
     if (draft.startDate.isNotBlank() && runCatching { LocalDate.parse(draft.startDate.trim()) }.isFailure) {
@@ -586,7 +657,8 @@ private fun TaskTemplateListItem.toDraft(): TaskTemplateDraft =
         customDays = customDaysInput,
         startDate = startDate,
         timesPerDay = timesPerDayInput,
-        reminderHours = reminderHoursInput
+        reminderHours = reminderHoursInput,
+        reminderGroupId = reminderGroupId
     )
 
 private fun TaskCategory?.label(): String =

@@ -2,6 +2,7 @@ package com.keepaside.aquapt.feature.tasks
 
 import com.keepaside.aquapt.core.model.Aquarium
 import com.keepaside.aquapt.core.model.DosingLog
+import com.keepaside.aquapt.core.model.ReminderGroup
 import com.keepaside.aquapt.core.model.TaskCategory
 import com.keepaside.aquapt.core.model.TaskExecution
 import com.keepaside.aquapt.core.model.TaskFrequency
@@ -209,6 +210,14 @@ class TasksDashboardViewModelTest {
     @Test
     fun `task template draft validation catches missing tank and invalid schedule`() {
         val options = listOf(TaskTemplateAquariumOption("a-1", "Display"))
+        val reminderOptions = listOf(
+            ReminderGroupOption(
+                id = "rg-1",
+                name = "Morning",
+                hours = listOf(8),
+                hoursLabel = "8"
+            )
+        )
 
         val noTank = TaskTemplateDraft(title = "Water change")
         val invalidCustom = TaskTemplateDraft(
@@ -222,16 +231,68 @@ class TasksDashboardViewModelTest {
             aquariumIds = setOf("a-1"),
             reminderHours = "8, 24"
         )
+        val invalidReminderGroup = TaskTemplateDraft(
+            title = "Feed cardinals",
+            aquariumIds = setOf("a-1"),
+            reminderGroupId = "rg-missing"
+        )
 
-        assertEquals("Choose at least one tank for this task.", validateTaskTemplateDraft(noTank, options))
+        assertEquals(
+            "Choose at least one tank for this task.",
+            validateTaskTemplateDraft(noTank, options, reminderOptions)
+        )
         assertEquals(
             "Custom frequency needs at least 1 day.",
-            validateTaskTemplateDraft(invalidCustom, options)
+            validateTaskTemplateDraft(invalidCustom, options, reminderOptions)
         )
         assertEquals(
             "Reminder hours must be between 0 and 23.",
-            validateTaskTemplateDraft(invalidReminder, options)
+            validateTaskTemplateDraft(invalidReminder, options, reminderOptions)
         )
+        assertEquals(
+            "Choose a valid reminder group.",
+            validateTaskTemplateDraft(invalidReminderGroup, options, reminderOptions)
+        )
+    }
+
+    @Test
+    fun `task template state includes reminder group metadata`() {
+        val aquarium = Aquarium(
+            id = "a-5",
+            name = "River",
+            volumeLiters = 90.0,
+            waterType = WaterType.FRESHWATER,
+            setupDate = "2026-03-01"
+        )
+        val reminderGroup = ReminderGroup(
+            id = "rg-2",
+            name = "Evening",
+            hours = listOf(18, 22)
+        )
+        val template = TaskTemplate(
+            id = "t-5",
+            title = "Evening feeding",
+            frequency = TaskFrequency.DAILY,
+            aquariumIds = listOf(aquarium.id),
+            reminderGroupId = reminderGroup.id
+        )
+
+        val state = assembleTasksDashboardUiState(
+            aquariums = listOf(aquarium),
+            taskTemplates = listOf(template),
+            taskExecutions = emptyList(),
+            dosingLogs = emptyList(),
+            reminderGroups = listOf(reminderGroup),
+            now = now,
+            zoneId = ZoneOffset.UTC,
+            statusMessage = null
+        )
+
+        assertEquals(1, state.reminderGroupOptions.size)
+        assertEquals("Evening", state.reminderGroupOptions.single().name)
+        assertEquals("18, 22", state.reminderGroupOptions.single().hoursLabel)
+        assertEquals(reminderGroup.id, state.taskTemplates.single().reminderGroupId)
+        assertEquals("Evening (18, 22)", state.taskTemplates.single().reminderGroupLabel)
     }
 
     @Test
