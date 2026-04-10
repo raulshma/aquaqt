@@ -1,11 +1,23 @@
 package com.keepaside.aquapt.feature.timeline
 
 import com.keepaside.aquapt.core.model.Aquarium
+import com.keepaside.aquapt.core.model.Consumable
+import com.keepaside.aquapt.core.model.ConsumableUnit
+import com.keepaside.aquapt.core.model.DosingLog
+import com.keepaside.aquapt.core.model.EntityKind
+import com.keepaside.aquapt.core.model.EntityRef
+import com.keepaside.aquapt.core.model.Issue
+import com.keepaside.aquapt.core.model.IssueStatus
+import com.keepaside.aquapt.core.model.Livestock
+import com.keepaside.aquapt.core.model.LivestockKind
+import com.keepaside.aquapt.core.model.Memo
 import com.keepaside.aquapt.core.model.TaskExecution
 import com.keepaside.aquapt.core.model.TaskFrequency
 import com.keepaside.aquapt.core.model.TaskTemplate
 import com.keepaside.aquapt.core.model.TimelineEvent
 import com.keepaside.aquapt.core.model.TimelineEventType
+import com.keepaside.aquapt.core.model.WaterParameterLog
+import com.keepaside.aquapt.core.model.WaterParameters
 import com.keepaside.aquapt.core.model.WaterType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -305,5 +317,115 @@ class TimelineViewModelTest {
         val selectedTaskDraft = draft.copy(taskTemplateId = "task-1")
         assertNull(validateQuickLogDraft(selectedTaskDraft))
         assertTrue(selectedTaskDraft.canAttemptSave())
+    }
+
+    @Test
+    fun `timeline builds readable linked-entity previews`() {
+        val aquarium = Aquarium(
+            id = "a-display",
+            name = "Display",
+            volumeLiters = 240.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val task = TaskTemplate(
+            id = "task-trim",
+            title = "Trim stems",
+            frequency = TaskFrequency.WEEKLY,
+            aquariumIds = listOf(aquarium.id)
+        )
+        val livestock = Livestock(
+            id = "livestock-1",
+            aquariumId = aquarium.id,
+            kind = LivestockKind.FISH,
+            name = "Blue ram",
+            species = "Mikrogeophagus ramirezi"
+        )
+        val issue = Issue(
+            id = "issue-1",
+            aquariumId = aquarium.id,
+            title = "Cloudy water",
+            status = IssueStatus.MONITORING,
+            createdAt = "2026-04-11T08:00:00Z"
+        )
+        val memo = Memo(
+            id = "memo-1",
+            aquariumId = aquarium.id,
+            content = "Adjusted spray bar angle for better circulation.",
+            createdAt = "2026-04-11T08:30:00Z"
+        )
+        val dosing = DosingLog(
+            id = "dose-1",
+            aquariumId = aquarium.id,
+            product = "All-in-one",
+            amountMl = 2.0,
+            createdAt = "2026-04-11T09:00:00Z"
+        )
+        val parameterLog = WaterParameterLog(
+            id = "params-1",
+            aquariumId = aquarium.id,
+            createdAt = "2026-04-11T09:10:00Z",
+            values = WaterParameters(ph = 7.2, nitrate = 12.0)
+        )
+        val consumable = Consumable(
+            id = "consumable-1",
+            aquariumId = aquarium.id,
+            name = "Fertilizer",
+            unit = ConsumableUnit.ML,
+            remaining = 125.0,
+            updatedAt = "2026-04-11T09:15:00Z"
+        )
+        val event = TimelineEvent(
+            id = "event-entity-links",
+            aquariumId = aquarium.id,
+            type = TimelineEventType.TASK,
+            createdAt = "2026-04-11T10:00:00Z",
+            title = "Maintenance complete",
+            source = EntityRef(EntityKind.TASK, task.id, aquarium.id),
+            related = listOf(
+                EntityRef(EntityKind.LIVESTOCK, livestock.id, aquarium.id),
+                EntityRef(EntityKind.ISSUE, issue.id, aquarium.id),
+                EntityRef(EntityKind.MEMO, memo.id, aquarium.id),
+                EntityRef(EntityKind.DOSING, dosing.id, aquarium.id),
+                EntityRef(EntityKind.PARAMETER_LOG, parameterLog.id, aquarium.id),
+                EntityRef(EntityKind.CONSUMABLE, consumable.id, aquarium.id),
+                EntityRef(EntityKind.ASSET, "asset-missing", aquarium.id)
+            )
+        )
+
+        val state = assembleTimelineUiState(
+            aquariums = listOf(aquarium),
+            taskTemplates = listOf(task),
+            events = listOf(event),
+            livestock = listOf(livestock),
+            issues = listOf(issue),
+            memos = listOf(memo),
+            dosingLogs = listOf(dosing),
+            parameterLogs = listOf(parameterLog),
+            consumables = listOf(consumable),
+            selectedAquariumId = null,
+            selectedType = null,
+            quickLogDraft = TimelineQuickLogDraft(),
+            zoneId = ZoneOffset.UTC,
+            statusMessage = null
+        )
+
+        val item = state.dayGroups.single().events.single()
+
+        assertEquals("Trim stems", item.sourcePreview?.title)
+        assertTrue(item.relatedPreviews.any { preview ->
+            preview.kind == EntityKind.LIVESTOCK && preview.title == "Blue ram"
+        })
+        assertTrue(item.relatedPreviews.any { preview ->
+            preview.kind == EntityKind.ISSUE && preview.title == "Cloudy water"
+        })
+        assertTrue(item.relatedPreviews.any { preview ->
+            preview.kind == EntityKind.DOSING && preview.supportingText == "2 ml"
+        })
+        assertTrue(item.relatedPreviews.any { preview ->
+            preview.kind == EntityKind.PARAMETER_LOG && preview.title == "Water parameters"
+        })
+        assertTrue(item.relatedPreviews.any { preview ->
+            preview.kind == EntityKind.ASSET && preview.title.startsWith("Unknown asset")
+        })
     }
 }

@@ -5,12 +5,15 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.keepaside.aquapt.core.logic.getCompletionsToday
 import com.keepaside.aquapt.core.logic.isTaskDue
+import com.keepaside.aquapt.core.model.Asset
 import com.keepaside.aquapt.core.model.Aquarium
+import com.keepaside.aquapt.core.model.Consumable
 import com.keepaside.aquapt.core.model.DosingLog
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.model.EntityRef
 import com.keepaside.aquapt.core.model.Issue
 import com.keepaside.aquapt.core.model.IssueStatus
+import com.keepaside.aquapt.core.model.Livestock
 import com.keepaside.aquapt.core.model.Memo
 import com.keepaside.aquapt.core.model.TaskExecution
 import com.keepaside.aquapt.core.model.TaskTemplate
@@ -18,9 +21,12 @@ import com.keepaside.aquapt.core.model.TimelineEvent
 import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.model.WaterParameterLog
 import com.keepaside.aquapt.core.model.WaterParameters
+import com.keepaside.aquapt.core.repository.AssetRepository
 import com.keepaside.aquapt.core.repository.AquariumRepository
+import com.keepaside.aquapt.core.repository.ConsumableRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
+import com.keepaside.aquapt.core.repository.LivestockRepository
 import com.keepaside.aquapt.core.repository.MemoRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
@@ -59,6 +65,14 @@ data class TimelineEventTypeFilter(
     val label: String
 )
 
+data class TimelineEntityPreview(
+    val kind: EntityKind,
+    val id: String,
+    val aquariumId: String?,
+    val title: String,
+    val supportingText: String? = null
+)
+
 data class TimelineEventItem(
     val id: String,
     val aquariumId: String,
@@ -72,7 +86,9 @@ data class TimelineEventItem(
     val photoUri: String?,
     val source: EntityRef?,
     val related: List<EntityRef>,
-    val relatedCount: Int
+    val relatedCount: Int,
+    val sourcePreview: TimelineEntityPreview?,
+    val relatedPreviews: List<TimelineEntityPreview>
 )
 
 data class TimelineDueTaskOption(
@@ -151,6 +167,7 @@ data class TimelineUiState(
 
 class TimelineViewModel(
     private val aquariumRepository: AquariumRepository,
+    private val livestockRepository: LivestockRepository,
     private val taskTemplateRepository: TaskTemplateRepository,
     private val taskExecutionRepository: TaskExecutionRepository,
     private val timelineEventRepository: TimelineEventRepository,
@@ -158,6 +175,8 @@ class TimelineViewModel(
     private val issueRepository: IssueRepository,
     private val dosingLogRepository: DosingLogRepository,
     private val waterParameterLogRepository: WaterParameterLogRepository,
+    private val assetRepository: AssetRepository,
+    private val consumableRepository: ConsumableRepository,
     private val nowProvider: () -> Instant = { Instant.now() },
     private val idProvider: () -> String = { UUID.randomUUID().toString() },
     private val zoneId: ZoneId = ZoneId.systemDefault()
@@ -501,17 +520,63 @@ class TimelineViewModel(
     }
 
     private fun observeTimeline() {
-        val baseDataFlow = combine(
+        val coreDataFlow = combine(
             aquariumRepository.getAll(),
             taskTemplateRepository.getAll(),
             taskExecutionRepository.getAll(),
             timelineEventRepository.getAll()
         ) { aquariums, taskTemplates, taskExecutions, events ->
-            TimelineBaseData(
+            TimelineCoreData(
                 aquariums = aquariums,
                 taskTemplates = taskTemplates,
                 taskExecutions = taskExecutions,
                 events = events
+            )
+        }
+
+        val referenceDataFlow = combine(
+            livestockRepository.getAll(),
+            issueRepository.getAll(),
+            memoRepository.getAll(),
+            dosingLogRepository.getAll(),
+            waterParameterLogRepository.getAll()
+        ) { livestock, issues, memos, dosingLogs, parameterLogs ->
+            TimelineReferenceData(
+                livestock = livestock,
+                issues = issues,
+                memos = memos,
+                dosingLogs = dosingLogs,
+                parameterLogs = parameterLogs
+            )
+        }
+
+        val inventoryDataFlow = combine(
+            assetRepository.getAll(),
+            consumableRepository.getAll()
+        ) { assets, consumables ->
+            TimelineInventoryData(
+                assets = assets,
+                consumables = consumables
+            )
+        }
+
+        val baseDataFlow = combine(
+            coreDataFlow,
+            referenceDataFlow,
+            inventoryDataFlow
+        ) { core, references, inventory ->
+            TimelineBaseData(
+                aquariums = core.aquariums,
+                taskTemplates = core.taskTemplates,
+                taskExecutions = core.taskExecutions,
+                events = core.events,
+                livestock = references.livestock,
+                issues = references.issues,
+                memos = references.memos,
+                dosingLogs = references.dosingLogs,
+                parameterLogs = references.parameterLogs,
+                assets = inventory.assets,
+                consumables = inventory.consumables
             )
         }
 
@@ -528,6 +593,13 @@ class TimelineViewModel(
                     taskTemplates = base.taskTemplates,
                     taskExecutions = base.taskExecutions,
                     events = base.events,
+                    livestock = base.livestock,
+                    issues = base.issues,
+                    memos = base.memos,
+                    dosingLogs = base.dosingLogs,
+                    parameterLogs = base.parameterLogs,
+                    assets = base.assets,
+                    consumables = base.consumables,
                     selectedAquariumId = aquariumId,
                     selectedType = type,
                     quickLogDraft = draft,
@@ -541,23 +613,53 @@ class TimelineViewModel(
         }
     }
 
-    private data class TimelineBaseData(
+    private data class TimelineCoreData(
         val aquariums: List<Aquarium>,
         val taskTemplates: List<TaskTemplate>,
         val taskExecutions: List<TaskExecution>,
         val events: List<TimelineEvent>
     )
 
+    private data class TimelineReferenceData(
+        val livestock: List<Livestock>,
+        val issues: List<Issue>,
+        val memos: List<Memo>,
+        val dosingLogs: List<DosingLog>,
+        val parameterLogs: List<WaterParameterLog>
+    )
+
+    private data class TimelineInventoryData(
+        val assets: List<Asset>,
+        val consumables: List<Consumable>
+    )
+
+    private data class TimelineBaseData(
+        val aquariums: List<Aquarium>,
+        val taskTemplates: List<TaskTemplate>,
+        val taskExecutions: List<TaskExecution>,
+        val events: List<TimelineEvent>,
+        val livestock: List<Livestock>,
+        val issues: List<Issue>,
+        val memos: List<Memo>,
+        val dosingLogs: List<DosingLog>,
+        val parameterLogs: List<WaterParameterLog>,
+        val assets: List<Asset>,
+        val consumables: List<Consumable>
+    )
+
     companion object {
         fun factory(
             aquariumRepository: AquariumRepository,
+            livestockRepository: LivestockRepository,
             taskTemplateRepository: TaskTemplateRepository,
             taskExecutionRepository: TaskExecutionRepository,
             timelineEventRepository: TimelineEventRepository,
             memoRepository: MemoRepository,
             issueRepository: IssueRepository,
             dosingLogRepository: DosingLogRepository,
-            waterParameterLogRepository: WaterParameterLogRepository
+            waterParameterLogRepository: WaterParameterLogRepository,
+            assetRepository: AssetRepository,
+            consumableRepository: ConsumableRepository
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -565,13 +667,16 @@ class TimelineViewModel(
                     if (modelClass.isAssignableFrom(TimelineViewModel::class.java)) {
                         return TimelineViewModel(
                             aquariumRepository = aquariumRepository,
+                            livestockRepository = livestockRepository,
                             taskTemplateRepository = taskTemplateRepository,
                             taskExecutionRepository = taskExecutionRepository,
                             timelineEventRepository = timelineEventRepository,
                             memoRepository = memoRepository,
                             issueRepository = issueRepository,
                             dosingLogRepository = dosingLogRepository,
-                            waterParameterLogRepository = waterParameterLogRepository
+                            waterParameterLogRepository = waterParameterLogRepository,
+                            assetRepository = assetRepository,
+                            consumableRepository = consumableRepository
                         ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -585,6 +690,13 @@ internal fun assembleTimelineUiState(
     taskTemplates: List<TaskTemplate> = emptyList(),
     taskExecutions: List<TaskExecution> = emptyList(),
     events: List<TimelineEvent>,
+    livestock: List<Livestock> = emptyList(),
+    issues: List<Issue> = emptyList(),
+    memos: List<Memo> = emptyList(),
+    dosingLogs: List<DosingLog> = emptyList(),
+    parameterLogs: List<WaterParameterLog> = emptyList(),
+    assets: List<Asset> = emptyList(),
+    consumables: List<Consumable> = emptyList(),
     selectedAquariumId: String?,
     selectedType: TimelineEventType?,
     quickLogDraft: TimelineQuickLogDraft,
@@ -597,6 +709,15 @@ internal fun assembleTimelineUiState(
         .map { TimelineAquariumFilter(it.id, it.name) }
 
     val aquariumNameById = aquariums.associate { it.id to it.name }
+    val taskTemplateById = taskTemplates.associateBy { it.id }
+    val livestockById = livestock.associateBy { it.id }
+    val issueById = issues.associateBy { it.id }
+    val memoById = memos.associateBy { it.id }
+    val dosingLogById = dosingLogs.associateBy { it.id }
+    val parameterLogById = parameterLogs.associateBy { it.id }
+    val assetById = assets.associateBy { it.id }
+    val consumableById = consumables.associateBy { it.id }
+
     val visibleEvents = events
         .asSequence()
         .filter { event -> selectedAquariumId == null || event.aquariumId == selectedAquariumId }
@@ -606,6 +727,37 @@ internal fun assembleTimelineUiState(
         }.thenByDescending { it.createdAt })
         .map { event ->
             val dateLabel = formatDate(event.createdAt, zoneId)
+            val sourcePreview = event.source?.let { ref ->
+                buildTimelineEntityPreview(
+                    ref = ref,
+                    aquariumNameById = aquariumNameById,
+                    taskTemplateById = taskTemplateById,
+                    livestockById = livestockById,
+                    issueById = issueById,
+                    memoById = memoById,
+                    dosingLogById = dosingLogById,
+                    parameterLogById = parameterLogById,
+                    assetById = assetById,
+                    consumableById = consumableById,
+                    zoneId = zoneId
+                )
+            }
+            val relatedPreviews = event.related.map { ref ->
+                buildTimelineEntityPreview(
+                    ref = ref,
+                    aquariumNameById = aquariumNameById,
+                    taskTemplateById = taskTemplateById,
+                    livestockById = livestockById,
+                    issueById = issueById,
+                    memoById = memoById,
+                    dosingLogById = dosingLogById,
+                    parameterLogById = parameterLogById,
+                    assetById = assetById,
+                    consumableById = consumableById,
+                    zoneId = zoneId
+                )
+            }
+
             TimelineEventItem(
                 id = event.id,
                 aquariumId = event.aquariumId,
@@ -619,7 +771,9 @@ internal fun assembleTimelineUiState(
                 photoUri = event.photoUri,
                 source = event.source,
                 related = event.related,
-                relatedCount = event.related.size + if (event.source == null) 0 else 1
+                relatedCount = relatedPreviews.size + if (sourcePreview == null) 0 else 1,
+                sourcePreview = sourcePreview,
+                relatedPreviews = relatedPreviews
             )
         }
         .toList()
@@ -690,6 +844,140 @@ internal fun assembleTimelineUiState(
         quickLogDraft = quickLogDraft,
         statusMessage = statusMessage
     )
+}
+
+private fun buildTimelineEntityPreview(
+    ref: EntityRef,
+    aquariumNameById: Map<String, String>,
+    taskTemplateById: Map<String, TaskTemplate>,
+    livestockById: Map<String, Livestock>,
+    issueById: Map<String, Issue>,
+    memoById: Map<String, Memo>,
+    dosingLogById: Map<String, DosingLog>,
+    parameterLogById: Map<String, WaterParameterLog>,
+    assetById: Map<String, Asset>,
+    consumableById: Map<String, Consumable>,
+    zoneId: ZoneId
+): TimelineEntityPreview {
+    val aquariumLabel = ref.aquariumId?.let { aquariumId ->
+        aquariumNameById[aquariumId]?.let { "Tank: $it" }
+    }
+
+    val (title, detail) = when (ref.kind) {
+        EntityKind.AQUARIUM -> {
+            val aquariumName = aquariumNameById[ref.id]
+            if (aquariumName != null) {
+                aquariumName to null
+            } else {
+                "Unknown tank (${ref.id.shortId()})" to null
+            }
+        }
+
+        EntityKind.TASK -> {
+            val task = taskTemplateById[ref.id]
+            if (task != null) {
+                task.title to task.frequency.getLabel()
+            } else {
+                "Unknown task (${ref.id.shortId()})" to null
+            }
+        }
+
+        EntityKind.LIVESTOCK -> {
+            val resident = livestockById[ref.id]
+            if (resident != null) {
+                val residentName = resident.name.ifBlank {
+                    resident.species.ifBlank { "Unnamed resident" }
+                }
+                val support = listOfNotNull(
+                    resident.species.takeIf { it.isNotBlank() },
+                    resident.kind.label()
+                ).joinToString(" • ").takeIf { it.isNotBlank() }
+                residentName to support
+            } else {
+                "Unknown resident (${ref.id.shortId()})" to null
+            }
+        }
+
+        EntityKind.ASSET -> {
+            val asset = assetById[ref.id]
+            if (asset != null) {
+                val title = asset.brandModel.ifBlank { "${asset.category.label()} asset" }
+                title to asset.category.label()
+            } else {
+                "Unknown asset (${ref.id.shortId()})" to null
+            }
+        }
+
+        EntityKind.CONSUMABLE -> {
+            val consumable = consumableById[ref.id]
+            if (consumable != null) {
+                consumable.name to "${formatAmount(consumable.remaining)} ${consumable.unit.name.lowercase()} remaining"
+            } else {
+                "Unknown consumable (${ref.id.shortId()})" to null
+            }
+        }
+
+        EntityKind.ISSUE -> {
+            val issue = issueById[ref.id]
+            if (issue != null) {
+                issue.title to issue.status.label()
+            } else {
+                "Unknown issue (${ref.id.shortId()})" to null
+            }
+        }
+
+        EntityKind.MEMO -> {
+            val memo = memoById[ref.id]
+            if (memo != null) {
+                memo.content.trimToLength(56) to formatDateTime(memo.createdAt, zoneId)
+            } else {
+                "Unknown memo (${ref.id.shortId()})" to null
+            }
+        }
+
+        EntityKind.DOSING -> {
+            val dosing = dosingLogById[ref.id]
+            if (dosing != null) {
+                dosing.product to "${formatAmount(dosing.amountMl)} ml"
+            } else {
+                "Unknown dosing log (${ref.id.shortId()})" to null
+            }
+        }
+
+        EntityKind.PARAMETER_LOG -> {
+            val parameterLog = parameterLogById[ref.id]
+            if (parameterLog != null) {
+                "Water parameters" to parameterLog.values.summaryLabel().takeIf { it.isNotBlank() }
+            } else {
+                "Unknown parameter log (${ref.id.shortId()})" to null
+            }
+        }
+    }
+
+    return TimelineEntityPreview(
+        kind = ref.kind,
+        id = ref.id,
+        aquariumId = ref.aquariumId,
+        title = title,
+        supportingText = detail ?: aquariumLabel
+    )
+}
+
+private fun EntityKind.label(): String =
+    name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+
+private fun IssueStatus.label(): String =
+    name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+
+private fun Enum<*>.label(): String =
+    name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+
+private fun String.shortId(length: Int = 8): String = take(length)
+
+private fun String.trimToLength(maxLength: Int): String {
+    val trimmed = trim()
+    if (trimmed.length <= maxLength) return trimmed
+    return trimmed.take(maxLength - 1).trimEnd() + "…"
 }
 
 private fun TimelineEventType.label(): String =

@@ -1,5 +1,6 @@
 package com.keepaside.aquapt
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
 import com.keepaside.aquapt.feature.livestock.LivestockScreen
 import com.keepaside.aquapt.feature.tasks.TasksDashboardScreen
@@ -57,6 +59,31 @@ private object AquaPTRoute {
 
     const val Livestock = "livestock"
     const val Insights = "insights"
+    const val Entity = "entity"
+
+    private const val EntityKindArg = "kind"
+    private const val EntityIdArg = "id"
+    private const val EntityAquariumIdArg = "aquariumId"
+    private const val MissingAquariumIdToken = "_"
+
+    const val EntityDetailPattern = "$Entity/{$EntityKindArg}/{$EntityIdArg}/{$EntityAquariumIdArg}"
+
+    fun entityDetailRoute(kind: EntityKind, id: String, aquariumId: String?): String {
+        val encodedKind = Uri.encode(kind.name)
+        val encodedId = Uri.encode(id)
+        val encodedAquariumId = Uri.encode(aquariumId ?: MissingAquariumIdToken)
+        return "$Entity/$encodedKind/$encodedId/$encodedAquariumId"
+    }
+
+    fun parseEntityKind(value: String?): EntityKind? =
+        runCatching { value?.let { EntityKind.valueOf(Uri.decode(it)) } }.getOrNull()
+
+    fun parseEntityId(value: String?): String = value?.let(Uri::decode).orEmpty()
+
+    fun parseEntityAquariumId(value: String?): String? {
+        val decoded = value?.let(Uri::decode)
+        return decoded?.takeUnless { it == MissingAquariumIdToken }
+    }
 }
 
 private val topLevelDestinations = listOf(
@@ -90,7 +117,7 @@ fun AquaPTApp() {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = currentRoute?.replaceFirstChar { it.uppercaseChar() } ?: "AquaPT",
+                        text = topBarTitleForRoute(currentRoute),
                         style = MaterialTheme.typography.titleLarge
                     )
                 }
@@ -129,7 +156,19 @@ fun AquaPTApp() {
                 TasksDashboardScreen()
             }
             composable(AquaPTRoute.Timeline) {
-                TimelineScreen()
+                TimelineScreen(
+                    onOpenEntityDeepLink = { kind, entityId, aquariumId ->
+                        navController.navigate(
+                            AquaPTRoute.entityDetailRoute(
+                                kind = kind,
+                                id = entityId,
+                                aquariumId = aquariumId
+                            )
+                        ) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
             }
             composable(AquaPTRoute.Assistant) {
                 PlaceholderScreen(
@@ -151,13 +190,59 @@ fun AquaPTApp() {
                     icon = { Icon(Icons.Rounded.Analytics, contentDescription = null) }
                 )
             }
+            composable(AquaPTRoute.EntityDetailPattern) { backStackEntry ->
+                val kind = AquaPTRoute.parseEntityKind(backStackEntry.arguments?.getString("kind"))
+                val entityId = AquaPTRoute.parseEntityId(backStackEntry.arguments?.getString("id"))
+                val aquariumId = AquaPTRoute.parseEntityAquariumId(backStackEntry.arguments?.getString("aquariumId"))
+
+                EntityDeepLinkScreen(
+                    kind = kind,
+                    entityId = entityId,
+                    aquariumId = aquariumId
+                )
+            }
         }
     }
+}
+
+private fun topBarTitleForRoute(route: String?): String = when {
+    route == AquaPTRoute.Tanks -> "Tanks"
+    route == AquaPTRoute.Tasks -> "Tasks"
+    route == AquaPTRoute.Timeline -> "Timeline"
+    route == AquaPTRoute.Assistant -> "Assistant"
+    route == AquaPTRoute.Settings -> "Settings"
+    route == AquaPTRoute.Livestock -> "Livestock"
+    route == AquaPTRoute.Insights -> "Global insights"
+    route?.startsWith(AquaPTRoute.Entity) == true -> "Entity details"
+    else -> "AquaPT"
+}
+
+@Composable
+private fun EntityDeepLinkScreen(
+    kind: EntityKind?,
+    entityId: String,
+    aquariumId: String?
+) {
+    val kindLabel = kind?.label() ?: "entity"
+    PlaceholderScreen(
+        title = "${kindLabel.replaceFirstChar { it.uppercaseChar() }} details",
+        subtitle = buildString {
+            append("Opened via timeline deep link for ${kindLabel.lowercase()} ID $entityId.")
+            aquariumId?.let {
+                append(" Tank ID: $it.")
+            }
+            append(" Full native entity detail screens are continuing in upcoming slices.")
+        },
+        icon = { Icon(Icons.Rounded.Tune, contentDescription = null) }
+    )
 }
 
 private fun NavDestination?.isOnRoute(route: String): Boolean {
     return this?.hierarchy?.any { it.route == route } == true
 }
+
+private fun EntityKind.label(): String =
+    name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
 
 @Composable
 private fun PlaceholderScreen(

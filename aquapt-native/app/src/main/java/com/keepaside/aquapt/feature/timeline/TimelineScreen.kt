@@ -44,10 +44,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.model.EntityKind
+import com.keepaside.aquapt.core.repository.AssetRepository
 import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.repository.AquariumRepository
+import com.keepaside.aquapt.core.repository.ConsumableRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
+import com.keepaside.aquapt.core.repository.LivestockRepository
 import com.keepaside.aquapt.core.repository.MemoRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
@@ -58,11 +61,15 @@ import org.koin.java.KoinJavaComponent
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimelineScreen(
+    onOpenEntityDeepLink: (EntityKind, String, String?) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp)
 ) {
     val aquariumRepository: AquariumRepository = remember {
         KoinJavaComponent.get(AquariumRepository::class.java)
+    }
+    val livestockRepository: LivestockRepository = remember {
+        KoinJavaComponent.get(LivestockRepository::class.java)
     }
     val timelineEventRepository: TimelineEventRepository = remember {
         KoinJavaComponent.get(TimelineEventRepository::class.java)
@@ -85,27 +92,39 @@ fun TimelineScreen(
     val waterParameterLogRepository: WaterParameterLogRepository = remember {
         KoinJavaComponent.get(WaterParameterLogRepository::class.java)
     }
+    val assetRepository: AssetRepository = remember {
+        KoinJavaComponent.get(AssetRepository::class.java)
+    }
+    val consumableRepository: ConsumableRepository = remember {
+        KoinJavaComponent.get(ConsumableRepository::class.java)
+    }
 
     val viewModel: TimelineViewModel = viewModel(
         factory = remember(
             aquariumRepository,
+            livestockRepository,
             timelineEventRepository,
             taskTemplateRepository,
             taskExecutionRepository,
             memoRepository,
             issueRepository,
             dosingLogRepository,
-            waterParameterLogRepository
+            waterParameterLogRepository,
+            assetRepository,
+            consumableRepository
         ) {
             TimelineViewModel.factory(
                 aquariumRepository = aquariumRepository,
+                livestockRepository = livestockRepository,
                 taskTemplateRepository = taskTemplateRepository,
                 taskExecutionRepository = taskExecutionRepository,
                 timelineEventRepository = timelineEventRepository,
                 memoRepository = memoRepository,
                 issueRepository = issueRepository,
                 dosingLogRepository = dosingLogRepository,
-                waterParameterLogRepository = waterParameterLogRepository
+                waterParameterLogRepository = waterParameterLogRepository,
+                assetRepository = assetRepository,
+                consumableRepository = consumableRepository
             )
         }
     )
@@ -300,6 +319,10 @@ fun TimelineScreen(
             ) {
                 EventDetailSheet(
                     event = event,
+                    onOpenEntity = { preview ->
+                        onOpenEntityDeepLink(preview.kind, preview.id, preview.aquariumId)
+                        selectedEventId = null
+                    },
                     onShowTank = {
                         viewModel.onAquariumFilterSelected(event.aquariumId)
                         selectedEventId = null
@@ -750,6 +773,7 @@ private fun SummaryTile(
 @Composable
 private fun EventDetailSheet(
     event: TimelineEventItem,
+    onOpenEntity: (TimelineEntityPreview) -> Unit,
     onShowTank: () -> Unit,
     onShowType: () -> Unit,
     onDismiss: () -> Unit
@@ -798,29 +822,20 @@ private fun EventDetailSheet(
             )
         }
 
-        event.source?.let { source ->
-            Text(
-                text = "Source: ${source.kind.label()} • ${source.id}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        event.sourcePreview?.let { source ->
+            EntityPreviewSection(
+                title = "Source",
+                previews = listOf(source),
+                onOpenEntity = onOpenEntity
             )
         }
 
-        if (event.related.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Linked items",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                event.related.forEach { related ->
-                    Text(
-                        text = "• ${related.kind.label()} • ${related.id}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+        if (event.relatedPreviews.isNotEmpty()) {
+            EntityPreviewSection(
+                title = "Linked items",
+                previews = event.relatedPreviews,
+                onOpenEntity = onOpenEntity
+            )
         }
 
         Row(
@@ -840,5 +855,42 @@ private fun EventDetailSheet(
     }
 }
 
+@Composable
+private fun EntityPreviewSection(
+    title: String,
+    previews: List<TimelineEntityPreview>,
+    onOpenEntity: (TimelineEntityPreview) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        previews.forEach { preview ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                AssistChip(
+                    onClick = { onOpenEntity(preview) },
+                    label = {
+                        Text(
+                            text = "${preview.kind.label()} • ${preview.title}",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                )
+                preview.supportingText?.takeIf { it.isNotBlank() }?.let { supportingText ->
+                    Text(
+                        text = supportingText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
 private fun EntityKind.label(): String =
-    name.lowercase().replaceFirstChar { it.uppercaseChar() }
+    name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
