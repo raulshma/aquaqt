@@ -29,7 +29,7 @@ const settingsSections = [
       },
       {
         title: "Task reminders",
-        description: "Daily reminder schedule and notification hour.",
+        description: "Daily reminder schedule, groups, and per-task times.",
         info: "Deep-links to due tasks from the notification.",
         icon: "calendar-clock",
         route: "/settings/reminders",

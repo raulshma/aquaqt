@@ -129,6 +129,14 @@ export interface TaskTemplate {
   aquariumIds: string[];
   startDate?: string;
   timesPerDay?: number;
+  reminderHours?: number[];
+  reminderGroupId?: string;
+}
+
+export interface ReminderGroup {
+  id: string;
+  name: string;
+  hours: number[];
 }
 
 export interface TaskExecution {
@@ -174,6 +182,7 @@ export interface AppSettings {
   assistantMemoryModel?: string;
   notificationsEnabled?: boolean;
   reminderHour?: number;
+  reminderHours?: number[];
   assistantMemoryEnabled?: boolean;
   backupSyncEnabled?: boolean;
   backupSyncHour?: number;

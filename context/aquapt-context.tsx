@@ -50,6 +50,7 @@ import {
   Issue,
   Livestock,
   Memo,
+  ReminderGroup,
   TaskCategory,
   TaskExecution,
   TaskFrequency,
@@ -95,6 +96,7 @@ const createDefaultSettings = (): AppSettings =>
     assistantMemoryModel: AI_ASSISTANT_MEMORY_MODEL,
     notificationsEnabled: false,
     reminderHour: 8,
+    reminderHours: [8],
     assistantMemoryEnabled: true,
     backupSyncEnabled: false,
     backupSyncHour: 3,
@@ -122,7 +124,10 @@ const buildAppSettings = (persisted?: Partial<AppSettings>): AppSettings =>
       persisted?.aiModel ??
       AI_ASSISTANT_MEMORY_MODEL,
     notificationsEnabled: persisted?.notificationsEnabled ?? false,
-    reminderHour: persisted?.reminderHour ?? 8,
+    reminderHour: persisted?.reminderHours?.[0] ?? persisted?.reminderHour ?? 8,
+    reminderHours:
+      persisted?.reminderHours ??
+      (persisted?.reminderHour !== undefined ? [persisted.reminderHour] : [8]),
     assistantMemoryEnabled: persisted?.assistantMemoryEnabled ?? true,
     backupSyncEnabled: persisted?.backupSyncEnabled ?? false,
     backupSyncHour: persisted?.backupSyncHour ?? 3,
@@ -155,6 +160,7 @@ interface AquaptContextValue {
   livestock: Livestock[];
   taskTemplates: TaskTemplate[];
   taskExecutions: TaskExecution[];
+  reminderGroups: ReminderGroup[];
   dosingLogs: DosingLog[];
   assets: Asset[];
   consumables: Consumable[];
@@ -175,6 +181,12 @@ interface AquaptContextValue {
     updates: Partial<Omit<TaskTemplate, "id">>,
   ) => void;
   deleteTaskTemplate: (taskTemplateId: string) => void;
+  addReminderGroup: (input: Omit<ReminderGroup, "id">) => void;
+  editReminderGroup: (
+    groupId: string,
+    updates: Partial<Omit<ReminderGroup, "id">>,
+  ) => void;
+  deleteReminderGroup: (groupId: string) => void;
   editTaskExecution: (
     executionId: string,
     updates: Partial<Omit<TaskExecution, "id">>,
@@ -189,6 +201,8 @@ interface AquaptContextValue {
     livestockId?: string;
     startDate?: string;
     timesPerDay?: number;
+    reminderHours?: number[];
+    reminderGroupId?: string;
   }) => void;
   addLivestockFeedingTask: (input: {
     livestockId: string;
@@ -256,6 +270,7 @@ interface AquaptContextValue {
   saveReminderSettings: (input: {
     notificationsEnabled: boolean;
     reminderHour: number;
+    reminderHours?: number[];
   }) => void;
   saveBackupSyncSettings: (input: {
     backupSyncEnabled: boolean;
@@ -315,6 +330,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
   const [livestock, setLivestock] = useState<Livestock[]>([]);
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>([]);
   const [taskExecutions, setTaskExecutions] = useState<TaskExecution[]>([]);
+  const [reminderGroups, setReminderGroups] = useState<ReminderGroup[]>([]);
   const [dosingLogs, setDosingLogs] = useState<DosingLog[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [consumables, setConsumables] = useState<Consumable[]>([]);
@@ -355,6 +371,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         setLivestock(persisted.livestock ?? []);
         setTaskTemplates(persisted.taskTemplates ?? []);
         setTaskExecutions(persisted.taskExecutions ?? []);
+        setReminderGroups(persisted.reminderGroups ?? []);
         setDosingLogs(persisted.dosingLogs ?? []);
         setAssets(persisted.assets ?? []);
         setConsumables(persisted.consumables ?? []);
@@ -406,6 +423,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       memos,
       timeline,
       settings,
+      reminderGroups,
     };
 
     persistTimeoutRef.current = setTimeout(() => {
@@ -437,6 +455,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     parameterLogs,
     settings,
     timeline,
+    reminderGroups,
   ]);
 
   const livestockCountByAquarium = useMemo(() => {
@@ -517,6 +536,38 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const addReminderGroup = useCallback((input: Omit<ReminderGroup, "id">) => {
+    const group: ReminderGroup = {
+      id: nowId("rg"),
+      name: input.name,
+      hours: input.hours,
+    };
+    setReminderGroups((prev) => [group, ...prev]);
+  }, []);
+
+  const editReminderGroup = useCallback(
+    (groupId: string, updates: Partial<Omit<ReminderGroup, "id">>) => {
+      setReminderGroups((prev) =>
+        prev.map((g) => (g.id === groupId ? { ...g, ...updates } : g)),
+      );
+    },
+    [],
+  );
+
+  const deleteReminderGroup = useCallback(
+    (groupId: string) => {
+      setReminderGroups((prev) => prev.filter((g) => g.id !== groupId));
+      setTaskTemplates((prev) =>
+        prev.map((t) =>
+          t.reminderGroupId === groupId
+            ? { ...t, reminderGroupId: undefined }
+            : t,
+        ),
+      );
+    },
+    [],
+  );
+
   const editTaskExecution = useCallback(
     (executionId: string, updates: Partial<Omit<TaskExecution, "id">>) => {
       const execution = taskExecutions.find((e) => e.id === executionId);
@@ -581,6 +632,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       livestockId?: string;
       startDate?: string;
       timesPerDay?: number;
+      reminderHours?: number[];
+      reminderGroupId?: string;
     }) => {
       const task: TaskTemplate = {
         id: nowId("task"),
@@ -592,6 +645,8 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         livestockId: input.livestockId,
         startDate: input.startDate,
         timesPerDay: input.timesPerDay,
+        reminderHours: input.reminderHours,
+        reminderGroupId: input.reminderGroupId,
       };
 
       setTaskTemplates((prev) => [task, ...prev]);
@@ -867,13 +922,17 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const saveReminderSettings = useCallback(
-    (input: { notificationsEnabled: boolean; reminderHour: number }) => {
+    (input: { notificationsEnabled: boolean; reminderHour: number; reminderHours?: number[] }) => {
       const normalizedHour = Math.min(23, Math.max(0, input.reminderHour));
+      const normalizedHours = input.reminderHours
+        ? [...new Set(input.reminderHours.map((h) => Math.min(23, Math.max(0, h))))].sort((a, b) => a - b)
+        : [normalizedHour];
 
       setSettings((prev) => ({
         ...prev,
         notificationsEnabled: input.notificationsEnabled,
         reminderHour: normalizedHour,
+        reminderHours: normalizedHours,
       }));
     },
     [],
@@ -1072,6 +1131,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         memos,
         timeline,
         settings,
+        reminderGroups,
       };
 
       const envelope = createBackupEnvelope(currentSnapshot);
@@ -1144,6 +1204,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     taskExecutions,
     taskTemplates,
     timeline,
+    reminderGroups,
   ]);
 
   const runManualBackupSync = useCallback(async () => {
@@ -1231,6 +1292,9 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
           parsed.settings && typeof parsed.settings === "object"
             ? buildAppSettings(parsed.settings as AppSettings)
             : createDefaultSettings(),
+        reminderGroups: Array.isArray(parsed.reminderGroups)
+          ? parsed.reminderGroups
+          : [],
       };
 
       setAquariums(nextState.aquariums);
@@ -1245,6 +1309,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       setMemos(nextState.memos);
       setTimeline(normalizeTimelineEvents(nextState.timeline));
       setSettings(nextState.settings);
+      setReminderGroups(nextState.reminderGroups);
 
       setSettings((prev) => ({
         ...prev,
@@ -1697,6 +1762,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       memos,
       timeline,
       settings,
+      reminderGroups,
     };
 
     return JSON.stringify(snapshot, null, 2);
@@ -1713,6 +1779,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
     memos,
     timeline,
     settings,
+    reminderGroups,
   ]);
 
   const applyImportedState = useCallback((nextState: PersistedAppState) => {
@@ -1755,6 +1822,9 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
         parsed.settings && typeof parsed.settings === "object"
           ? buildAppSettings(parsed.settings as AppSettings)
           : createDefaultSettings(),
+      reminderGroups: Array.isArray(parsed.reminderGroups)
+        ? parsed.reminderGroups
+        : [],
     }),
     [],
   );
@@ -1793,6 +1863,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       livestock,
       taskTemplates,
       taskExecutions,
+      reminderGroups,
       dosingLogs,
       assets,
       consumables,
@@ -1807,6 +1878,9 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       editAquarium,
       editTaskTemplate,
       deleteTaskTemplate,
+      addReminderGroup,
+      editReminderGroup,
+      deleteReminderGroup,
       editTaskExecution,
       deleteTaskExecution,
       addTaskTemplate,
@@ -1848,6 +1922,7 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       livestock,
       taskTemplates,
       taskExecutions,
+      reminderGroups,
       dosingLogs,
       assets,
       consumables,
@@ -1862,6 +1937,9 @@ export function AquaptProvider({ children }: { children: ReactNode }) {
       editAquarium,
       editTaskTemplate,
       deleteTaskTemplate,
+      addReminderGroup,
+      editReminderGroup,
+      deleteReminderGroup,
       editTaskExecution,
       deleteTaskExecution,
       addTaskTemplate,

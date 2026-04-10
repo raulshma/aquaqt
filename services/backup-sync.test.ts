@@ -27,6 +27,7 @@ const sampleState: PersistedAppState = {
     openRouterApiKey: "",
     aiModel: "nvidia/nemotron-3-super-120b-a12b:free",
   },
+  reminderGroups: [],
 };
 
 describe("backup-sync", () => {

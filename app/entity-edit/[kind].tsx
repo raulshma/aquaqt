@@ -56,6 +56,7 @@ export default function EntityEditScreen() {
     aquariums,
     taskTemplates,
     taskExecutions,
+    reminderGroups,
     editTaskTemplate,
     deleteTaskTemplate,
     editTaskExecution,
@@ -85,6 +86,8 @@ export default function EntityEditScreen() {
   const [aquariumIds, setAquariumIds] = useState<string[]>([]);
   const [timesPerDay, setTimesPerDay] = useState(1);
   const [startDate, setStartDate] = useState("");
+  const [taskReminderHours, setTaskReminderHours] = useState<number[]>([]);
+  const [taskReminderGroupId, setTaskReminderGroupId] = useState<string | undefined>(undefined);
 
   // Task execution edit state
   const [completedAt, setCompletedAt] = useState("");
@@ -108,6 +111,8 @@ export default function EntityEditScreen() {
       setAquariumIds(taskTemplate.aquariumIds);
       setTimesPerDay(taskTemplate.timesPerDay ?? 1);
       setStartDate(taskTemplate.startDate ?? "");
+      setTaskReminderHours(taskTemplate.reminderHours ?? []);
+      setTaskReminderGroupId(taskTemplate.reminderGroupId);
     } else if (kindParam === "task-execution" && taskExecution) {
       setCompletedAt(taskExecution.completedAt);
       setExecutionNote(taskExecution.note ?? "");
@@ -161,6 +166,8 @@ export default function EntityEditScreen() {
         aquariumIds,
         timesPerDay: frequency === "daily" ? timesPerDay : undefined,
         startDate: startDate || undefined,
+        reminderHours: taskReminderHours.length > 0 ? taskReminderHours : undefined,
+        reminderGroupId: taskReminderGroupId,
       });
       router.back();
       return;
@@ -362,6 +369,56 @@ export default function EntityEditScreen() {
                     placeholder="YYYY-MM-DD"
                     style={styles.fieldGap}
                   />
+
+                  <View style={[styles.fieldGap, styles.fieldBlock]}>
+                    <Text variant="labelLarge">Reminder group</Text>
+                    <View style={styles.chipRow}>
+                      <Chip
+                        compact
+                        selected={!taskReminderGroupId}
+                        onPress={() => setTaskReminderGroupId(undefined)}
+                      >
+                        Default
+                      </Chip>
+                      {reminderGroups.map((group) => (
+                        <Chip
+                          key={group.id}
+                          compact
+                          selected={taskReminderGroupId === group.id}
+                          onPress={() => {
+                            setTaskReminderGroupId(group.id);
+                            setTaskReminderHours([]);
+                          }}
+                        >
+                          {group.name}
+                        </Chip>
+                      ))}
+                    </View>
+                  </View>
+
+                  {!taskReminderGroupId && (
+                    <View style={[styles.fieldGap, styles.fieldBlock]}>
+                      <Text variant="labelLarge">Custom reminder hours</Text>
+                      <View style={styles.chipRow}>
+                        {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+                          <Chip
+                            key={hour}
+                            compact
+                            selected={taskReminderHours.includes(hour)}
+                            onPress={() =>
+                              setTaskReminderHours((prev) =>
+                                prev.includes(hour)
+                                  ? prev.filter((h) => h !== hour)
+                                  : [...prev, hour].sort((a, b) => a - b),
+                              )
+                            }
+                          >
+                            {`${String(hour).padStart(2, "0")}:00`}
+                          </Chip>
+                        ))}
+                      </View>
+                    </View>
+                  )}
                 </>
               ) : (
                 <>

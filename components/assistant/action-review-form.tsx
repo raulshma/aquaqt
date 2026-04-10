@@ -249,15 +249,24 @@ export function ActionReviewForm({
                 </View>
                 <TextInput
                   mode="outlined"
-                  label="Reminder hour (0-23)"
+                  label="Reminder hours (comma-separated, 0-23)"
                   value={
-                    action.reminderHour !== undefined
-                      ? String(action.reminderHour)
-                      : ""
+                    action.reminderHours
+                      ? action.reminderHours.join(", ")
+                      : action.reminderHour !== undefined
+                        ? String(action.reminderHour)
+                        : ""
                   }
-                  onChangeText={(v) =>
-                    updateAction(action.id, { reminderHour: Number(v) })
-                  }
+                  onChangeText={(v) => {
+                    const parsed = v
+                      .split(",")
+                      .map((s) => parseInt(s.trim(), 10))
+                      .filter((n) => !isNaN(n) && n >= 0 && n <= 23);
+                    updateAction(action.id, {
+                      reminderHours: parsed,
+                      reminderHour: parsed[0],
+                    });
+                  }}
                   keyboardType="numeric"
                   style={styles.inputSpacing}
                 />

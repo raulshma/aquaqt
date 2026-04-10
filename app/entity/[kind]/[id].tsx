@@ -26,7 +26,7 @@ import {
     resolveEntityRef,
 } from "@/services/entity-links";
 import { formatCurrencyAmount } from "@/services/localization";
-import { isTaskDue } from "@/services/scheduling";
+import { isTaskDue, resolveEffectiveReminderHours } from "@/services/scheduling";
 import { evaluateParameterAlerts } from "@/services/water-alerts";
 import {
     Asset,
@@ -40,6 +40,41 @@ import {
     WaterParameterLog,
     WaterParameters,
 } from "@/types/aquapt";
+
+function formatAge(acquiredAt: string): string {
+  const acquired = new Date(acquiredAt);
+  if (Number.isNaN(acquired.getTime())) return "";
+  const now = new Date();
+  if (now < acquired) return "";
+  let years = now.getFullYear() - acquired.getFullYear();
+  let months = now.getMonth() - acquired.getMonth();
+  let days = now.getDate() - acquired.getDate();
+  if (days < 0) {
+    months -= 1;
+    const prevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    days += prevMonth.getDate();
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  const totalDays = Math.floor(
+    (now.getTime() - acquired.getTime()) / 86400000,
+  );
+  if (totalDays < 1) return "Today";
+  if (totalDays === 1) return "1 day";
+  if (totalDays < 14) return `${totalDays} days`;
+  if (totalDays < 30) {
+    const weeks = Math.floor(totalDays / 7);
+    return weeks === 1 ? "1 week" : `${weeks} weeks`;
+  }
+  const parts: string[] = [];
+  if (years > 0) parts.push(years === 1 ? "1 year" : `${years} years`);
+  if (months > 0) parts.push(months === 1 ? "1 month" : `${months} months`);
+  if (years === 0 && days > 0)
+    parts.push(days === 1 ? "1 day" : `${days} days`);
+  return parts.join(", ");
+}
 
 const PARAMETER_LABELS: Record<keyof WaterParameters, string> = {
   ammonia: "NH3",
@@ -274,8 +309,13 @@ export default function EntityDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
   const store = useAquaptStore();
-  const { settings, setLivestockStatus, setIssueStatus, deleteTaskTemplate } =
-    useAquapt();
+  const {
+    settings,
+    setLivestockStatus,
+    setIssueStatus,
+    deleteTaskTemplate,
+    reminderGroups,
+  } = useAquapt();
   const userCurrencyCode = settings.defaultCurrency ?? "USD";
   const userLocale = settings.defaultLocale;
 
@@ -655,7 +695,7 @@ export default function EntityDetailScreen() {
               <MiniCard
                 key={item.id}
                 title={item.name}
-                subtitle={`${item.species} • ${item.quantity}`}
+                subtitle={`${item.species} • Age: ${formatAge(item.acquiredAt)} • ${item.quantity}`}
                 body={item.dietaryNotes}
                 backgroundColor={theme.colors.tertiaryContainer}
                 onPress={() =>
@@ -899,6 +939,47 @@ export default function EntityDetailScreen() {
             />
           </DashboardSection>
           <DashboardSection
+            title="Schedule"
+            description="Frequency, times per day, and reminder times for this task."
+          >
+            <MiniCard
+              title="Frequency"
+              subtitle={taskItem.frequency}
+              body={
+                taskItem.frequency === "daily" && (taskItem.timesPerDay ?? 1) > 1
+                  ? `${taskItem.timesPerDay} times per day`
+                  : undefined
+              }
+              backgroundColor={theme.colors.secondaryContainer}
+            />
+            <MiniCard
+              title="Reminder times"
+              subtitle={
+                (() => {
+                  const globalHours =
+                    settings.reminderHours ??
+                    (settings.reminderHour !== undefined
+                      ? [settings.reminderHour]
+                      : [8]);
+                  const effectiveHours = resolveEffectiveReminderHours(
+                    taskItem,
+                    reminderGroups,
+                    globalHours,
+                  );
+                  const source = taskItem.reminderHours?.length
+                    ? "Custom"
+                    : taskItem.reminderGroupId
+                      ? reminderGroups.find((g) => g.id === taskItem.reminderGroupId)?.name ?? "Group"
+                      : "Default";
+                  return effectiveHours.length > 0
+                    ? `${effectiveHours.map((h) => `${String(h).padStart(2, "0")}:00`).join(", ")} (${source})`
+                    : "No reminders configured";
+                })()
+              }
+              backgroundColor={theme.colors.tertiaryContainer}
+            />
+          </DashboardSection>
+          <DashboardSection
             title="Danger zone"
             description="Permanently delete this task and all its execution history."
           >
@@ -1023,7 +1104,7 @@ export default function EntityDetailScreen() {
         <>
           <DashboardHero
             title={livestockItem.name}
-            subtitle={`${livestockItem.species} • ${livestockItem.quantity} • ${livestockItem.status ?? "active"}`}
+            subtitle={`${livestockItem.species} • Age: ${formatAge(livestockItem.acquiredAt)} • ${livestockItem.quantity} • ${livestockItem.status ?? "active"}`}
             tone="tertiary"
             chips={
               <>

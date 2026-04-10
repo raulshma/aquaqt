@@ -25,9 +25,9 @@ import {
   ensureReminderPermissions,
   registerNotificationResponseHandler,
   routeFromLastNotification,
-  scheduleDailyReminder,
+  scheduleTaskAwareReminders,
 } from "@/services/notifications";
-import { countDueTasks } from "@/services/scheduling";
+import { collectDueTasksByHour } from "@/services/scheduling";
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -135,7 +135,7 @@ function ThemedRoot() {
 
 function AppShell() {
   const router = useRouter();
-  const { settings, taskTemplates, taskExecutions, runAutoBackupSyncIfDue } =
+  const { settings, taskTemplates, taskExecutions, reminderGroups, runAutoBackupSyncIfDue } =
     useAquapt();
 
   useEffect(() => {
@@ -164,16 +164,24 @@ function AppShell() {
         return;
       }
 
-      const dueCount = countDueTasks(taskTemplates, taskExecutions, new Date());
-      await scheduleDailyReminder(settings.reminderHour ?? 8, dueCount);
+      const globalHours = settings.reminderHours ?? (settings.reminderHour !== undefined ? [settings.reminderHour] : [8]);
+      const tasksByHour = collectDueTasksByHour(
+        taskTemplates,
+        taskExecutions,
+        reminderGroups,
+        globalHours,
+      );
+      await scheduleTaskAwareReminders(tasksByHour);
     };
 
     void syncReminderSchedule();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     settings.notificationsEnabled,
-    settings.reminderHour,
+    settings.reminderHours,
     taskTemplates,
     taskExecutions,
+    reminderGroups,
   ]);
 
   useEffect(() => {

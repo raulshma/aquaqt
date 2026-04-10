@@ -29,6 +29,7 @@ interface ExecuteApprovedActionsOptions {
     description?: string;
     category?: TaskCategory;
     livestockId?: string;
+    reminderHours?: number[];
   }) => void;
   completeTask: (
     taskTemplateId: string,
@@ -55,6 +56,7 @@ interface ExecuteApprovedActionsOptions {
   saveReminderSettings: (input: {
     notificationsEnabled: boolean;
     reminderHour: number;
+    reminderHours?: number[];
   }) => void;
   addAquarium: (input: Omit<Aquarium, "id">) => void;
   editAquarium: (
@@ -326,9 +328,11 @@ export function executeApprovedActions({
     }
 
     if (action.type === "save_reminder_settings") {
+      const hours = action.reminderHours ?? (action.reminderHour !== undefined ? [action.reminderHour] : [8]);
       saveReminderSettings({
         notificationsEnabled: !!action.reminderEnabled,
-        reminderHour: Math.min(23, Math.max(0, action.reminderHour ?? 8)),
+        reminderHour: Math.min(23, Math.max(0, action.reminderHour ?? hours[0] ?? 8)),
+        reminderHours: hours.map((h) => Math.min(23, Math.max(0, h))),
       });
       createdCount += 1;
       results.push({
@@ -592,6 +596,7 @@ export function executeApprovedActions({
         aquariumIds: [aquariumId],
         description: action.description,
         category: "maintenance",
+        reminderHours: action.reminderHours,
       });
 
       createdCount += 1;

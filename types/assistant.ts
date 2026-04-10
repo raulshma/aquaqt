@@ -81,6 +81,7 @@ export interface AssistantDetectedAction {
   memoContent?: string;
   reminderEnabled?: boolean;
   reminderHour?: number;
+  reminderHours?: number[];
   waterType?: WaterType;
   volumeLiters?: number;
   dimensions?: string;

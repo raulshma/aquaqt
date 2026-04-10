@@ -39,6 +39,10 @@ export default function SettingsLayout() {
         options={{ headerShown: false, title: "Task reminders" }}
       />
       <Stack.Screen
+        name="reminder-groups"
+        options={{ headerShown: false, title: "Reminder groups" }}
+      />
+      <Stack.Screen
         name="backup"
         options={{ headerShown: false, title: "Backup & restore" }}
       />

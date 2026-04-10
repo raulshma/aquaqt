@@ -2,8 +2,8 @@ import { useForm } from "@tanstack/react-form";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { FlatList, type ListRenderItemInfo, Pressable, StyleSheet, View } from "react-native";
 import {
     Button,
     Chip,
@@ -69,6 +69,86 @@ function formatRelativeTime(dateStr: string): string {
     day: "numeric",
   });
 }
+
+type FlatListItem =
+  | { kind: "header"; label: string }
+  | { kind: "event"; event: TimelineEvent; isLastInGroup: boolean };
+
+const EVENT_ITEM_HEIGHT = 76;
+
+const TimelineEventRow = memo(function TimelineEventRow({
+  event,
+  accentColor,
+  thumbUri,
+  aquariumName,
+  isLastInGroup,
+  onPress,
+}: {
+  event: TimelineEvent;
+  accentColor: string;
+  thumbUri: string | undefined;
+  aquariumName: string;
+  isLastInGroup: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+
+  return (
+    <Pressable
+      style={!isLastInGroup ? styles.feedDivider : undefined}
+      onPress={onPress}
+    >
+      <View style={styles.feedRow}>
+        <View
+          style={[
+            styles.feedAccent,
+            { backgroundColor: accentColor },
+          ]}
+        />
+        {thumbUri ? (
+          <Image
+            source={{ uri: thumbUri }}
+            style={styles.feedThumbnail}
+            contentFit="cover"
+          />
+        ) : null}
+        <View style={styles.feedContent}>
+          <View style={styles.feedMeta}>
+            <Text
+              variant="labelSmall"
+              style={{ color: accentColor }}
+              numberOfLines={1}
+            >
+              {EVENT_LABELS[event.type]}
+            </Text>
+            <Text
+              variant="labelSmall"
+              style={{ color: theme.colors.onSurfaceVariant }}
+              numberOfLines={1}
+            >
+              {formatRelativeTime(event.createdAt)}
+            </Text>
+          </View>
+          <Text
+            variant="bodyMedium"
+            style={{ color: theme.colors.onSurface }}
+            numberOfLines={2}
+          >
+            {event.title}
+          </Text>
+          <Text
+            variant="bodySmall"
+            style={{ color: theme.colors.onSurfaceVariant }}
+            numberOfLines={1}
+          >
+            {aquariumName}
+            {event.description ? ` · ${event.description}` : ""}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+});
 
 function groupEventsByDate(events: TimelineEvent[]) {
   const groups: { label: string; events: TimelineEvent[] }[] = [];
@@ -366,10 +446,21 @@ export default function TimelineScreen() {
     }
   };
 
-  const groupedEvents = useMemo(
-    () => groupEventsByDate(filteredTimeline),
-    [filteredTimeline],
-  );
+  const flatListData = useMemo(() => {
+    const grouped = groupEventsByDate(filteredTimeline);
+    const items: FlatListItem[] = [];
+    for (const group of grouped) {
+      items.push({ kind: "header", label: group.label });
+      for (let i = 0; i < group.events.length; i++) {
+        items.push({
+          kind: "event",
+          event: group.events[i],
+          isLastInGroup: i === group.events.length - 1,
+        });
+      }
+    }
+    return items;
+  }, [filteredTimeline]);
 
   return (
     <>
@@ -437,96 +528,70 @@ export default function TimelineScreen() {
           title="Event stream"
           description="The latest cross-app activity, ordered most recent first."
         >
-          {groupedEvents.map((group) => (
-            <View key={group.label}>
-              <Text
-                variant="labelMedium"
-                style={[
-                  styles.feedDateHeader,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                {group.label}
-              </Text>
-              {group.events.map((event, index) => {
-                const accentColor = getEventAccentColor(event.type);
-                const sourceTarget = getTimelineEventTarget(event);
-                const thumbUri =
-                  event.photoUri || aquariumPhotoById[event.aquariumId];
-                const isLast = index === group.events.length - 1;
-
-                return (
-                  <Pressable
-                    key={event.id}
-                    style={!isLast ? styles.feedDivider : undefined}
-                    onPress={() =>
-                      router.push(getEntityHref(sourceTarget) as never)
-                    }
-                  >
-                    <View style={styles.feedRow}>
-                      <View
-                        style={[
-                          styles.feedAccent,
-                          { backgroundColor: accentColor },
-                        ]}
-                      />
-                      {thumbUri ? (
-                        <Image
-                          source={{ uri: thumbUri }}
-                          style={styles.feedThumbnail}
-                          contentFit="cover"
-                        />
-                      ) : null}
-                      <View style={styles.feedContent}>
-                        <View style={styles.feedMeta}>
-                          <Text
-                            variant="labelSmall"
-                            style={{ color: accentColor }}
-                            numberOfLines={1}
-                          >
-                            {EVENT_LABELS[event.type]}
-                          </Text>
-                          <Text
-                            variant="labelSmall"
-                            style={{ color: theme.colors.onSurfaceVariant }}
-                            numberOfLines={1}
-                          >
-                            {formatRelativeTime(event.createdAt)}
-                          </Text>
-                        </View>
-                        <Text
-                          variant="bodyMedium"
-                          style={{ color: theme.colors.onSurface }}
-                          numberOfLines={2}
-                        >
-                          {event.title}
-                        </Text>
-                        <Text
-                          variant="bodySmall"
-                          style={{ color: theme.colors.onSurfaceVariant }}
-                          numberOfLines={1}
-                        >
-                          {aquariumNameById[event.aquariumId] ?? "Unknown tank"}
-                          {event.description
-                            ? ` · ${event.description}`
-                            : ""}
-                        </Text>
-                      </View>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ))}
-
-          {filteredTimeline.length === 0 ? (
+          {flatListData.length === 0 ? (
             <Text
               variant="bodyMedium"
               style={{ color: theme.colors.onSurfaceVariant }}
             >
               No timeline events for this filter yet.
             </Text>
-          ) : null}
+          ) : (
+            <FlatList
+              data={flatListData}
+              keyExtractor={(item) =>
+                item.kind === "header"
+                  ? `header-${item.label}`
+                  : `event-${item.event.id}`
+              }
+              getItemLayout={(_, index) => ({
+                length: EVENT_ITEM_HEIGHT,
+                offset: EVENT_ITEM_HEIGHT * index,
+                index,
+              })}
+              renderItem={({ item }: ListRenderItemInfo<FlatListItem>) => {
+                if (item.kind === "header") {
+                  return (
+                    <Text
+                      variant="labelMedium"
+                      style={[
+                        styles.feedDateHeader,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
+                    >
+                      {item.label}
+                    </Text>
+                  );
+                }
+
+                const { event, isLastInGroup } = item;
+                const accentColor = getEventAccentColor(event.type);
+
+                return (
+                  <TimelineEventRow
+                    event={event}
+                    accentColor={accentColor}
+                    thumbUri={
+                      event.photoUri || aquariumPhotoById[event.aquariumId]
+                    }
+                    aquariumName={
+                      aquariumNameById[event.aquariumId] ?? "Unknown tank"
+                    }
+                    isLastInGroup={isLastInGroup}
+                    onPress={() =>
+                      router.push(
+                        getEntityHref(getTimelineEventTarget(event)) as never,
+                      )
+                    }
+                  />
+                );
+              }}
+              scrollEnabled={false}
+              initialNumToRender={20}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews={true}
+            />
+          )}
         </DashboardSection>
       </DashboardScrollView>
 

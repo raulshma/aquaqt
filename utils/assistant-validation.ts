@@ -48,7 +48,11 @@ export const validateAction = (
   if (action.type === "save_reminder_settings") {
     if (typeof action.reminderEnabled !== "boolean")
       errors.push("Reminder enabled/disabled state is required");
-    if (action.reminderEnabled && action.reminderHour === undefined)
+    if (
+      action.reminderEnabled &&
+      action.reminderHour === undefined &&
+      (!action.reminderHours || action.reminderHours.length === 0)
+    )
       errors.push("Reminder hour is required when reminders are enabled");
   }
   if (action.type === "add_aquarium") {

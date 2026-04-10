@@ -41,6 +41,7 @@ type RawTaskAction = {
   memoContent?: string;
   reminderEnabled?: boolean;
   reminderHour?: number | string;
+  reminderHours?: (number | string)[];
   waterType?: string;
   volumeLiters?: number | string;
   dimensions?: string;
@@ -248,6 +249,9 @@ const normalizeAction = (
   const frequency = toTaskFrequency(raw.frequency) ?? undefined;
   const amountMl = toNumber(raw.amountMl);
   const reminderHour = toNumber(raw.reminderHour);
+  const reminderHours = Array.isArray(raw.reminderHours)
+    ? raw.reminderHours.map(toNumber).filter((h): h is number => h !== undefined)
+    : undefined;
   const volumeLiters = toNumber(raw.volumeLiters);
   const investmentCost = toNumber(raw.investmentCost);
   const quantity = toNumber(raw.quantity);
@@ -325,9 +329,10 @@ const normalizeAction = (
     }
     if (
       raw.reminderEnabled &&
-      (reminderHour === undefined || reminderHour < 0)
+      reminderHour === undefined &&
+      (!reminderHours || reminderHours.length === 0)
     ) {
-      validationErrors.push("Missing or invalid reminderHour");
+      validationErrors.push("Missing or invalid reminder hour(s)");
     }
   }
 
@@ -445,6 +450,7 @@ const normalizeAction = (
         ? raw.reminderEnabled
         : undefined,
     reminderHour,
+    reminderHours: reminderHours && reminderHours.length > 0 ? reminderHours : undefined,
     waterType,
     volumeLiters,
     dimensions: raw.dimensions?.trim() || undefined,

@@ -1,4 +1,4 @@
-import { TaskExecution, TaskFrequency, TaskTemplate } from "@/types/aquapt";
+import { ReminderGroup, TaskExecution, TaskFrequency, TaskTemplate } from "@/types/aquapt";
 
 const frequencyDays: Record<TaskFrequency, number> = {
   daily: 1,
@@ -143,4 +143,52 @@ export function countDueTasks(
 
     return count + dueForTask;
   }, 0);
+}
+
+export function resolveEffectiveReminderHours(
+  task: TaskTemplate,
+  reminderGroups: ReminderGroup[],
+  globalHours: number[],
+): number[] {
+  if (task.reminderHours && task.reminderHours.length > 0) {
+    return task.reminderHours;
+  }
+
+  if (task.reminderGroupId) {
+    const group = reminderGroups.find((g) => g.id === task.reminderGroupId);
+    if (group && group.hours.length > 0) {
+      return group.hours;
+    }
+  }
+
+  return globalHours;
+}
+
+export function collectDueTasksByHour(
+  taskTemplates: TaskTemplate[],
+  taskExecutions: TaskExecution[],
+  reminderGroups: ReminderGroup[],
+  globalHours: number[],
+  now = new Date(),
+): Map<number, TaskTemplate[]> {
+  const byHour = new Map<number, TaskTemplate[]>();
+
+  for (const task of taskTemplates) {
+    const isDue = task.aquariumIds.some((aquariumId) =>
+      isTaskDue(task, aquariumId, taskExecutions, now),
+    );
+    if (!isDue) continue;
+
+    const hours = resolveEffectiveReminderHours(task, reminderGroups, globalHours);
+    for (const hour of hours) {
+      const existing = byHour.get(hour);
+      if (existing) {
+        existing.push(task);
+      } else {
+        byHour.set(hour, [task]);
+      }
+    }
+  }
+
+  return byHour;
 }

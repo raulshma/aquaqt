@@ -313,6 +313,41 @@ const AquariumOverviewCard = memo(function AquariumOverviewCard({
   );
 });
 
+function formatAge(acquiredAt: string): string {
+  const acquired = new Date(acquiredAt);
+  if (Number.isNaN(acquired.getTime())) return "";
+  const now = new Date();
+  if (now < acquired) return "";
+  let years = now.getFullYear() - acquired.getFullYear();
+  let months = now.getMonth() - acquired.getMonth();
+  let days = now.getDate() - acquired.getDate();
+  if (days < 0) {
+    months -= 1;
+    const prevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    days += prevMonth.getDate();
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  const totalDays = Math.floor(
+    (now.getTime() - acquired.getTime()) / 86400000,
+  );
+  if (totalDays < 1) return "Today";
+  if (totalDays === 1) return "1 day";
+  if (totalDays < 14) return `${totalDays} days`;
+  if (totalDays < 30) {
+    const weeks = Math.floor(totalDays / 7);
+    return weeks === 1 ? "1 week" : `${weeks} weeks`;
+  }
+  const parts: string[] = [];
+  if (years > 0) parts.push(years === 1 ? "1 year" : `${years} years`);
+  if (months > 0) parts.push(months === 1 ? "1 month" : `${months} months`);
+  if (years === 0 && days > 0)
+    parts.push(days === 1 ? "1 day" : `${days} days`);
+  return parts.join(", ");
+}
+
 type LivestockCardProps = {
   item: Livestock;
   aquariumName: string;
@@ -424,7 +459,7 @@ const LivestockCard = memo(function LivestockCard({
           variant="bodySmall"
           style={[styles.issueMeta, { color: textColor }]}
         >
-          {item.species} • {aquariumName}
+          {item.species} • Age: {formatAge(item.acquiredAt)} • {aquariumName}
         </Text>
         <View style={styles.summaryRow}>
           <Chip

@@ -150,7 +150,10 @@ export const getActionSummary = (action: AssistantDetectedAction): string => {
     case "set_issue_status":
       return `${action.issueTitle ?? "?"}: ${action.issueStatus ?? "?"}`;
     case "save_reminder_settings":
-      return action.reminderEnabled ? "Enable reminders" : "Disable reminders";
+      if (!action.reminderEnabled) return "Disable reminders";
+      if (action.reminderHours && action.reminderHours.length > 0)
+        return `Reminders at ${action.reminderHours.map((h) => `${String(h).padStart(2, "0")}:00`).join(", ")}`;
+      return "Enable reminders";
     default:
       return action.type;
   }

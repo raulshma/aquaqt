@@ -1,34 +1,54 @@
+import { router } from "expo-router";
 import { useState } from "react";
 import { View } from "react-native";
-import { Button, Chip, Text, useTheme } from "react-native-paper";
+import { Button, Chip, List, Text, useTheme } from "react-native-paper";
 
 import {
     DashboardHero,
     DashboardScrollView,
     DashboardSection,
 } from "@/components/ui/dashboard-shell";
-import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented-buttons";
 import { useAquapt } from "@/context/aquapt-context";
 import {
     clearDailyReminderSchedule,
     ensureReminderPermissions,
-    scheduleDailyReminder,
+    scheduleDailyReminders,
 } from "@/services/notifications";
 import { countDueTasks } from "@/services/scheduling";
 
+const AVAILABLE_HOURS = Array.from({ length: 24 }, (_, i) => i);
+
 export default function RemindersSettingsScreen() {
   const theme = useTheme();
-  const { settings, taskTemplates, taskExecutions, saveReminderSettings } =
-    useAquapt();
+  const {
+    settings,
+    taskTemplates,
+    taskExecutions,
+    reminderGroups,
+    saveReminderSettings,
+  } = useAquapt();
   const [remindersEnabled, setRemindersEnabled] = useState(
     settings.notificationsEnabled ?? false,
   );
-  const [reminderHour, setReminderHour] = useState(settings.reminderHour ?? 8);
+  const [selectedHours, setSelectedHours] = useState<number[]>(
+    settings.reminderHours ?? (settings.reminderHour !== undefined ? [settings.reminderHour] : [8]),
+  );
   const [status, setStatus] = useState<string | null>(null);
   const dueTaskCount = countDueTasks(taskTemplates, taskExecutions);
 
+  const toggleHour = (hour: number) => {
+    setSelectedHours((prev) =>
+      prev.includes(hour)
+        ? prev.filter((h) => h !== hour)
+        : [...prev, hour].sort((a, b) => a - b),
+    );
+  };
+
   const saveReminderPreferences = async () => {
-    const normalizedHour = Math.min(23, Math.max(0, reminderHour));
+    if (remindersEnabled && selectedHours.length === 0) {
+      setStatus("Select at least one hour for reminders.");
+      return;
+    }
 
     if (remindersEnabled) {
       const granted = await ensureReminderPermissions();
@@ -39,10 +59,12 @@ export default function RemindersSettingsScreen() {
         return;
       }
 
-      await scheduleDailyReminder(normalizedHour, dueTaskCount);
-      setStatus(
-        `Daily reminder scheduled for ${String(normalizedHour).padStart(2, "0")}:00.`,
-      );
+      await scheduleDailyReminders(selectedHours, dueTaskCount);
+      const label =
+        selectedHours.length === 1
+          ? `Daily reminder scheduled for ${String(selectedHours[0]).padStart(2, "0")}:00.`
+          : `Daily reminders scheduled at ${selectedHours.map((h) => `${String(h).padStart(2, "0")}:00`).join(", ")}.`;
+      setStatus(label);
     } else {
       await clearDailyReminderSchedule();
       setStatus("Daily reminders disabled.");
@@ -50,7 +72,8 @@ export default function RemindersSettingsScreen() {
 
     saveReminderSettings({
       notificationsEnabled: remindersEnabled,
-      reminderHour: normalizedHour,
+      reminderHour: selectedHours[0] ?? 8,
+      reminderHours: selectedHours,
     });
   };
 
@@ -58,7 +81,7 @@ export default function RemindersSettingsScreen() {
     <DashboardScrollView topPadding={4}>
       <DashboardHero
         title="Task reminders"
-        subtitle="Daily notifications with a quick deep link to due tasks."
+        subtitle="Schedule one or more daily notifications with a quick link to due tasks."
         tone="primary"
         chips={
           <>
@@ -68,13 +91,20 @@ export default function RemindersSettingsScreen() {
             <Chip compact icon="calendar-clock">
               {dueTaskCount} due tasks
             </Chip>
+            <Chip compact icon="account-group">
+              {reminderGroups.length} group{reminderGroups.length !== 1 ? "s" : ""}
+            </Chip>
           </>
         }
       />
 
       <DashboardSection
-        title="Schedule"
-        description="Pick one hour per day for the reminder notification."
+        title="Default schedule"
+        description={
+          remindersEnabled
+            ? "These hours apply to tasks with no per-task or group override."
+            : "Enable reminders to configure the schedule."
+        }
       >
         <View
           style={{
@@ -98,14 +128,20 @@ export default function RemindersSettingsScreen() {
           </Chip>
         </View>
 
-        <ScrollableSegmentedButtons
-          value={String(reminderHour)}
-          onValueChange={(value) => setReminderHour(Number(value))}
-          buttons={[6, 7, 8, 9, 10, 12, 14, 18, 20, 22].map((hour) => ({
-            label: `${String(hour).padStart(2, "0")}:00`,
-            value: String(hour),
-          }))}
-        />
+        {remindersEnabled && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {AVAILABLE_HOURS.map((hour) => (
+              <Chip
+                key={hour}
+                selected={selectedHours.includes(hour)}
+                onPress={() => toggleHour(hour)}
+                compact
+              >
+                {`${String(hour).padStart(2, "0")}:00`}
+              </Chip>
+            ))}
+          </View>
+        )}
 
         <Button
           mode="contained-tonal"
@@ -128,6 +164,19 @@ export default function RemindersSettingsScreen() {
             {status}
           </Text>
         ) : null}
+      </DashboardSection>
+
+      <DashboardSection
+        title="Reminder groups"
+        description="Group tasks under named schedules for per-group reminder times."
+      >
+        <List.Item
+          title="Manage reminder groups"
+          description={`${reminderGroups.length} group${reminderGroups.length !== 1 ? "s" : ""} configured`}
+          left={(props) => <List.Icon {...props} icon="account-group" />}
+          right={(props) => <List.Icon {...props} icon="chevron-right" />}
+          onPress={() => router.push("/settings/reminder-groups")}
+        />
       </DashboardSection>
     </DashboardScrollView>
   );

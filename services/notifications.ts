@@ -1,6 +1,8 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
+import type { TaskTemplate } from "@/types/aquapt";
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -59,36 +61,80 @@ export async function clearDailyReminderSchedule() {
   );
 }
 
-export async function scheduleDailyReminder(
-  hour: number,
+export async function scheduleDailyReminders(
+  hours: number[],
   dueTaskCount?: number,
 ) {
   await configureReminderChannel();
   await clearDailyReminderSchedule();
 
-  const normalizedHour = Math.min(23, Math.max(0, hour));
+  const uniqueHours = [...new Set(hours.map((h) => Math.min(23, Math.max(0, h))))];
 
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: "Aquapt daily check",
-      body:
-        typeof dueTaskCount === "number"
-          ? `${dueTaskCount} tasks currently due. Review maintenance and tank alerts.`
-          : "Review due tasks and tank alerts for today.",
-      data: {
-        kind: "daily-reminder",
-        source: "aquapt",
-        route: "/(tabs)/tasks",
-      },
-      sound: false,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: normalizedHour,
-      minute: 0,
-      channelId: Platform.OS === "android" ? "reminders" : undefined,
-    },
-  });
+  const body =
+    typeof dueTaskCount === "number"
+      ? `${dueTaskCount} tasks currently due. Review maintenance and tank alerts.`
+      : "Review due tasks and tank alerts for today.";
+
+  await Promise.all(
+    uniqueHours.map((hour) =>
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Aquapt daily check",
+          body,
+          data: {
+            kind: "daily-reminder",
+            source: "aquapt",
+            route: "/(tabs)/tasks",
+          },
+          sound: false,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour,
+          minute: 0,
+          channelId: Platform.OS === "android" ? "reminders" : undefined,
+        },
+      }),
+    ),
+  );
+}
+
+export async function scheduleTaskAwareReminders(
+  tasksByHour: Map<number, TaskTemplate[]>,
+) {
+  await configureReminderChannel();
+  await clearDailyReminderSchedule();
+
+  if (tasksByHour.size === 0) return;
+
+  await Promise.all(
+    Array.from(tasksByHour.entries()).map(([hour, tasks]) => {
+      const titles = tasks.map((t) => t.title);
+      const body =
+        titles.length === 1
+          ? `${titles[0]} is due.`
+          : `${titles.length} tasks due: ${titles.slice(0, 3).join(", ")}${titles.length > 3 ? "…" : ""}`;
+
+      return Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Aquapt task reminder",
+          body,
+          data: {
+            kind: "daily-reminder",
+            source: "aquapt",
+            route: "/(tabs)/tasks",
+          },
+          sound: false,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour: Math.min(23, Math.max(0, hour)),
+          minute: 0,
+          channelId: Platform.OS === "android" ? "reminders" : undefined,
+        },
+      });
+    }),
+  );
 }
 
 export function registerNotificationResponseHandler(

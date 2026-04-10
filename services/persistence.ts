@@ -9,6 +9,7 @@ import {
     Issue,
     Livestock,
     Memo,
+    ReminderGroup,
     TaskExecution,
     TaskTemplate,
     TimelineEvent,
@@ -34,6 +35,7 @@ export interface PersistedAppState {
   memos: Memo[];
   timeline: TimelineEvent[];
   settings: AppSettings;
+  reminderGroups: ReminderGroup[];
 }
 
 export interface PersistedAssistantConversationsState {
