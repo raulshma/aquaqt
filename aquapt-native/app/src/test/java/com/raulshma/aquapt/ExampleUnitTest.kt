@@ -1,4 +1,4 @@
-package com.raulshma.aquapt
+package com.keepaside.aquapt
 
 import org.junit.Test
 

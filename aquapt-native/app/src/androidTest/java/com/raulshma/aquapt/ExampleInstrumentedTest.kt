@@ -1,4 +1,4 @@
-package com.raulshma.aquapt
+package com.keepaside.aquapt
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
