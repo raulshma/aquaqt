@@ -37,8 +37,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
+import com.keepaside.aquapt.feature.livestock.LivestockScreen
 import com.keepaside.aquapt.feature.tasks.TasksDashboardScreen
 import com.keepaside.aquapt.feature.tanks.TanksDashboardScreen
+import com.keepaside.aquapt.feature.timeline.TimelineScreen
 
 private data class TopLevelDestination(
     val route: String,
@@ -127,11 +129,7 @@ fun AquaPTApp() {
                 TasksDashboardScreen()
             }
             composable(AquaPTRoute.Timeline) {
-                PlaceholderScreen(
-                    title = "Timeline",
-                    subtitle = "Chronological feed, filters, and quick actions are queued for implementation.",
-                    icon = { Icon(Icons.Rounded.Timeline, contentDescription = null) }
-                )
+                TimelineScreen()
             }
             composable(AquaPTRoute.Assistant) {
                 PlaceholderScreen(
@@ -144,11 +142,7 @@ fun AquaPTApp() {
                 SettingsBackupScreen()
             }
             composable(AquaPTRoute.Livestock) {
-                PlaceholderScreen(
-                    title = "Livestock",
-                    subtitle = "Hidden destination scaffolded for route-parity with the existing app.",
-                    icon = { Icon(Icons.Rounded.Home, contentDescription = null) }
-                )
+                LivestockScreen()
             }
             composable(AquaPTRoute.Insights) {
                 PlaceholderScreen(
