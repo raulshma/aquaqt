@@ -1,6 +1,7 @@
 package com.keepaside.aquapt.core.di
 
 import com.keepaside.aquapt.core.backup.AppStateBackupCompatibilityService
+import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.database.dao.*
 import com.keepaside.aquapt.core.repository.*
 import org.koin.dsl.module
@@ -35,4 +36,5 @@ val repositoryModule = module {
             timelineEventRepository = get()
         )
     }
+    single<BackupCompatibilityGateway> { get<AppStateBackupCompatibilityService>() }
 }

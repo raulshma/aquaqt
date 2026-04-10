@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -146,11 +147,7 @@ fun AquaPTApp() {
                 )
             }
             composable(AquaPTRoute.Settings) {
-                PlaceholderScreen(
-                    title = "Settings",
-                    subtitle = "Appearance, reminders, backup, and model setup will be integrated in Phase 4.",
-                    icon = { Icon(Icons.Rounded.Tune, contentDescription = null) }
-                )
+                SettingsBackupScreen()
             }
             composable(AquaPTRoute.Livestock) {
                 PlaceholderScreen(

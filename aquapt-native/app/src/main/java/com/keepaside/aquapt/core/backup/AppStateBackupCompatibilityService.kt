@@ -15,6 +15,15 @@ import com.keepaside.aquapt.core.repository.TimelineEventRepository
 import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
 import kotlinx.coroutines.flow.first
 
+interface BackupCompatibilityGateway {
+    suspend fun exportCurrentStateJson(
+        settings: AppSettings = AppSettings(),
+        pretty: Boolean = true
+    ): String
+
+    suspend fun importFromJson(payload: String, replaceExisting: Boolean = true): AppStateImportResult
+}
+
 data class AppStateImportResult(
     val snapshot: PersistedAppStateSnapshot,
     val skippedCounts: Map<String, Int> = emptyMap()
@@ -33,7 +42,7 @@ class AppStateBackupCompatibilityService(
     private val issueRepository: IssueRepository,
     private val memoRepository: MemoRepository,
     private val timelineEventRepository: TimelineEventRepository
-) {
+) : BackupCompatibilityGateway {
     suspend fun exportCurrentSnapshot(settings: AppSettings = AppSettings()): PersistedAppStateSnapshot =
         PersistedAppStateSnapshot(
             aquariums = aquariumRepository.getAll().first(),
@@ -51,12 +60,12 @@ class AppStateBackupCompatibilityService(
             reminderGroups = reminderGroupRepository.getAll().first()
         )
 
-    suspend fun exportCurrentStateJson(
-        settings: AppSettings = AppSettings(),
-        pretty: Boolean = true
+    override suspend fun exportCurrentStateJson(
+        settings: AppSettings,
+        pretty: Boolean
     ): String = AppStateJsonCompatibility.encode(exportCurrentSnapshot(settings), pretty)
 
-    suspend fun importFromJson(payload: String, replaceExisting: Boolean = true): AppStateImportResult {
+    override suspend fun importFromJson(payload: String, replaceExisting: Boolean): AppStateImportResult {
         val snapshot = AppStateJsonCompatibility.decode(payload)
         return importSnapshot(snapshot, replaceExisting)
     }
