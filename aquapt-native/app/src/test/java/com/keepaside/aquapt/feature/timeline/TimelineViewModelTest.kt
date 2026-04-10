@@ -1,6 +1,9 @@
 package com.keepaside.aquapt.feature.timeline
 
 import com.keepaside.aquapt.core.model.Aquarium
+import com.keepaside.aquapt.core.model.TaskExecution
+import com.keepaside.aquapt.core.model.TaskFrequency
+import com.keepaside.aquapt.core.model.TaskTemplate
 import com.keepaside.aquapt.core.model.TimelineEvent
 import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.model.WaterType
@@ -230,5 +233,77 @@ class TimelineViewModelTest {
 
         assertNull(validateQuickLogDraft(draft))
         assertEquals(dosingAmountErrorMessage, validateQuickLogDraft(draft.copy(dosingAmountMl = "not a number")))
+    }
+
+    @Test
+    fun `quick task options include due tasks for selected aquarium`() {
+        val aquarium = Aquarium(
+            id = "a-display",
+            name = "Display",
+            volumeLiters = 180.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val dueTemplate = TaskTemplate(
+            id = "task-feed",
+            title = "Feed discus",
+            frequency = TaskFrequency.DAILY,
+            aquariumIds = listOf(aquarium.id),
+            timesPerDay = 2
+        )
+        val completedTemplate = TaskTemplate(
+            id = "task-trim",
+            title = "Trim stems",
+            frequency = TaskFrequency.DAILY,
+            aquariumIds = listOf(aquarium.id)
+        )
+
+        val state = assembleTimelineUiState(
+            aquariums = listOf(aquarium),
+            taskTemplates = listOf(dueTemplate, completedTemplate),
+            taskExecutions = listOf(
+                TaskExecution(
+                    id = "exec-feed-1",
+                    taskTemplateId = dueTemplate.id,
+                    aquariumId = aquarium.id,
+                    completedAt = "2026-04-11T05:30:00Z"
+                ),
+                TaskExecution(
+                    id = "exec-trim-1",
+                    taskTemplateId = completedTemplate.id,
+                    aquariumId = aquarium.id,
+                    completedAt = "2026-04-11T06:00:00Z"
+                )
+            ),
+            events = emptyList(),
+            selectedAquariumId = aquarium.id,
+            selectedType = null,
+            quickLogDraft = TimelineQuickLogDraft(
+                type = TimelineQuickLogType.TASK,
+                aquariumId = aquarium.id
+            ),
+            now = Instant.parse("2026-04-11T12:00:00Z"),
+            zoneId = ZoneOffset.UTC,
+            statusMessage = null
+        )
+
+        assertEquals(1, state.dueTaskOptions.size)
+        assertEquals("task-feed", state.dueTaskOptions.single().taskTemplateId)
+        assertEquals("1/2 today", state.dueTaskOptions.single().completionLabel)
+    }
+
+    @Test
+    fun `quick task draft requires selected due task`() {
+        val draft = TimelineQuickLogDraft(
+            type = TimelineQuickLogType.TASK,
+            aquariumId = "a-1",
+            createdAtInput = "2026-04-11 18:30"
+        )
+
+        assertEquals("Choose a due task before saving.", validateQuickLogDraft(draft))
+        assertFalse(draft.canAttemptSave())
+
+        val selectedTaskDraft = draft.copy(taskTemplateId = "task-1")
+        assertNull(validateQuickLogDraft(selectedTaskDraft))
+        assertTrue(selectedTaskDraft.canAttemptSave())
     }
 }

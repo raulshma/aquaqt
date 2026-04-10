@@ -3,6 +3,8 @@ package com.keepaside.aquapt.feature.timeline
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.keepaside.aquapt.core.logic.getCompletionsToday
+import com.keepaside.aquapt.core.logic.isTaskDue
 import com.keepaside.aquapt.core.model.Aquarium
 import com.keepaside.aquapt.core.model.DosingLog
 import com.keepaside.aquapt.core.model.EntityKind
@@ -10,6 +12,8 @@ import com.keepaside.aquapt.core.model.EntityRef
 import com.keepaside.aquapt.core.model.Issue
 import com.keepaside.aquapt.core.model.IssueStatus
 import com.keepaside.aquapt.core.model.Memo
+import com.keepaside.aquapt.core.model.TaskExecution
+import com.keepaside.aquapt.core.model.TaskTemplate
 import com.keepaside.aquapt.core.model.TimelineEvent
 import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.model.WaterParameterLog
@@ -18,6 +22,8 @@ import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
 import com.keepaside.aquapt.core.repository.MemoRepository
+import com.keepaside.aquapt.core.repository.TaskExecutionRepository
+import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
 import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,7 +70,16 @@ data class TimelineEventItem(
     val createdAtLabel: String,
     val dateLabel: String,
     val photoUri: String?,
+    val source: EntityRef?,
+    val related: List<EntityRef>,
     val relatedCount: Int
+)
+
+data class TimelineDueTaskOption(
+    val taskTemplateId: String,
+    val title: String,
+    val frequencyLabel: String,
+    val completionLabel: String
 )
 
 data class TimelineDayGroup(
@@ -73,6 +88,7 @@ data class TimelineDayGroup(
 )
 
 enum class TimelineQuickLogType(val label: String) {
+    TASK("Task"),
     MEMO("Memo"),
     ISSUE("Issue"),
     PARAMETER("Parameters"),
@@ -95,6 +111,8 @@ enum class TimelineParameterField(val label: String) {
 data class TimelineQuickLogDraft(
     val type: TimelineQuickLogType = TimelineQuickLogType.MEMO,
     val aquariumId: String? = null,
+    val taskTemplateId: String = "",
+    val taskNote: String = "",
     val createdAtInput: String = "",
     val memoContent: String = "",
     val photoUri: String? = null,
@@ -122,6 +140,7 @@ data class TimelineUiState(
     val selectedType: TimelineEventType? = null,
     val summary: TimelineSummaryMetrics = TimelineSummaryMetrics(),
     val aquariumFilters: List<TimelineAquariumFilter> = emptyList(),
+    val dueTaskOptions: List<TimelineDueTaskOption> = emptyList(),
     val typeFilters: List<TimelineEventTypeFilter> = TimelineEventType.entries.map {
         TimelineEventTypeFilter(type = it, label = it.label())
     },
@@ -132,6 +151,8 @@ data class TimelineUiState(
 
 class TimelineViewModel(
     private val aquariumRepository: AquariumRepository,
+    private val taskTemplateRepository: TaskTemplateRepository,
+    private val taskExecutionRepository: TaskExecutionRepository,
     private val timelineEventRepository: TimelineEventRepository,
     private val memoRepository: MemoRepository,
     private val issueRepository: IssueRepository,
@@ -189,7 +210,20 @@ class TimelineViewModel(
     }
 
     fun onQuickLogAquariumSelected(aquariumId: String) {
-        quickLogDraft.update { draft -> draft.copy(aquariumId = aquariumId) }
+        quickLogDraft.update { draft ->
+            draft.copy(
+                aquariumId = aquariumId,
+                taskTemplateId = ""
+            )
+        }
+    }
+
+    fun onQuickLogTaskTemplateSelected(taskTemplateId: String) {
+        quickLogDraft.update { draft -> draft.copy(taskTemplateId = taskTemplateId) }
+    }
+
+    fun onQuickLogTaskNoteChanged(taskNote: String) {
+        quickLogDraft.update { draft -> draft.copy(taskNote = taskNote) }
     }
 
     fun onQuickLogMemoContentChanged(content: String) {
@@ -289,11 +323,55 @@ class TimelineViewModel(
         createdAtIso: String
     ) {
         when (draft.type) {
+            TimelineQuickLogType.TASK -> saveTaskLog(draft, aquariumId, createdAtIso)
             TimelineQuickLogType.MEMO -> saveMemoLog(draft, aquariumId, createdAtIso)
             TimelineQuickLogType.ISSUE -> saveIssueLog(draft, aquariumId, createdAtIso)
             TimelineQuickLogType.PARAMETER -> saveParameterLog(draft, aquariumId, createdAtIso)
             TimelineQuickLogType.DOSING -> saveDosingLog(draft, aquariumId, createdAtIso)
         }
+    }
+
+    private suspend fun saveTaskLog(
+        draft: TimelineQuickLogDraft,
+        aquariumId: String,
+        createdAtIso: String
+    ) {
+        val taskTemplateId = draft.taskTemplateId.trim()
+        val taskTemplate = taskTemplateRepository.getById(taskTemplateId)
+            ?: error("Selected task could not be found.")
+
+        if (!taskTemplate.aquariumIds.contains(aquariumId)) {
+            error("Selected task is not assigned to this tank.")
+        }
+
+        val note = draft.taskNote.trim().takeIf { it.isNotEmpty() }
+        val executionId = idProvider()
+
+        taskExecutionRepository.upsert(
+            TaskExecution(
+                id = executionId,
+                taskTemplateId = taskTemplate.id,
+                aquariumId = aquariumId,
+                completedAt = createdAtIso,
+                note = note
+            )
+        )
+        timelineEventRepository.upsert(
+            TimelineEvent(
+                id = idProvider(),
+                aquariumId = aquariumId,
+                type = TimelineEventType.TASK,
+                createdAt = createdAtIso,
+                title = "${taskTemplate.title} completed",
+                description = note,
+                source = EntityRef(EntityKind.TASK, taskTemplate.id, aquariumId),
+                related = buildList {
+                    taskTemplate.livestockId?.let {
+                        add(EntityRef(EntityKind.LIVESTOCK, it, aquariumId))
+                    }
+                }
+            )
+        )
     }
 
     private suspend fun saveMemoLog(
@@ -425,10 +503,14 @@ class TimelineViewModel(
     private fun observeTimeline() {
         val baseDataFlow = combine(
             aquariumRepository.getAll(),
+            taskTemplateRepository.getAll(),
+            taskExecutionRepository.getAll(),
             timelineEventRepository.getAll()
-        ) { aquariums, events ->
+        ) { aquariums, taskTemplates, taskExecutions, events ->
             TimelineBaseData(
                 aquariums = aquariums,
+                taskTemplates = taskTemplates,
+                taskExecutions = taskExecutions,
                 events = events
             )
         }
@@ -443,10 +525,13 @@ class TimelineViewModel(
             ) { base, aquariumId, type, draft, status ->
                 assembleTimelineUiState(
                     aquariums = base.aquariums,
+                    taskTemplates = base.taskTemplates,
+                    taskExecutions = base.taskExecutions,
                     events = base.events,
                     selectedAquariumId = aquariumId,
                     selectedType = type,
                     quickLogDraft = draft,
+                    now = nowProvider(),
                     zoneId = zoneId,
                     statusMessage = status
                 )
@@ -458,12 +543,16 @@ class TimelineViewModel(
 
     private data class TimelineBaseData(
         val aquariums: List<Aquarium>,
+        val taskTemplates: List<TaskTemplate>,
+        val taskExecutions: List<TaskExecution>,
         val events: List<TimelineEvent>
     )
 
     companion object {
         fun factory(
             aquariumRepository: AquariumRepository,
+            taskTemplateRepository: TaskTemplateRepository,
+            taskExecutionRepository: TaskExecutionRepository,
             timelineEventRepository: TimelineEventRepository,
             memoRepository: MemoRepository,
             issueRepository: IssueRepository,
@@ -476,6 +565,8 @@ class TimelineViewModel(
                     if (modelClass.isAssignableFrom(TimelineViewModel::class.java)) {
                         return TimelineViewModel(
                             aquariumRepository = aquariumRepository,
+                            taskTemplateRepository = taskTemplateRepository,
+                            taskExecutionRepository = taskExecutionRepository,
                             timelineEventRepository = timelineEventRepository,
                             memoRepository = memoRepository,
                             issueRepository = issueRepository,
@@ -491,10 +582,13 @@ class TimelineViewModel(
 
 internal fun assembleTimelineUiState(
     aquariums: List<Aquarium>,
+    taskTemplates: List<TaskTemplate> = emptyList(),
+    taskExecutions: List<TaskExecution> = emptyList(),
     events: List<TimelineEvent>,
     selectedAquariumId: String?,
     selectedType: TimelineEventType?,
     quickLogDraft: TimelineQuickLogDraft,
+    now: Instant = Instant.now(),
     zoneId: ZoneId,
     statusMessage: String?
 ): TimelineUiState {
@@ -523,10 +617,45 @@ internal fun assembleTimelineUiState(
                 createdAtLabel = formatDateTime(event.createdAt, zoneId),
                 dateLabel = dateLabel,
                 photoUri = event.photoUri,
+                source = event.source,
+                related = event.related,
                 relatedCount = event.related.size + if (event.source == null) 0 else 1
             )
         }
         .toList()
+
+    val quickLogAquariumId = quickLogDraft.aquariumId ?: selectedAquariumId
+    val dueTaskOptions = quickLogAquariumId
+        ?.let { aquariumId ->
+            taskTemplates
+                .asSequence()
+                .filter { task -> task.aquariumIds.contains(aquariumId) }
+                .filter { task -> isTaskDue(task, aquariumId, taskExecutions, now, zoneId) }
+                .sortedBy { it.title.lowercase() }
+                .map { task ->
+                    val timesPerDay = (task.timesPerDay ?: 1).coerceAtLeast(1)
+                    val completionsToday = getCompletionsToday(
+                        task = task,
+                        aquariumId = aquariumId,
+                        taskExecutions = taskExecutions,
+                        now = now,
+                        zoneId = zoneId
+                    )
+
+                    TimelineDueTaskOption(
+                        taskTemplateId = task.id,
+                        title = task.title,
+                        frequencyLabel = task.frequency.getLabel(),
+                        completionLabel = if (timesPerDay > 1) {
+                            "$completionsToday/$timesPerDay today"
+                        } else {
+                            "Due now"
+                        }
+                    )
+                }
+                .toList()
+        }
+        .orEmpty()
 
     val dayGroups = visibleEvents
         .groupBy { it.dateLabel }
@@ -536,7 +665,7 @@ internal fun assembleTimelineUiState(
 
     val headline = when {
         aquariums.isEmpty() -> "Add your first tank to start building a care history."
-        events.isEmpty() -> "Your timeline is ready for imported activity and quick memos."
+        events.isEmpty() -> "Your timeline is ready for imported activity and quick logs."
         visibleEvents.isEmpty() -> "No timeline entries match the current filters."
         selectedAquariumId != null || selectedType != null -> "${visibleEvents.size} event${visibleEvents.size.plural()} match the current filters."
         else -> "${visibleEvents.size} event${visibleEvents.size.plural()} across ${aquariums.size} tank${aquariums.size.plural()}."
@@ -556,6 +685,7 @@ internal fun assembleTimelineUiState(
             taskCount = events.count { it.type == TimelineEventType.TASK }
         ),
         aquariumFilters = aquariumFilters,
+        dueTaskOptions = dueTaskOptions,
         dayGroups = dayGroups,
         quickLogDraft = quickLogDraft,
         statusMessage = statusMessage
@@ -578,6 +708,8 @@ internal const val dosingAmountErrorMessage =
 
 internal fun validateQuickLogDraft(draft: TimelineQuickLogDraft): String? =
     when (draft.type) {
+        TimelineQuickLogType.TASK ->
+            if (draft.taskTemplateId.isBlank()) "Choose a due task before saving." else null
         TimelineQuickLogType.MEMO ->
             if (draft.memoContent.isBlank()) "Write a memo before saving." else null
         TimelineQuickLogType.ISSUE ->
@@ -637,6 +769,7 @@ internal fun TimelineQuickLogDraft.toWaterParameters(): WaterParameters? {
 
 internal fun TimelineQuickLogDraft.canAttemptSave(): Boolean =
     aquariumId != null && createdAtInput.isNotBlank() && when (type) {
+        TimelineQuickLogType.TASK -> taskTemplateId.isNotBlank()
         TimelineQuickLogType.MEMO -> memoContent.isNotBlank()
         TimelineQuickLogType.ISSUE -> issueTitle.isNotBlank()
         TimelineQuickLogType.PARAMETER -> hasAnyParameterInput()
@@ -646,6 +779,8 @@ internal fun TimelineQuickLogDraft.canAttemptSave(): Boolean =
 private fun TimelineQuickLogDraft.clearedAfterSave(createdAtInput: String): TimelineQuickLogDraft =
     copy(
         createdAtInput = createdAtInput,
+        taskTemplateId = "",
+        taskNote = "",
         memoContent = "",
         photoUri = null,
         issueTitle = "",

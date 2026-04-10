@@ -3,6 +3,7 @@ package com.keepaside.aquapt.feature.timeline
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,11 +43,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
 import com.keepaside.aquapt.core.repository.MemoRepository
+import com.keepaside.aquapt.core.repository.TaskExecutionRepository
+import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
 import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
 import org.koin.java.KoinJavaComponent
@@ -62,6 +66,12 @@ fun TimelineScreen(
     }
     val timelineEventRepository: TimelineEventRepository = remember {
         KoinJavaComponent.get(TimelineEventRepository::class.java)
+    }
+    val taskTemplateRepository: TaskTemplateRepository = remember {
+        KoinJavaComponent.get(TaskTemplateRepository::class.java)
+    }
+    val taskExecutionRepository: TaskExecutionRepository = remember {
+        KoinJavaComponent.get(TaskExecutionRepository::class.java)
     }
     val memoRepository: MemoRepository = remember {
         KoinJavaComponent.get(MemoRepository::class.java)
@@ -80,6 +90,8 @@ fun TimelineScreen(
         factory = remember(
             aquariumRepository,
             timelineEventRepository,
+            taskTemplateRepository,
+            taskExecutionRepository,
             memoRepository,
             issueRepository,
             dosingLogRepository,
@@ -87,6 +99,8 @@ fun TimelineScreen(
         ) {
             TimelineViewModel.factory(
                 aquariumRepository = aquariumRepository,
+                taskTemplateRepository = taskTemplateRepository,
+                taskExecutionRepository = taskExecutionRepository,
                 timelineEventRepository = timelineEventRepository,
                 memoRepository = memoRepository,
                 issueRepository = issueRepository,
@@ -98,6 +112,12 @@ fun TimelineScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     var showQuickLogSheet by rememberSaveable { mutableStateOf(false) }
+    var selectedEventId by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedEvent = uiState.dayGroups
+        .asSequence()
+        .flatMap { group -> group.events.asSequence() }
+        .firstOrNull { event -> event.id == selectedEventId }
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -190,7 +210,7 @@ fun TimelineScreen(
                             text = if (uiState.aquariumFilters.isEmpty()) {
                                 "No tanks yet. Import a backup in Settings or add a tank in an upcoming creation flow."
                             } else {
-                                "No timeline activity yet. Imported events and quick memos will appear here."
+                                "No timeline activity yet. Imported events and quick logs will appear here."
                             },
                             modifier = Modifier.padding(16.dp),
                             style = MaterialTheme.typography.bodyLarge
@@ -213,7 +233,12 @@ fun TimelineScreen(
 
             uiState.dayGroups.forEach { group ->
                 item(key = group.dateLabel) {
-                    TimelineDayGroupCard(group)
+                    TimelineDayGroupCard(
+                        group = group,
+                        onEventSelected = { eventId ->
+                            selectedEventId = eventId
+                        }
+                    )
                 }
             }
 
@@ -248,6 +273,8 @@ fun TimelineScreen(
                     onDosingProductChanged = viewModel::onQuickLogDosingProductChanged,
                     onDosingAmountChanged = viewModel::onQuickLogDosingAmountChanged,
                     onDosingNoteChanged = viewModel::onQuickLogDosingNoteChanged,
+                    onTaskTemplateSelected = viewModel::onQuickLogTaskTemplateSelected,
+                    onTaskNoteChanged = viewModel::onQuickLogTaskNoteChanged,
                     onParameterValueChanged = viewModel::onQuickLogParameterValueChanged,
                     onCreatedAtChanged = viewModel::onQuickLogCreatedAtChanged,
                     onPickPhoto = {
@@ -263,6 +290,25 @@ fun TimelineScreen(
                         showQuickLogSheet = false
                     },
                     onCancel = { showQuickLogSheet = false }
+                )
+            }
+        }
+
+        selectedEvent?.let { event ->
+            ModalBottomSheet(
+                onDismissRequest = { selectedEventId = null }
+            ) {
+                EventDetailSheet(
+                    event = event,
+                    onShowTank = {
+                        viewModel.onAquariumFilterSelected(event.aquariumId)
+                        selectedEventId = null
+                    },
+                    onShowType = {
+                        viewModel.onTypeFilterSelected(event.type)
+                        selectedEventId = null
+                    },
+                    onDismiss = { selectedEventId = null }
                 )
             }
         }
@@ -326,7 +372,10 @@ private fun TimelineFilters(
 }
 
 @Composable
-private fun TimelineDayGroupCard(group: TimelineDayGroup) {
+private fun TimelineDayGroupCard(
+    group: TimelineDayGroup,
+    onEventSelected: (String) -> Unit
+) {
     Card {
         Column(
             modifier = Modifier
@@ -341,15 +390,26 @@ private fun TimelineDayGroupCard(group: TimelineDayGroup) {
             )
 
             group.events.forEach { event ->
-                TimelineEventRow(event)
+                TimelineEventRow(
+                    event = event,
+                    onClick = { onEventSelected(event.id) }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun TimelineEventRow(event: TimelineEventItem) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun TimelineEventRow(
+    event: TimelineEventItem,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -406,6 +466,8 @@ private fun QuickLogSheet(
     onDosingProductChanged: (String) -> Unit,
     onDosingAmountChanged: (String) -> Unit,
     onDosingNoteChanged: (String) -> Unit,
+    onTaskTemplateSelected: (String) -> Unit,
+    onTaskNoteChanged: (String) -> Unit,
     onParameterValueChanged: (TimelineParameterField, String) -> Unit,
     onCreatedAtChanged: (String) -> Unit,
     onPickPhoto: () -> Unit,
@@ -449,6 +511,11 @@ private fun QuickLogSheet(
         }
 
         when (uiState.quickLogDraft.type) {
+            TimelineQuickLogType.TASK -> TaskQuickLogFields(
+                uiState = uiState,
+                onTaskTemplateSelected = onTaskTemplateSelected,
+                onTaskNoteChanged = onTaskNoteChanged
+            )
             TimelineQuickLogType.MEMO -> MemoQuickLogFields(
                 uiState = uiState,
                 onMemoContentChanged = onMemoContentChanged,
@@ -494,6 +561,57 @@ private fun QuickLogSheet(
                 Text("Save")
             }
         }
+    }
+}
+
+@Composable
+private fun TaskQuickLogFields(
+    uiState: TimelineUiState,
+    onTaskTemplateSelected: (String) -> Unit,
+    onTaskNoteChanged: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (uiState.dueTaskOptions.isEmpty()) {
+            Text(
+                text = "No due tasks for this tank right now.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(uiState.dueTaskOptions, key = { it.taskTemplateId }) { task ->
+                    FilterChip(
+                        selected = uiState.quickLogDraft.taskTemplateId == task.taskTemplateId,
+                        onClick = { onTaskTemplateSelected(task.taskTemplateId) },
+                        label = {
+                            Text(
+                                text = task.title,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    )
+                }
+            }
+
+            uiState.dueTaskOptions
+                .firstOrNull { it.taskTemplateId == uiState.quickLogDraft.taskTemplateId }
+                ?.let { selectedTask ->
+                    Text(
+                        text = "${selectedTask.frequencyLabel} • ${selectedTask.completionLabel}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+        }
+
+        OutlinedTextField(
+            value = uiState.quickLogDraft.taskNote,
+            onValueChange = onTaskNoteChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Completion note (optional)") },
+            minLines = 2
+        )
     }
 }
 
@@ -628,3 +746,99 @@ private fun SummaryTile(
         }
     }
 }
+
+@Composable
+private fun EventDetailSheet(
+    event: TimelineEventItem,
+    onShowTank: () -> Unit,
+    onShowType: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Event details",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        Text(
+            text = event.title,
+            style = MaterialTheme.typography.titleSmall
+        )
+
+        Text(
+            text = "${event.typeLabel} • ${event.createdAtLabel}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Text(
+            text = event.aquariumName,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        event.description?.takeIf { it.isNotBlank() }?.let { description ->
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        if (event.photoUri != null) {
+            Text(
+                text = "Photo attached",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        event.source?.let { source ->
+            Text(
+                text = "Source: ${source.kind.label()} • ${source.id}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (event.related.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Linked items",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                event.related.forEach { related ->
+                    Text(
+                        text = "• ${related.kind.label()} • ${related.id}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+        ) {
+            OutlinedButton(onClick = onShowType) {
+                Text("Show type")
+            }
+            FilledTonalButton(onClick = onShowTank) {
+                Text("Show tank")
+            }
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    }
+}
+
+private fun EntityKind.label(): String =
+    name.lowercase().replaceFirstChar { it.uppercaseChar() }
