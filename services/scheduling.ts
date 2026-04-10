@@ -1,11 +1,17 @@
-import { ReminderGroup, TaskExecution, TaskFrequency, TaskTemplate } from "@/types/aquapt";
+import { ReminderGroup, TaskExecution, TaskFrequency, TaskTemplate, parseCustomFrequencyDays } from "@/types/aquapt";
 
-const frequencyDays: Record<TaskFrequency, number> = {
+const frequencyDays: Record<string, number> = {
   daily: 1,
   weekly: 7,
   "bi-weekly": 14,
   monthly: 30,
 };
+
+function getFrequencyDays(freq: TaskFrequency): number {
+  const custom = parseCustomFrequencyDays(freq);
+  if (custom !== null) return custom;
+  return frequencyDays[freq] ?? 1;
+}
 
 function getDayStart(date: Date): Date {
   const d = new Date(date);
@@ -110,7 +116,7 @@ export function isTaskDue(
     return true;
   }
 
-  const days = frequencyDays[task.frequency];
+  const days = getFrequencyDays(task.frequency);
   const elapsedMs = now.getTime() - new Date(lastDoneIso).getTime();
 
   return elapsedMs >= days * 24 * 60 * 60 * 1000;

@@ -97,6 +97,13 @@ const toTaskFrequency = (value?: string): TaskFrequency | null => {
   }
 
   const normalized = value.trim().toLowerCase().replace(/\s+/g, "_");
+
+  const match = normalized.match(/every[_\s]?(\d+)[_\s]?day/);
+  if (match) {
+    const days = Math.max(1, Math.floor(Number(match[1])));
+    return `custom-${days}`;
+  }
+
   return FREQUENCY_MAP[normalized] ?? null;
 };
 

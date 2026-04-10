@@ -18,10 +18,12 @@ import {
     DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
-import type {
-  EditKind,
-  TaskFrequency,
-  TaskTemplate,
+import {
+  type EditKind,
+  type TaskFrequency,
+  type TaskTemplate,
+  parseCustomFrequencyDays,
+  getFrequencyLabel,
 } from "@/types/aquapt";
 
 function getSingleParam(value: string | string[] | undefined) {
@@ -80,6 +82,8 @@ export default function EntityEditScreen() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [frequency, setFrequency] = useState<TaskFrequency>("weekly");
+  const [customDays, setCustomDays] = useState("");
+  const [isCustom, setIsCustom] = useState(false);
   const [category, setCategory] = useState<TaskTemplate["category"]>(
     "maintenance",
   );
@@ -107,6 +111,9 @@ export default function EntityEditScreen() {
       setTitle(taskTemplate.title);
       setDescription(taskTemplate.description ?? "");
       setFrequency(taskTemplate.frequency);
+      const custom = parseCustomFrequencyDays(taskTemplate.frequency);
+      setIsCustom(custom !== null);
+      setCustomDays(custom !== null ? String(custom) : "");
       setCategory(taskTemplate.category ?? "maintenance");
       setAquariumIds(taskTemplate.aquariumIds);
       setTimesPerDay(taskTemplate.timesPerDay ?? 1);
@@ -162,9 +169,14 @@ export default function EntityEditScreen() {
         title: title.trim(),
         description: description.trim() || undefined,
         category,
-        frequency,
+        frequency: isCustom
+          ? `custom-${Math.max(1, Math.floor(Number(customDays) || 1))}`
+          : frequency,
         aquariumIds,
-        timesPerDay: frequency === "daily" ? timesPerDay : undefined,
+        timesPerDay:
+          (isCustom ? false : frequency === "daily")
+            ? timesPerDay
+            : undefined,
         startDate: startDate || undefined,
         reminderHours: taskReminderHours.length > 0 ? taskReminderHours : undefined,
         reminderGroupId: taskReminderGroupId,
@@ -254,7 +266,7 @@ export default function EntityEditScreen() {
           subtitle={
             kindParam === "task-execution"
               ? `${parentTaskName} • ${aquariumName}`
-              : `${taskTemplate?.frequency} • ${taskTemplate?.aquariumIds.length ?? 0} tank(s)`
+              : `${getFrequencyLabel(taskTemplate?.frequency ?? "weekly")} • ${taskTemplate?.aquariumIds.length ?? 0} tank(s)`
           }
           tone="primary"
         />
@@ -297,13 +309,34 @@ export default function EntityEditScreen() {
                         <Chip
                           key={opt.value}
                           compact
-                          selected={frequency === opt.value}
-                          onPress={() => setFrequency(opt.value)}
+                          selected={!isCustom && frequency === opt.value}
+                          onPress={() => {
+                            setFrequency(opt.value);
+                            setIsCustom(false);
+                          }}
                         >
                           {opt.label}
                         </Chip>
                       ))}
+                      <Chip
+                        compact
+                        selected={isCustom}
+                        onPress={() => setIsCustom(true)}
+                      >
+                        Custom
+                      </Chip>
                     </View>
+                    {isCustom ? (
+                      <TextInput
+                        label="Repeat every N days"
+                        value={customDays}
+                        onChangeText={(val) => setCustomDays(val.replace(/[^0-9]/g, ""))}
+                        mode="outlined"
+                        keyboardType="numeric"
+                        placeholder="e.g. 5"
+                        style={{ marginTop: 8 }}
+                      />
+                    ) : null}
                   </View>
 
                   <View style={[styles.fieldGap, styles.fieldBlock]}>
@@ -347,7 +380,7 @@ export default function EntityEditScreen() {
                     </View>
                   </View>
 
-                  {frequency === "daily" ? (
+                  {!isCustom && frequency === "daily" ? (
                     <TextInput
                       label="Times per day"
                       value={String(timesPerDay)}

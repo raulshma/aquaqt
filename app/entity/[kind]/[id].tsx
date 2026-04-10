@@ -39,6 +39,7 @@ import {
     TaskTemplate,
     WaterParameterLog,
     WaterParameters,
+    getFrequencyLabel,
 } from "@/types/aquapt";
 
 function formatAge(acquiredAt: string): string {
@@ -651,7 +652,7 @@ export default function EntityDetailScreen() {
               <MiniCard
                 key={task.id}
                 title={task.title}
-                subtitle={task.frequency}
+                subtitle={getFrequencyLabel(task.frequency)}
                 body={task.description}
                 backgroundColor={theme.colors.primaryContainer}
                 onPress={() =>
@@ -880,7 +881,7 @@ export default function EntityDetailScreen() {
             chips={
               <>
                 <Chip compact icon="calendar-sync">
-                  {taskItem.frequency}
+                  {getFrequencyLabel(taskItem.frequency)}
                 </Chip>
                 <Chip compact icon="history">
                   {getTaskExecutionHistory(store, taskItem.id).length}{" "}
@@ -944,7 +945,7 @@ export default function EntityDetailScreen() {
           >
             <MiniCard
               title="Frequency"
-              subtitle={taskItem.frequency}
+              subtitle={getFrequencyLabel(taskItem.frequency)}
               body={
                 taskItem.frequency === "daily" && (taskItem.timesPerDay ?? 1) > 1
                   ? `${taskItem.timesPerDay} times per day`

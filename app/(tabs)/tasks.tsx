@@ -26,7 +26,7 @@ import { ScrollableSegmentedButtons } from "@/components/ui/scrollable-segmented
 import { useAquapt } from "@/context/aquapt-context";
 import { createEntityRef, getEntityHref } from "@/services/entity-links";
 import { getCompletionsToday, isTaskDue } from "@/services/scheduling";
-import { TaskFrequency } from "@/types/aquapt";
+import { getFrequencyLabel, TaskFrequency } from "@/types/aquapt";
 
 export default function TasksScreen() {
   const router = useRouter();
@@ -65,7 +65,8 @@ export default function TasksScreen() {
       task: {
         title: "",
         description: "",
-        frequency: "weekly" as TaskFrequency,
+        frequency: "weekly" as TaskFrequency | "custom",
+        customDays: "",
         aquariumIds: aquariums[0]?.id ? [aquariums[0].id] : [],
         timesPerDay: 1,
         startDate: new Date().toISOString().split("T")[0],
@@ -91,7 +92,10 @@ export default function TasksScreen() {
           title: value.task.title.trim(),
           description: value.task.description.trim() || undefined,
           category: "maintenance",
-          frequency: value.task.frequency,
+          frequency:
+            value.task.frequency === "custom"
+              ? `custom-${Math.max(1, Math.floor(Number(value.task.customDays) || 1))}`
+              : value.task.frequency,
           aquariumIds: value.task.aquariumIds.length
             ? value.task.aquariumIds
             : [value.selectedAquariumId],
@@ -102,6 +106,7 @@ export default function TasksScreen() {
         form.setFieldValue("task.title", "");
         form.setFieldValue("task.description", "");
         form.setFieldValue("task.frequency", "weekly");
+        form.setFieldValue("task.customDays", "");
         form.setFieldValue("task.aquariumIds", [value.selectedAquariumId]);
         form.setFieldValue("task.timesPerDay", 1);
         form.setFieldValue(
@@ -142,6 +147,7 @@ export default function TasksScreen() {
     form.setFieldValue("task.title", "");
     form.setFieldValue("task.description", "");
     form.setFieldValue("task.frequency", "weekly");
+    form.setFieldValue("task.customDays", "");
     form.setFieldValue("task.aquariumIds", aquariumId ? [aquariumId] : []);
     form.setFieldValue("task.timesPerDay", 1);
     form.setFieldValue(
@@ -333,7 +339,7 @@ export default function TasksScreen() {
                     <Text variant="titleMedium" style={{ color: textColor }}>
                       {task.title}
                     </Text>
-                    <Chip compact>{task.frequency}</Chip>
+                    <Chip compact>{getFrequencyLabel(task.frequency)}</Chip>
                   </View>
                   <Text
                     variant="bodySmall"
@@ -733,18 +739,37 @@ export default function TasksScreen() {
                 </form.Field>
                 <form.Field name="task.frequency">
                   {(field) => (
-                    <ScrollableSegmentedButtons
-                      value={field.state.value}
-                      onValueChange={(value) =>
-                        field.handleChange(value as TaskFrequency)
-                      }
-                      buttons={[
-                        { label: "Daily", value: "daily" },
-                        { label: "Weekly", value: "weekly" },
-                        { label: "Bi-weekly", value: "bi-weekly" },
-                        { label: "Monthly", value: "monthly" },
-                      ]}
-                    />
+                    <>
+                      <ScrollableSegmentedButtons
+                        value={field.state.value}
+                        onValueChange={(value) =>
+                          field.handleChange(value as TaskFrequency | "custom")
+                        }
+                        buttons={[
+                          { label: "Daily", value: "daily" },
+                          { label: "Weekly", value: "weekly" },
+                          { label: "Bi-weekly", value: "bi-weekly" },
+                          { label: "Monthly", value: "monthly" },
+                          { label: "Custom", value: "custom" },
+                        ]}
+                      />
+                      {field.state.value === "custom" ? (
+                        <form.Field name="task.customDays">
+                          {(daysField) => (
+                            <TextInput
+                              mode="outlined"
+                              label="Repeat every N days"
+                              value={daysField.state.value}
+                              onChangeText={(val) =>
+                                daysField.handleChange(val.replace(/[^0-9]/g, ""))
+                              }
+                              keyboardType="numeric"
+                              placeholder="e.g. 5"
+                            />
+                          )}
+                        </form.Field>
+                      ) : null}
+                    </>
                   )}
                 </form.Field>
                 <form.Subscribe

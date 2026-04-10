@@ -2,7 +2,36 @@ export type WaterType = "freshwater" | "marine" | "brackish";
 
 export type IssueStatus = "open" | "monitoring" | "resolved";
 
-export type TaskFrequency = "daily" | "weekly" | "bi-weekly" | "monthly";
+export type TaskFrequency =
+  | "daily"
+  | "weekly"
+  | "bi-weekly"
+  | "monthly"
+  | `custom-${number}`;
+
+export function parseCustomFrequencyDays(
+  frequency: TaskFrequency,
+): number | null {
+  if (frequency.startsWith("custom-")) {
+    const days = Number(frequency.slice(7));
+    return Number.isFinite(days) && days >= 1 ? days : null;
+  }
+  return null;
+}
+
+export function getFrequencyLabel(frequency: TaskFrequency): string {
+  const custom = parseCustomFrequencyDays(frequency);
+  if (custom !== null) {
+    return `Every ${custom} day${custom === 1 ? "" : "s"}`;
+  }
+  const labels: Record<string, string> = {
+    daily: "Daily",
+    weekly: "Weekly",
+    "bi-weekly": "Bi-weekly",
+    monthly: "Monthly",
+  };
+  return labels[frequency] ?? frequency;
+}
 
 export type TaskCategory = "maintenance" | "feeding";
 export type LivestockKind = "fish" | "shrimp" | "snail" | "coral" | "plant" | "other";

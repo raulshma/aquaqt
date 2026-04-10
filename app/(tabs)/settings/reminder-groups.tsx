@@ -18,6 +18,7 @@ import {
   DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
+import { getFrequencyLabel } from "@/types/aquapt";
 
 const ALL_HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -225,7 +226,7 @@ export default function ReminderGroupsScreen() {
             <List.Item
               key={task.id}
               title={task.title}
-              description={`${task.frequency} · ${task.aquariumIds.length} tank(s)`}
+              description={`${getFrequencyLabel(task.frequency)} · ${task.aquariumIds.length} tank(s)`}
               right={() => (
                 <Chip
                   selected={task.reminderGroupId === assignSheetGroupId}

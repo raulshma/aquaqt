@@ -1,22 +1,72 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
-import { View } from "react-native";
-import { Button, Chip, List, Text, useTheme } from "react-native-paper";
+import { useMemo, useState } from "react";
+import { StyleSheet, View } from "react-native";
+import {
+  Button,
+  Chip,
+  List,
+  Surface,
+  Text,
+  useTheme,
+} from "react-native-paper";
 
 import {
-    DashboardHero,
-    DashboardScrollView,
-    DashboardSection,
+  DashboardHero,
+  DashboardScrollView,
+  DashboardSection,
 } from "@/components/ui/dashboard-shell";
 import { useAquapt } from "@/context/aquapt-context";
 import {
-    clearDailyReminderSchedule,
-    ensureReminderPermissions,
-    scheduleDailyReminders,
+  clearDailyReminderSchedule,
+  ensureReminderPermissions,
+  scheduleDailyReminders,
 } from "@/services/notifications";
-import { countDueTasks } from "@/services/scheduling";
+import {
+  collectDueTasksByHour,
+  countDueTasks,
+} from "@/services/scheduling";
+import { type TaskTemplate, getFrequencyLabel } from "@/types/aquapt";
 
 const AVAILABLE_HOURS = Array.from({ length: 24 }, (_, i) => i);
+
+type UpcomingReminder = {
+  hour: number;
+  minute: number;
+  label: string;
+  tasks: { title: string; frequency: string; aquariumNames: string[] }[];
+};
+
+function buildUpcomingReminders(
+  tasksByHour: Map<number, TaskTemplate[]>,
+  maxItems: number,
+  now: Date,
+): UpcomingReminder[] {
+  const currentHour = now.getHours();
+  const sorted = Array.from(tasksByHour.entries())
+    .map(([hour, tasks]) => ({ hour, tasks }))
+    .sort((a, b) => {
+      const distA = (a.hour - currentHour + 24) % 24;
+      const distB = (b.hour - currentHour + 24) % 24;
+      return distA - distB;
+    });
+
+  return sorted.slice(0, maxItems).map(({ hour, tasks }) => ({
+    hour,
+    minute: 0,
+    label:
+      hour === currentHour
+        ? "Now"
+        : hour > currentHour
+          ? `Today at ${String(hour).padStart(2, "0")}:00`
+          : `Tomorrow at ${String(hour).padStart(2, "0")}:00`,
+    tasks: tasks.map((t) => ({
+      title: t.title,
+      frequency: getFrequencyLabel(t.frequency),
+      aquariumNames: [],
+    })),
+  }));
+}
 
 export default function RemindersSettingsScreen() {
   const theme = useTheme();
@@ -31,10 +81,42 @@ export default function RemindersSettingsScreen() {
     settings.notificationsEnabled ?? false,
   );
   const [selectedHours, setSelectedHours] = useState<number[]>(
-    settings.reminderHours ?? (settings.reminderHour !== undefined ? [settings.reminderHour] : [8]),
+    settings.reminderHours ??
+      (settings.reminderHour !== undefined ? [settings.reminderHour] : [8]),
   );
   const [status, setStatus] = useState<string | null>(null);
+  const now = new Date();
   const dueTaskCount = countDueTasks(taskTemplates, taskExecutions);
+
+  const globalHours = useMemo(
+    () =>
+      settings.reminderHours ??
+      (settings.reminderHour !== undefined
+        ? [settings.reminderHour]
+        : [8]),
+    [settings.reminderHours, settings.reminderHour],
+  );
+
+  const tasksByHour = useMemo(
+    () =>
+      collectDueTasksByHour(
+        taskTemplates,
+        taskExecutions,
+        reminderGroups,
+        globalHours,
+        now,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [taskTemplates, taskExecutions, reminderGroups, globalHours],
+  );
+
+  const upcomingReminders = useMemo(
+    () => buildUpcomingReminders(tasksByHour, 8, now),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasksByHour],
+  );
+
+  const activeReminderCount = tasksByHour.size;
 
   const toggleHour = (hour: number) => {
     setSelectedHours((prev) =>
@@ -89,14 +171,166 @@ export default function RemindersSettingsScreen() {
               {remindersEnabled ? "Enabled" : "Disabled"}
             </Chip>
             <Chip compact icon="calendar-clock">
-              {dueTaskCount} due tasks
+              {dueTaskCount} due task{dueTaskCount === 1 ? "" : "s"}
             </Chip>
             <Chip compact icon="account-group">
-              {reminderGroups.length} group{reminderGroups.length !== 1 ? "s" : ""}
+              {reminderGroups.length} group
+              {reminderGroups.length !== 1 ? "s" : ""}
             </Chip>
           </>
         }
       />
+
+      <DashboardSection
+        title="Upcoming reminders"
+        description={
+          activeReminderCount > 0
+            ? `${activeReminderCount} reminder slot${activeReminderCount === 1 ? "" : "s"} with ${dueTaskCount} due task${dueTaskCount === 1 ? "" : "s"} scheduled for today.`
+            : remindersEnabled
+              ? "No due tasks found for the current schedule."
+              : "Enable reminders to see upcoming notifications."
+        }
+      >
+        {upcomingReminders.length > 0 ? (
+          <View style={reminderStyles.timeline}>
+            {upcomingReminders.map((reminder, index) => {
+              const isNext = index === 0;
+              return (
+                <View key={reminder.hour} style={reminderStyles.timelineItem}>
+                  <View
+                    style={[
+                      reminderStyles.timelineTrack,
+                      {
+                        borderLeftColor: isNext
+                          ? theme.colors.primary
+                          : theme.colors.outlineVariant,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        reminderStyles.timelineDot,
+                        {
+                          backgroundColor: isNext
+                            ? theme.colors.primary
+                            : theme.colors.outlineVariant,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Surface
+                    elevation={isNext ? 1 : 0}
+                    style={[
+                      reminderStyles.timelineCard,
+                      {
+                        backgroundColor: isNext
+                          ? theme.colors.primaryContainer
+                          : theme.colors.surfaceVariant,
+                      },
+                    ]}
+                  >
+                    <View style={reminderStyles.timelineCardHeader}>
+                      <MaterialCommunityIcons
+                        name={isNext ? "bell-ring" : "bell-outline"}
+                        size={18}
+                        color={
+                          isNext
+                            ? theme.colors.onPrimaryContainer
+                            : theme.colors.onSurfaceVariant
+                        }
+                      />
+                      <Text
+                        variant="labelLarge"
+                        style={{
+                          color: isNext
+                            ? theme.colors.onPrimaryContainer
+                            : theme.colors.onSurface,
+                        }}
+                      >
+                        {reminder.label}
+                      </Text>
+                      {isNext ? (
+                        <View
+                          style={[
+                            reminderStyles.nextBadge,
+                            {
+                              backgroundColor: theme.colors.primary,
+                            },
+                          ]}
+                        >
+                          <Text
+                            variant="labelSmall"
+                            style={{
+                              color: theme.colors.onPrimary,
+                              fontSize: 10,
+                            }}
+                          >
+                            NEXT
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <View style={reminderStyles.taskList}>
+                      {reminder.tasks.map((task) => (
+                        <View key={task.title} style={reminderStyles.taskRow}>
+                          <MaterialCommunityIcons
+                            name="checkbox-marked-circle-outline"
+                            size={14}
+                            color={
+                              isNext
+                                ? theme.colors.onPrimaryContainer
+                                : theme.colors.onSurfaceVariant
+                            }
+                          />
+                          <Text
+                            variant="bodySmall"
+                            style={{
+                              color: isNext
+                                ? theme.colors.onPrimaryContainer
+                                : theme.colors.onSurfaceVariant,
+                              flex: 1,
+                            }}
+                            numberOfLines={1}
+                          >
+                            {task.title}
+                          </Text>
+                          <Text
+                            variant="labelSmall"
+                            style={{
+                              color: isNext
+                                ? theme.colors.onPrimaryContainer
+                                : theme.colors.onSurfaceVariant,
+                              opacity: 0.7,
+                            }}
+                          >
+                            {task.frequency}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </Surface>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={reminderStyles.emptyTimeline}>
+            <MaterialCommunityIcons
+              name="bell-off-outline"
+              size={32}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text
+              variant="bodyMedium"
+              style={{ color: theme.colors.onSurfaceVariant, textAlign: "center" }}
+            >
+              {remindersEnabled
+                ? "No due tasks match your current schedule. Tasks will appear here as they become due."
+                : "Enable reminders and save to see upcoming notifications here."}
+            </Text>
+          </View>
+        )}
+      </DashboardSection>
 
       <DashboardSection
         title="Default schedule"
@@ -153,9 +387,6 @@ export default function RemindersSettingsScreen() {
           Save reminder settings
         </Button>
 
-        <Text variant="bodySmall" style={{ opacity: 0.75, marginTop: 12 }}>
-          Current due tasks snapshot: {dueTaskCount}
-        </Text>
         {status ? (
           <Text
             variant="bodySmall"
@@ -181,3 +412,61 @@ export default function RemindersSettingsScreen() {
     </DashboardScrollView>
   );
 }
+
+const reminderStyles = StyleSheet.create({
+  timeline: {
+    gap: 12,
+    marginTop: 4,
+  },
+  timelineItem: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  timelineTrack: {
+    width: 20,
+    alignItems: "center",
+    borderLeftWidth: 2,
+    marginLeft: 8,
+  },
+  timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 10,
+    marginTop: 14,
+    marginLeft: -6,
+  },
+  timelineCard: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  timelineCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  nextBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: "auto",
+  },
+  taskList: {
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    gap: 4,
+  },
+  taskRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  emptyTimeline: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 20,
+  },
+});
