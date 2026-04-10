@@ -2,7 +2,6 @@ import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GestureResponderEvent } from "react-native";
 import {
-  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,6 +19,7 @@ import {
   useTheme,
 } from "react-native-paper";
 import Animated, {
+  useAnimatedKeyboard,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -122,6 +122,16 @@ export default function AssistantScreen() {
     ReturnType<typeof startPressHoldDictation>
   > | null>(null);
   const hasVoiceSupport = isDictationSupported();
+
+  const keyboard = useAnimatedKeyboard();
+  const mainAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -keyboard.height.value }],
+  }));
+  const composerAnimStyle = useAnimatedStyle(() => ({
+    paddingBottom: keyboard.height.value > 0
+      ? 8
+      : TAB_BAR_HEIGHT + insets.bottom + 8,
+  }));
 
   const drawerProgress = useSharedValue(0);
   const drawerAnimStyle = useAnimatedStyle(() => ({
@@ -679,16 +689,15 @@ export default function AssistantScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
-      <KeyboardAvoidingView
+      <Animated.View
         style={[
           styles.main,
           {
             paddingTop: insets.top + 12,
             paddingHorizontal: 12,
           },
+          mainAnimStyle,
         ]}
-        behavior="padding"
-        keyboardVerticalOffset={-TAB_BAR_HEIGHT}
       >
         <View
           style={[styles.header, { backgroundColor: theme.colors.surface }]}
@@ -782,13 +791,13 @@ export default function AssistantScreen() {
           ) : null}
         </ScrollView>
 
-        <View
+        <Animated.View
           style={[
             styles.composer,
             {
               backgroundColor: theme.colors.surface,
-              paddingBottom: TAB_BAR_HEIGHT + 12,
             },
+            composerAnimStyle,
           ]}
         >
           {isDictating ? (
@@ -919,8 +928,8 @@ export default function AssistantScreen() {
               }
             />
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </Animated.View>
+      </Animated.View>
 
       <Menu
         visible={!!messageMenuState && !!selectedMenuMessage}
