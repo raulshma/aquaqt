@@ -37,6 +37,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
+import com.keepaside.aquapt.feature.tasks.TasksDashboardScreen
 import com.keepaside.aquapt.feature.tanks.TanksDashboardScreen
 
 private data class TopLevelDestination(
@@ -123,11 +124,7 @@ fun AquaPTApp() {
                 TanksDashboardScreen()
             }
             composable(AquaPTRoute.Tasks) {
-                PlaceholderScreen(
-                    title = "Tasks",
-                    subtitle = "Task matrix, completion, and backdating workflows will land in Phase 2.",
-                    icon = { Icon(Icons.Rounded.TaskAlt, contentDescription = null) }
-                )
+                TasksDashboardScreen()
             }
             composable(AquaPTRoute.Timeline) {
                 PlaceholderScreen(
