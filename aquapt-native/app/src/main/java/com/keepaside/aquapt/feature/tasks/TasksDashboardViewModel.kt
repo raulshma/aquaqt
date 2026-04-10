@@ -7,7 +7,10 @@ import com.keepaside.aquapt.core.logic.getCompletionsToday
 import com.keepaside.aquapt.core.logic.isTaskDue
 import com.keepaside.aquapt.core.model.Aquarium
 import com.keepaside.aquapt.core.model.DosingLog
+import com.keepaside.aquapt.core.model.TaskCategory
 import com.keepaside.aquapt.core.model.TaskExecution
+import com.keepaside.aquapt.core.model.TaskFrequency
+import com.keepaside.aquapt.core.model.TaskFrequencyKind
 import com.keepaside.aquapt.core.model.TaskTemplate
 import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
@@ -29,6 +32,7 @@ import java.util.UUID
 
 data class TasksSummaryMetrics(
     val aquariumCount: Int = 0,
+    val taskTemplateCount: Int = 0,
     val dueTaskCount: Int = 0,
     val recentExecutionCount: Int = 0,
     val dosingLogCount: Int = 0
@@ -62,11 +66,47 @@ data class AquariumDosingSnapshotItem(
     val latestAtLabel: String?
 )
 
+data class TaskTemplateAquariumOption(
+    val aquariumId: String,
+    val aquariumName: String
+)
+
+data class TaskTemplateListItem(
+    val id: String,
+    val title: String,
+    val description: String?,
+    val category: TaskCategory?,
+    val categoryLabel: String,
+    val aquariumIds: List<String>,
+    val aquariumNames: List<String>,
+    val frequency: TaskFrequency,
+    val frequencyLabel: String,
+    val customDaysInput: String,
+    val startDate: String,
+    val timesPerDayInput: String,
+    val reminderHoursInput: String
+)
+
+data class TaskTemplateDraft(
+    val id: String? = null,
+    val title: String = "",
+    val description: String = "",
+    val category: TaskCategory? = TaskCategory.MAINTENANCE,
+    val aquariumIds: Set<String> = emptySet(),
+    val frequency: TaskFrequency = TaskFrequency.DAILY,
+    val customDays: String = "1",
+    val startDate: String = "",
+    val timesPerDay: String = "1",
+    val reminderHours: String = ""
+)
+
 data class TasksDashboardUiState(
     val isLoading: Boolean = true,
     val isEmpty: Boolean = false,
     val headline: String = "Loading tasks…",
     val summary: TasksSummaryMetrics = TasksSummaryMetrics(),
+    val aquariumOptions: List<TaskTemplateAquariumOption> = emptyList(),
+    val taskTemplates: List<TaskTemplateListItem> = emptyList(),
     val dueTasks: List<DueTaskMatrixItem> = emptyList(),
     val dosingSnapshots: List<AquariumDosingSnapshotItem> = emptyList(),
     val recentExecutions: List<RecentTaskExecutionItem> = emptyList(),
@@ -112,6 +152,83 @@ class TasksDashboardViewModel(
 
     fun currentCompletionDateTimeInput(): String =
         formatDateTimeInput(nowProvider(), zoneId)
+
+    fun newTaskTemplateDraft(): TaskTemplateDraft =
+        TaskTemplateDraft(
+            aquariumIds = _uiState.value.aquariumOptions.firstOrNull()
+                ?.let { setOf(it.aquariumId) }
+                .orEmpty(),
+            startDate = todayIso(nowProvider(), zoneId)
+        )
+
+    fun draftForTaskTemplate(templateId: String): TaskTemplateDraft? =
+        _uiState.value.taskTemplates.firstOrNull { it.id == templateId }?.toDraft()
+
+    fun saveTaskTemplate(draft: TaskTemplateDraft) {
+        val aquariumOptions = _uiState.value.aquariumOptions
+        validateTaskTemplateDraft(draft, aquariumOptions)?.let { message ->
+            _statusMessage.value = message
+            return
+        }
+
+        val title = draft.title.trim()
+        val selectedAquariumIds = draft.aquariumIds
+            .filter { aquariumId -> aquariumOptions.any { it.aquariumId == aquariumId } }
+        val frequency = resolveTaskTemplateFrequency(draft)
+            ?: return _statusMessage.update { "Custom frequency needs at least 1 day." }
+        val startDate = draft.startDate.trim().ifBlank { null }
+        val reminderHours = parseReminderHoursInput(draft.reminderHours)
+            ?: return _statusMessage.update { "Reminder hours must be between 0 and 23." }
+        val timesPerDay = if (frequency.kind == TaskFrequencyKind.DAILY) {
+            draft.timesPerDay.trim().ifBlank { "1" }.toInt().coerceAtLeast(1)
+        } else {
+            null
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                val existing = draft.id?.let { taskTemplateRepository.getById(it) }
+                val template = TaskTemplate(
+                    id = existing?.id ?: draft.id ?: idProvider(),
+                    title = title,
+                    description = draft.description.trim().ifBlank { null },
+                    category = draft.category,
+                    livestockId = existing?.livestockId,
+                    frequency = frequency,
+                    aquariumIds = selectedAquariumIds,
+                    startDate = startDate,
+                    timesPerDay = timesPerDay,
+                    reminderHours = reminderHours,
+                    reminderGroupId = existing?.reminderGroupId
+                )
+
+                taskTemplateRepository.upsert(
+                    template = template,
+                    primaryAquariumId = selectedAquariumIds.first()
+                )
+            }.onSuccess {
+                _statusMessage.value = if (draft.id == null) {
+                    "Task template created."
+                } else {
+                    "Task template updated."
+                }
+            }.onFailure { error ->
+                _statusMessage.value = error.message ?: "Unable to save task template."
+            }
+        }
+    }
+
+    fun deleteTaskTemplate(templateId: String) {
+        viewModelScope.launch {
+            runCatching {
+                taskTemplateRepository.deleteById(templateId)
+            }.onSuccess {
+                _statusMessage.value = "Task template deleted."
+            }.onFailure { error ->
+                _statusMessage.value = error.message ?: "Unable to delete task template."
+            }
+        }
+    }
 
     fun completeTaskAt(item: DueTaskMatrixItem, completedAtInput: String, note: String? = null) {
         val completedAt = parseTaskDateTimeInput(completedAtInput, zoneId)
@@ -255,6 +372,7 @@ internal fun assembleTasksDashboardUiState(
             headline = "Add your first tank to unlock task planning and completion tracking.",
             summary = TasksSummaryMetrics(
                 aquariumCount = 0,
+                taskTemplateCount = taskTemplates.size,
                 dueTaskCount = 0,
                 recentExecutionCount = taskExecutions.size,
                 dosingLogCount = dosingLogs.size
@@ -265,6 +383,31 @@ internal fun assembleTasksDashboardUiState(
 
     val aquariumNameById = aquariums.associate { it.id to it.name }
     val taskTitleById = taskTemplates.associate { it.id to it.title }
+    val aquariumOptions = aquariums
+        .sortedBy { it.name.lowercase() }
+        .map { TaskTemplateAquariumOption(it.id, it.name) }
+    val taskTemplateItems = taskTemplates
+        .sortedWith(compareBy<TaskTemplate> { it.title.lowercase() }.thenBy { it.id })
+        .map { template ->
+            val aquariumIds = template.aquariumIds
+            TaskTemplateListItem(
+                id = template.id,
+                title = template.title,
+                description = template.description,
+                category = template.category,
+                categoryLabel = template.category.label(),
+                aquariumIds = aquariumIds,
+                aquariumNames = aquariumIds.map { aquariumId ->
+                    aquariumNameById[aquariumId] ?: "Unknown tank"
+                },
+                frequency = template.frequency,
+                frequencyLabel = template.frequency.getLabel(),
+                customDaysInput = (template.frequency.customDays ?: 1).toString(),
+                startDate = template.startDate.orEmpty(),
+                timesPerDayInput = (template.timesPerDay ?: 1).toString(),
+                reminderHoursInput = template.reminderHours.joinToString(", ")
+            )
+        }
 
     val dueTasks = taskTemplates
         .flatMap { task ->
@@ -327,10 +470,13 @@ internal fun assembleTasksDashboardUiState(
         headline = headline,
         summary = TasksSummaryMetrics(
             aquariumCount = aquariums.size,
+            taskTemplateCount = taskTemplates.size,
             dueTaskCount = dueTasks.size,
             recentExecutionCount = recentExecutions.size,
             dosingLogCount = dosingLogs.size
         ),
+        aquariumOptions = aquariumOptions,
+        taskTemplates = taskTemplateItems,
         dueTasks = dueTasks,
         dosingSnapshots = dosingSnapshots,
         recentExecutions = recentExecutions,
@@ -340,6 +486,48 @@ internal fun assembleTasksDashboardUiState(
 
 internal const val dateTimeErrorMessage =
     "Use a valid completion time like 2026-04-11 18:30."
+
+internal fun validateTaskTemplateDraft(
+    draft: TaskTemplateDraft,
+    aquariumOptions: List<TaskTemplateAquariumOption>
+): String? {
+    if (draft.title.isBlank()) return "Name the task before saving."
+    if (draft.aquariumIds.none { aquariumId -> aquariumOptions.any { it.aquariumId == aquariumId } }) {
+        return "Choose at least one tank for this task."
+    }
+    if (resolveTaskTemplateFrequency(draft) == null) return "Custom frequency needs at least 1 day."
+    if (draft.startDate.isNotBlank() && runCatching { LocalDate.parse(draft.startDate.trim()) }.isFailure) {
+        return "Start date must use yyyy-MM-dd."
+    }
+    if (draft.frequency.kind == TaskFrequencyKind.DAILY) {
+        val timesPerDay = draft.timesPerDay.trim().ifBlank { "1" }.toIntOrNull()
+        if (timesPerDay == null || timesPerDay < 1) return "Times per day must be at least 1."
+    }
+    if (parseReminderHoursInput(draft.reminderHours) == null) {
+        return "Reminder hours must be between 0 and 23."
+    }
+    return null
+}
+
+internal fun resolveTaskTemplateFrequency(draft: TaskTemplateDraft): TaskFrequency? =
+    if (draft.frequency.kind == TaskFrequencyKind.CUSTOM) {
+        draft.customDays.trim().toIntOrNull()?.takeIf { it >= 1 }?.let { TaskFrequency.custom(it) }
+    } else {
+        draft.frequency
+    }
+
+internal fun parseReminderHoursInput(raw: String): List<Int>? {
+    val value = raw.trim()
+    if (value.isEmpty()) return emptyList()
+
+    return value
+        .split(",", ";", " ")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .map { part -> part.toIntOrNull()?.takeIf { it in 0..23 } ?: return null }
+        .distinct()
+        .sorted()
+}
 
 internal fun parseTaskDateTimeInput(raw: String, zoneId: ZoneId): Instant? {
     val value = raw.trim()
@@ -386,3 +574,26 @@ private fun parseToInstant(raw: String, zoneId: ZoneId): Instant? {
 
 private fun String?.normalizeNote(): String? =
     this?.trim()?.takeIf { it.isNotEmpty() }
+
+private fun TaskTemplateListItem.toDraft(): TaskTemplateDraft =
+    TaskTemplateDraft(
+        id = id,
+        title = title,
+        description = description.orEmpty(),
+        category = category,
+        aquariumIds = aquariumIds.toSet(),
+        frequency = frequency,
+        customDays = customDaysInput,
+        startDate = startDate,
+        timesPerDay = timesPerDayInput,
+        reminderHours = reminderHoursInput
+    )
+
+private fun TaskCategory?.label(): String =
+    this?.name
+        ?.lowercase()
+        ?.replaceFirstChar { it.uppercaseChar() }
+        ?: "General"
+
+private fun todayIso(now: Instant, zoneId: ZoneId): String =
+    DateTimeFormatter.ISO_LOCAL_DATE.format(now.atZone(zoneId))

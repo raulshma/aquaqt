@@ -7,12 +7,19 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -28,9 +35,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.keepaside.aquapt.core.model.TaskCategory
+import com.keepaside.aquapt.core.model.TaskFrequency
+import com.keepaside.aquapt.core.model.TaskFrequencyKind
 import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
@@ -73,6 +84,7 @@ fun TasksDashboardScreen(
     )
 
     val uiState by viewModel.uiState.collectAsState()
+    var templateDialogState by remember { mutableStateOf<TaskTemplateDraft?>(null) }
     var completionDialogState by remember { mutableStateOf<CompletionDialogState?>(null) }
     var editDialogState by remember { mutableStateOf<EditExecutionDialogState?>(null) }
 
@@ -119,6 +131,11 @@ fun TasksDashboardScreen(
                         ) {
                             SummaryTile(
                                 modifier = Modifier.weight(1f),
+                                title = "Templates",
+                                value = uiState.summary.taskTemplateCount.toString()
+                            )
+                            SummaryTile(
+                                modifier = Modifier.weight(1f),
                                 title = "Due",
                                 value = uiState.summary.dueTaskCount.toString()
                             )
@@ -141,12 +158,23 @@ fun TasksDashboardScreen(
                 item {
                     Card {
                         Text(
-                            text = "No task data yet. Create task templates (next slice) or import data in Settings.",
+                            text = "No task data yet. Create a care template here or import data in Settings.",
                             modifier = Modifier.padding(16.dp),
                             style = MaterialTheme.typography.bodyLarge
                         )
                     }
                 }
+            }
+
+            item {
+                TaskTemplateManagementCard(
+                    uiState = uiState,
+                    onCreate = { templateDialogState = viewModel.newTaskTemplateDraft() },
+                    onEdit = { templateId ->
+                        templateDialogState = viewModel.draftForTaskTemplate(templateId)
+                    },
+                    onDelete = viewModel::deleteTaskTemplate
+                )
             }
 
             if (uiState.dueTasks.isNotEmpty()) {
@@ -289,6 +317,19 @@ fun TasksDashboardScreen(
             }
         }
 
+        templateDialogState?.let { dialogState ->
+            TaskTemplateDialog(
+                draft = dialogState,
+                aquariumOptions = uiState.aquariumOptions,
+                onDraftChange = { next -> templateDialogState = next },
+                onDismiss = { templateDialogState = null },
+                onConfirm = {
+                    viewModel.saveTaskTemplate(dialogState)
+                    templateDialogState = null
+                }
+            )
+        }
+
         completionDialogState?.let { dialogState ->
             TaskCompletionDialog(
                 title = "Complete ${dialogState.dueTask.taskTitle}",
@@ -342,6 +383,123 @@ fun TasksDashboardScreen(
 }
 
 @Composable
+private fun TaskTemplateManagementCard(
+    uiState: TasksDashboardUiState,
+    onCreate: () -> Unit,
+    onEdit: (String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "Task templates",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Recurring routines for one or more tanks.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                FilledTonalButton(
+                    onClick = onCreate,
+                    enabled = uiState.aquariumOptions.isNotEmpty()
+                ) {
+                    Text("Create")
+                }
+            }
+
+            if (uiState.aquariumOptions.isEmpty()) {
+                Text(
+                    text = "Add a tank before creating recurring care templates.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                return@Column
+            }
+
+            if (uiState.taskTemplates.isEmpty()) {
+                Text(
+                    text = "No templates yet. Start with feeding, water changes, testing, or dosing checks.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            uiState.taskTemplates.take(12).forEach { template ->
+                TaskTemplateRow(
+                    template = template,
+                    onEdit = { onEdit(template.id) },
+                    onDelete = { onDelete(template.id) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskTemplateRow(
+    template: TaskTemplateListItem,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = template.title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = buildList {
+                add(template.categoryLabel)
+                add(template.frequencyLabel)
+                if (template.timesPerDayInput != "1" && template.frequency.kind == TaskFrequencyKind.DAILY) {
+                    add("${template.timesPerDayInput}/day")
+                }
+                if (template.startDate.isNotBlank()) add("Starts ${template.startDate}")
+                if (template.reminderHoursInput.isNotBlank()) add("Reminders ${template.reminderHoursInput}")
+            }.joinToString(" - "),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = template.aquariumNames.joinToString(", ").ifBlank { "No tanks assigned" },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onEdit) {
+                Text("Edit template")
+            }
+            TextButton(onClick = onDelete) {
+                Text("Delete")
+            }
+        }
+    }
+}
+
+@Composable
 private fun RecentExecutionRow(
     execution: RecentTaskExecutionItem,
     onEdit: () -> Unit,
@@ -374,6 +532,165 @@ private fun RecentExecutionRow(
             }
         }
     }
+}
+
+@Composable
+private fun TaskTemplateDialog(
+    draft: TaskTemplateDraft,
+    aquariumOptions: List<TaskTemplateAquariumOption>,
+    onDraftChange: (TaskTemplateDraft) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val frequencyOptions = listOf(
+        "Daily" to TaskFrequency.DAILY,
+        "Weekly" to TaskFrequency.WEEKLY,
+        "Bi-weekly" to TaskFrequency.BI_WEEKLY,
+        "Monthly" to TaskFrequency.MONTHLY,
+        "Custom" to TaskFrequency.custom(1)
+    )
+    val categoryOptions = listOf(
+        "General" to null,
+        "Maintenance" to TaskCategory.MAINTENANCE,
+        "Feeding" to TaskCategory.FEEDING
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (draft.id == null) "Create task template" else "Edit task template") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = draft.title,
+                    onValueChange = { value -> onDraftChange(draft.copy(title = value)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Task name") },
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = draft.description,
+                    onValueChange = { value -> onDraftChange(draft.copy(description = value)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Description") },
+                    minLines = 2
+                )
+
+                Text(
+                    text = "Tanks",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(aquariumOptions, key = { it.aquariumId }) { aquarium ->
+                        val selected = aquarium.aquariumId in draft.aquariumIds
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                val nextIds = if (selected) {
+                                    draft.aquariumIds - aquarium.aquariumId
+                                } else {
+                                    draft.aquariumIds + aquarium.aquariumId
+                                }
+                                onDraftChange(draft.copy(aquariumIds = nextIds))
+                            },
+                            label = { Text(aquarium.aquariumName, maxLines = 1) }
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Category",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(categoryOptions, key = { it.first }) { option ->
+                        FilterChip(
+                            selected = draft.category == option.second,
+                            onClick = { onDraftChange(draft.copy(category = option.second)) },
+                            label = { Text(option.first) }
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Frequency",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(frequencyOptions, key = { it.first }) { option ->
+                        val frequency = option.second
+                        FilterChip(
+                            selected = draft.frequency.kind == frequency.kind,
+                            onClick = { onDraftChange(draft.copy(frequency = frequency)) },
+                            label = { Text(option.first) }
+                        )
+                    }
+                }
+
+                if (draft.frequency.kind == TaskFrequencyKind.CUSTOM) {
+                    OutlinedTextField(
+                        value = draft.customDays,
+                        onValueChange = { value -> onDraftChange(draft.copy(customDays = value)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Every N days") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true
+                    )
+                }
+
+                if (draft.frequency.kind == TaskFrequencyKind.DAILY) {
+                    OutlinedTextField(
+                        value = draft.timesPerDay,
+                        onValueChange = { value -> onDraftChange(draft.copy(timesPerDay = value)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Times per day") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true
+                    )
+                }
+
+                OutlinedTextField(
+                    value = draft.startDate,
+                    onValueChange = { value -> onDraftChange(draft.copy(startDate = value)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Start date") },
+                    supportingText = { Text("Use yyyy-MM-dd or leave blank") },
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = draft.reminderHours,
+                    onValueChange = { value -> onDraftChange(draft.copy(reminderHours = value)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Reminder hours") },
+                    supportingText = { Text("Optional, for example 8, 18") },
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            FilledTonalButton(
+                onClick = onConfirm,
+                enabled = draft.title.isNotBlank() && draft.aquariumIds.isNotEmpty()
+            ) {
+                Text(if (draft.id == null) "Create" else "Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable

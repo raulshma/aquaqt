@@ -2,6 +2,7 @@ package com.keepaside.aquapt.feature.tasks
 
 import com.keepaside.aquapt.core.model.Aquarium
 import com.keepaside.aquapt.core.model.DosingLog
+import com.keepaside.aquapt.core.model.TaskCategory
 import com.keepaside.aquapt.core.model.TaskExecution
 import com.keepaside.aquapt.core.model.TaskFrequency
 import com.keepaside.aquapt.core.model.TaskTemplate
@@ -162,6 +163,82 @@ class TasksDashboardViewModelTest {
         assertEquals(1, state.dosingSnapshots.size)
         assertEquals(2, state.dosingSnapshots.first().count)
         assertEquals("Fertilizer B", state.dosingSnapshots.first().latestProduct)
+    }
+
+    @Test
+    fun `task template list includes editable scheduling fields`() {
+        val aquarium = Aquarium(
+            id = "a-4",
+            name = "Shrimp Cube",
+            volumeLiters = 30.0,
+            waterType = WaterType.FRESHWATER,
+            setupDate = "2026-03-01"
+        )
+        val template = TaskTemplate(
+            id = "t-4",
+            title = "Dose minerals",
+            description = "Keep GH steady",
+            category = TaskCategory.MAINTENANCE,
+            frequency = TaskFrequency.custom(3),
+            aquariumIds = listOf(aquarium.id),
+            startDate = "2026-04-12",
+            reminderHours = listOf(9, 18)
+        )
+
+        val state = assembleTasksDashboardUiState(
+            aquariums = listOf(aquarium),
+            taskTemplates = listOf(template),
+            taskExecutions = emptyList(),
+            dosingLogs = emptyList(),
+            now = now,
+            zoneId = ZoneOffset.UTC,
+            statusMessage = null
+        )
+
+        assertEquals(1, state.summary.taskTemplateCount)
+        assertEquals(1, state.taskTemplates.size)
+        assertEquals("Dose minerals", state.taskTemplates.first().title)
+        assertEquals("Maintenance", state.taskTemplates.first().categoryLabel)
+        assertEquals("Every 3 days", state.taskTemplates.first().frequencyLabel)
+        assertEquals("3", state.taskTemplates.first().customDaysInput)
+        assertEquals("2026-04-12", state.taskTemplates.first().startDate)
+        assertEquals("9, 18", state.taskTemplates.first().reminderHoursInput)
+        assertEquals(listOf("Shrimp Cube"), state.taskTemplates.first().aquariumNames)
+    }
+
+    @Test
+    fun `task template draft validation catches missing tank and invalid schedule`() {
+        val options = listOf(TaskTemplateAquariumOption("a-1", "Display"))
+
+        val noTank = TaskTemplateDraft(title = "Water change")
+        val invalidCustom = TaskTemplateDraft(
+            title = "Trace elements",
+            aquariumIds = setOf("a-1"),
+            frequency = TaskFrequency.custom(1),
+            customDays = "0"
+        )
+        val invalidReminder = TaskTemplateDraft(
+            title = "Test nitrates",
+            aquariumIds = setOf("a-1"),
+            reminderHours = "8, 24"
+        )
+
+        assertEquals("Choose at least one tank for this task.", validateTaskTemplateDraft(noTank, options))
+        assertEquals(
+            "Custom frequency needs at least 1 day.",
+            validateTaskTemplateDraft(invalidCustom, options)
+        )
+        assertEquals(
+            "Reminder hours must be between 0 and 23.",
+            validateTaskTemplateDraft(invalidReminder, options)
+        )
+    }
+
+    @Test
+    fun `reminder hour parser normalizes distinct sorted hours`() {
+        val hours = parseReminderHoursInput("18, 8; 8 21")
+
+        assertEquals(listOf(8, 18, 21), hours)
     }
 
     @Test
