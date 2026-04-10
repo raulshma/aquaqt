@@ -52,7 +52,9 @@ data class DueTaskMatrixItem(
 
 data class RecentTaskExecutionItem(
     val executionId: String,
+    val taskId: String,
     val taskTitle: String,
+    val aquariumId: String,
     val aquariumName: String,
     val completedAtLabel: String,
     val completedAtInput: String,
@@ -95,7 +97,9 @@ data class TaskTemplateListItem(
     val timesPerDayInput: String,
     val reminderHoursInput: String,
     val reminderGroupId: String?,
-    val reminderGroupLabel: String?
+    val reminderGroupLabel: String?,
+    val completionCount: Int,
+    val latestCompletionLabel: String?
 )
 
 data class TaskTemplateDraft(
@@ -122,6 +126,7 @@ data class TasksDashboardUiState(
     val taskTemplates: List<TaskTemplateListItem> = emptyList(),
     val dueTasks: List<DueTaskMatrixItem> = emptyList(),
     val dosingSnapshots: List<AquariumDosingSnapshotItem> = emptyList(),
+    val executionHistoryByTaskId: Map<String, List<RecentTaskExecutionItem>> = emptyMap(),
     val recentExecutions: List<RecentTaskExecutionItem> = emptyList(),
     val statusMessage: String? = null
 )
@@ -439,10 +444,29 @@ internal fun assembleTasksDashboardUiState(
                 hoursLabel = group.hours.joinToString(", ")
             )
         }
+
+    val allExecutionHistory = taskExecutions
+        .sortedByDescending { parseToInstant(it.completedAt, zoneId)?.toEpochMilli() ?: Long.MIN_VALUE }
+        .map { execution ->
+            RecentTaskExecutionItem(
+                executionId = execution.id,
+                taskId = execution.taskTemplateId,
+                taskTitle = taskTitleById[execution.taskTemplateId] ?: "Unknown task",
+                aquariumId = execution.aquariumId,
+                aquariumName = aquariumNameById[execution.aquariumId] ?: "Unknown tank",
+                completedAtLabel = formatDateTime(execution.completedAt, zoneId),
+                completedAtInput = formatDateTimeInput(execution.completedAt, zoneId),
+                note = execution.note
+            )
+        }
+    val executionHistoryByTaskId = allExecutionHistory
+        .groupBy { it.taskId }
+
     val taskTemplateItems = taskTemplates
         .sortedWith(compareBy<TaskTemplate> { it.title.lowercase() }.thenBy { it.id })
         .map { template ->
             val aquariumIds = template.aquariumIds
+            val executionHistory = executionHistoryByTaskId[template.id].orEmpty()
             val reminderGroupLabel = template.reminderGroupId
                 ?.let { groupId ->
                     val group = reminderGroupById[groupId]
@@ -471,7 +495,9 @@ internal fun assembleTasksDashboardUiState(
                 timesPerDayInput = (template.timesPerDay ?: 1).toString(),
                 reminderHoursInput = template.reminderHours.joinToString(", "),
                 reminderGroupId = template.reminderGroupId,
-                reminderGroupLabel = reminderGroupLabel
+                reminderGroupLabel = reminderGroupLabel,
+                completionCount = executionHistory.size,
+                latestCompletionLabel = executionHistory.firstOrNull()?.completedAtLabel
             )
         }
 
@@ -496,19 +522,7 @@ internal fun assembleTasksDashboardUiState(
         }
         .sortedWith(compareBy<DueTaskMatrixItem> { it.aquariumName }.thenBy { it.taskTitle })
 
-    val recentExecutions = taskExecutions
-        .sortedByDescending { parseToInstant(it.completedAt, zoneId)?.toEpochMilli() ?: Long.MIN_VALUE }
-        .take(20)
-        .map { execution ->
-            RecentTaskExecutionItem(
-                executionId = execution.id,
-                taskTitle = taskTitleById[execution.taskTemplateId] ?: "Unknown task",
-                aquariumName = aquariumNameById[execution.aquariumId] ?: "Unknown tank",
-                completedAtLabel = formatDateTime(execution.completedAt, zoneId),
-                completedAtInput = formatDateTimeInput(execution.completedAt, zoneId),
-                note = execution.note
-            )
-        }
+    val recentExecutions = allExecutionHistory.take(20)
 
     val dosingByAquarium = dosingLogs.groupBy { it.aquariumId }
     val dosingSnapshots = aquariums.map { aquarium ->
@@ -546,6 +560,7 @@ internal fun assembleTasksDashboardUiState(
         taskTemplates = taskTemplateItems,
         dueTasks = dueTasks,
         dosingSnapshots = dosingSnapshots,
+        executionHistoryByTaskId = executionHistoryByTaskId,
         recentExecutions = recentExecutions,
         statusMessage = statusMessage
     )

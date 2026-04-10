@@ -1,5 +1,8 @@
 package com.keepaside.aquapt.feature.tasks
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,9 +22,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -34,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,8 +54,11 @@ import com.keepaside.aquapt.core.repository.ReminderGroupRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import org.koin.java.KoinJavaComponent
+import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksDashboardScreen(
     modifier: Modifier = Modifier,
@@ -93,6 +102,11 @@ fun TasksDashboardScreen(
     var templateDialogState by remember { mutableStateOf<TaskTemplateDraft?>(null) }
     var completionDialogState by remember { mutableStateOf<CompletionDialogState?>(null) }
     var editDialogState by remember { mutableStateOf<EditExecutionDialogState?>(null) }
+    var taskDetailsTemplateId by remember { mutableStateOf<String?>(null) }
+    val selectedTemplate = uiState.taskTemplates.firstOrNull { it.id == taskDetailsTemplateId }
+    val selectedTemplateHistory = selectedTemplate
+        ?.let { template -> uiState.executionHistoryByTaskId[template.id].orEmpty() }
+        .orEmpty()
 
     Box(
         modifier = modifier
@@ -179,6 +193,9 @@ fun TasksDashboardScreen(
                     onEdit = { templateId ->
                         templateDialogState = viewModel.draftForTaskTemplate(templateId)
                     },
+                    onViewDetails = { templateId ->
+                        taskDetailsTemplateId = templateId
+                    },
                     onDelete = viewModel::deleteTaskTemplate
                 )
             }
@@ -230,6 +247,9 @@ fun TasksDashboardScreen(
                                         }
                                     ) {
                                         Text("Add note/time")
+                                    }
+                                    TextButton(onClick = { taskDetailsTemplateId = due.taskId }) {
+                                        Text("View details")
                                     }
                                 }
                             }
@@ -297,6 +317,9 @@ fun TasksDashboardScreen(
                                     },
                                     onDelete = {
                                         viewModel.deleteExecution(execution.executionId)
+                                    },
+                                    onViewTaskDetails = {
+                                        taskDetailsTemplateId = execution.taskId
                                     }
                                 )
                             }
@@ -386,6 +409,29 @@ fun TasksDashboardScreen(
                 }
             )
         }
+
+        selectedTemplate?.let { template ->
+            ModalBottomSheet(onDismissRequest = { taskDetailsTemplateId = null }) {
+                TaskTemplateDetailSheet(
+                    template = template,
+                    history = selectedTemplateHistory,
+                    onEditTemplate = {
+                        templateDialogState = viewModel.draftForTaskTemplate(template.id)
+                        taskDetailsTemplateId = null
+                    },
+                    onEditExecution = { execution ->
+                        editDialogState = EditExecutionDialogState(
+                            executionId = execution.executionId,
+                            taskTitle = execution.taskTitle,
+                            completedAtInput = execution.completedAtInput,
+                            note = execution.note.orEmpty()
+                        )
+                    },
+                    onDeleteExecution = viewModel::deleteExecution,
+                    onDismiss = { taskDetailsTemplateId = null }
+                )
+            }
+        }
     }
 }
 
@@ -394,6 +440,7 @@ private fun TaskTemplateManagementCard(
     uiState: TasksDashboardUiState,
     onCreate: () -> Unit,
     onEdit: (String) -> Unit,
+    onViewDetails: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
     Card {
@@ -452,6 +499,7 @@ private fun TaskTemplateManagementCard(
                 TaskTemplateRow(
                     template = template,
                     onEdit = { onEdit(template.id) },
+                    onViewDetails = { onViewDetails(template.id) },
                     onDelete = { onDelete(template.id) }
                 )
             }
@@ -463,6 +511,7 @@ private fun TaskTemplateManagementCard(
 private fun TaskTemplateRow(
     template: TaskTemplateListItem,
     onEdit: () -> Unit,
+    onViewDetails: () -> Unit,
     onDelete: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -496,9 +545,23 @@ private fun TaskTemplateRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+        Text(
+            text = if (template.completionCount == 0) {
+                "No completions yet"
+            } else {
+                "${template.completionCount} completion${if (template.completionCount == 1) "" else "s"} • latest ${template.latestCompletionLabel}"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onEdit) {
                 Text("Edit template")
+            }
+            OutlinedButton(onClick = onViewDetails) {
+                Text("Details")
             }
             TextButton(onClick = onDelete) {
                 Text("Delete")
@@ -511,7 +574,8 @@ private fun TaskTemplateRow(
 private fun RecentExecutionRow(
     execution: RecentTaskExecutionItem,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onViewTaskDetails: (() -> Unit)? = null
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
@@ -534,6 +598,11 @@ private fun RecentExecutionRow(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onEdit) {
                 Text("Edit")
+            }
+            onViewTaskDetails?.let {
+                OutlinedButton(onClick = it) {
+                    Text("Task details")
+                }
             }
             TextButton(onClick = onDelete) {
                 Text("Delete")
@@ -757,6 +826,7 @@ private fun TaskCompletionDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -775,6 +845,17 @@ private fun TaskCompletionDialog(
                     supportingText = { Text("Use yyyy-MM-dd HH:mm") },
                     singleLine = true
                 )
+                OutlinedButton(
+                    onClick = {
+                        openNativeTaskDateTimePicker(
+                            context = context,
+                            initialInput = completedAtInput,
+                            onSelected = onCompletedAtChange
+                        )
+                    }
+                ) {
+                    Text("Pick date & time")
+                }
                 OutlinedTextField(
                     value = note,
                     onValueChange = onNoteChange,
@@ -828,6 +909,122 @@ private fun SummaryTile(
             )
         }
     }
+}
+
+@Composable
+private fun TaskTemplateDetailSheet(
+    template: TaskTemplateListItem,
+    history: List<RecentTaskExecutionItem>,
+    onEditTemplate: () -> Unit,
+    onEditExecution: (RecentTaskExecutionItem) -> Unit,
+    onDeleteExecution: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Task details",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        Text(
+            text = template.title,
+            style = MaterialTheme.typography.titleSmall
+        )
+
+        Text(
+            text = buildList {
+                add(template.categoryLabel)
+                add(template.frequencyLabel)
+                if (template.timesPerDayInput != "1" && template.frequency.kind == TaskFrequencyKind.DAILY) {
+                    add("${template.timesPerDayInput}/day")
+                }
+                if (template.startDate.isNotBlank()) add("Starts ${template.startDate}")
+                if (!template.reminderGroupLabel.isNullOrBlank()) add("Group ${template.reminderGroupLabel}")
+                if (template.reminderHoursInput.isNotBlank()) add("Reminders ${template.reminderHoursInput}")
+            }.joinToString(" • "),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Text(
+            text = "Tanks: ${template.aquariumNames.joinToString(", ").ifBlank { "None" }}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        OutlinedButton(onClick = onEditTemplate) {
+            Text("Edit template")
+        }
+
+        Text(
+            text = "Completion history",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        if (history.isEmpty()) {
+            Text(
+                text = "No completions yet for this task.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            history.take(20).forEach { execution ->
+                RecentExecutionRow(
+                    execution = execution,
+                    onEdit = { onEditExecution(execution) },
+                    onDelete = { onDeleteExecution(execution.executionId) }
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    }
+}
+
+private fun openNativeTaskDateTimePicker(
+    context: Context,
+    initialInput: String,
+    onSelected: (String) -> Unit
+) {
+    val zoneId = ZoneId.systemDefault()
+    val initialDateTime = parseTaskDateTimeInput(initialInput, zoneId)
+        ?.atZone(zoneId)
+        ?.toLocalDateTime()
+        ?: LocalDateTime.now(zoneId)
+
+    DatePickerDialog(
+        context,
+        { _, year, monthOfYear, dayOfMonth ->
+            TimePickerDialog(
+                context,
+                { _, hourOfDay, minute ->
+                    val dateTime = LocalDateTime.of(year, monthOfYear + 1, dayOfMonth, hourOfDay, minute)
+                    val selectedInstant = dateTime.atZone(zoneId).toInstant()
+                    onSelected(formatDateTimeInput(selectedInstant, zoneId))
+                },
+                initialDateTime.hour,
+                initialDateTime.minute,
+                true
+            ).show()
+        },
+        initialDateTime.year,
+        initialDateTime.monthValue - 1,
+        initialDateTime.dayOfMonth
+    ).show()
 }
 
 private data class CompletionDialogState(

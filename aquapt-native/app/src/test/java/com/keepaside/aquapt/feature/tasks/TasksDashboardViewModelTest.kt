@@ -205,6 +205,104 @@ class TasksDashboardViewModelTest {
         assertEquals("2026-04-12", state.taskTemplates.first().startDate)
         assertEquals("9, 18", state.taskTemplates.first().reminderHoursInput)
         assertEquals(listOf("Shrimp Cube"), state.taskTemplates.first().aquariumNames)
+        assertEquals(0, state.taskTemplates.first().completionCount)
+        assertEquals(null, state.taskTemplates.first().latestCompletionLabel)
+    }
+
+    @Test
+    fun `task detail history groups executions by template in latest-first order`() {
+        val aquarium = Aquarium(
+            id = "a-6",
+            name = "Community",
+            volumeLiters = 160.0,
+            waterType = WaterType.FRESHWATER,
+            setupDate = "2026-01-15"
+        )
+        val templateA = TaskTemplate(
+            id = "t-6a",
+            title = "Feed tetras",
+            frequency = TaskFrequency.DAILY,
+            aquariumIds = listOf(aquarium.id)
+        )
+        val templateB = TaskTemplate(
+            id = "t-6b",
+            title = "Clean glass",
+            frequency = TaskFrequency.WEEKLY,
+            aquariumIds = listOf(aquarium.id)
+        )
+        val executions = listOf(
+            TaskExecution(
+                id = "e-6-old",
+                taskTemplateId = templateA.id,
+                aquariumId = aquarium.id,
+                completedAt = "2026-04-10T09:00:00Z"
+            ),
+            TaskExecution(
+                id = "e-6-new",
+                taskTemplateId = templateA.id,
+                aquariumId = aquarium.id,
+                completedAt = "2026-04-11T09:30:00Z"
+            ),
+            TaskExecution(
+                id = "e-6-other",
+                taskTemplateId = templateB.id,
+                aquariumId = aquarium.id,
+                completedAt = "2026-04-09T07:00:00Z"
+            )
+        )
+
+        val state = assembleTasksDashboardUiState(
+            aquariums = listOf(aquarium),
+            taskTemplates = listOf(templateA, templateB),
+            taskExecutions = executions,
+            dosingLogs = emptyList(),
+            now = now,
+            zoneId = ZoneOffset.UTC,
+            statusMessage = null
+        )
+
+        val templateAHistory = state.executionHistoryByTaskId[templateA.id].orEmpty()
+        assertEquals(2, templateAHistory.size)
+        assertEquals("e-6-new", templateAHistory.first().executionId)
+        assertEquals(templateA.id, templateAHistory.first().taskId)
+        assertEquals(aquarium.id, templateAHistory.first().aquariumId)
+        assertEquals("2026-04-11 09:30", templateAHistory.first().completedAtInput)
+    }
+
+    @Test
+    fun `task template item exposes latest completion summary`() {
+        val aquarium = Aquarium(
+            id = "a-7",
+            name = "Planted",
+            volumeLiters = 125.0,
+            waterType = WaterType.FRESHWATER,
+            setupDate = "2026-02-04"
+        )
+        val template = TaskTemplate(
+            id = "t-7",
+            title = "Trim stems",
+            frequency = TaskFrequency.WEEKLY,
+            aquariumIds = listOf(aquarium.id)
+        )
+        val execution = TaskExecution(
+            id = "e-7",
+            taskTemplateId = template.id,
+            aquariumId = aquarium.id,
+            completedAt = "2026-04-11T10:15:00Z"
+        )
+
+        val state = assembleTasksDashboardUiState(
+            aquariums = listOf(aquarium),
+            taskTemplates = listOf(template),
+            taskExecutions = listOf(execution),
+            dosingLogs = emptyList(),
+            now = now,
+            zoneId = ZoneOffset.UTC,
+            statusMessage = null
+        )
+
+        assertEquals(1, state.taskTemplates.single().completionCount)
+        assertEquals("2026-04-11 10:15", state.taskTemplates.single().latestCompletionLabel)
     }
 
     @Test
