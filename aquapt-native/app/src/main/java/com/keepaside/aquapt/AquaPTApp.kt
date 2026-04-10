@@ -29,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -37,6 +36,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
+import com.keepaside.aquapt.feature.tanks.TanksDashboardScreen
 
 private data class TopLevelDestination(
     val route: String,
@@ -119,11 +120,7 @@ fun AquaPTApp() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(AquaPTRoute.Tanks) {
-                PlaceholderScreen(
-                    title = "Tanks dashboard",
-                    subtitle = "Phase 0 shell is live. Next: domain-backed cards, alerts, and charts.",
-                    icon = { Icon(Icons.Rounded.Analytics, contentDescription = null) }
-                )
+                TanksDashboardScreen()
             }
             composable(AquaPTRoute.Tasks) {
                 PlaceholderScreen(
