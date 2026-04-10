@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TaskExecutionDao {
+    @Query("SELECT * FROM task_executions ORDER BY completedAt DESC")
+    fun getAll(): Flow<List<TaskExecutionEntity>>
+
     @Query("SELECT * FROM task_executions WHERE taskTemplateId = :templateId ORDER BY completedAt DESC")
     fun getByTemplateId(templateId: String): Flow<List<TaskExecutionEntity>>
 

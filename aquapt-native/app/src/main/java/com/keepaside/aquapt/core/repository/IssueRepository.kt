@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.map
 class IssueRepository(
     private val dao: IssueDao
 ) {
+    fun getAll(): Flow<List<Issue>> =
+        dao.getAll().map { list -> list.map { it.toDomain() } }
+
     fun getByAquariumId(aquariumId: String): Flow<List<Issue>> =
         dao.getByAquariumId(aquariumId).map { list -> list.map { it.toDomain() } }
 

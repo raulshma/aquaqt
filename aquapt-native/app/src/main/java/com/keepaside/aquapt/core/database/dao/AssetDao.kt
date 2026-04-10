@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AssetDao {
+    @Query("SELECT * FROM assets ORDER BY brandModel ASC")
+    fun getAll(): Flow<List<AssetEntity>>
+
     @Query("SELECT * FROM assets WHERE aquariumId = :aquariumId ORDER BY brandModel ASC")
     fun getByAquariumId(aquariumId: String): Flow<List<AssetEntity>>
 

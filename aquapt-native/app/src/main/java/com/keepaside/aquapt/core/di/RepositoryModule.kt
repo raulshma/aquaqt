@@ -1,5 +1,6 @@
 package com.keepaside.aquapt.core.di
 
+import com.keepaside.aquapt.core.backup.AppStateBackupCompatibilityService
 import com.keepaside.aquapt.core.database.dao.*
 import com.keepaside.aquapt.core.repository.*
 import org.koin.dsl.module
@@ -17,4 +18,21 @@ val repositoryModule = module {
     single { IssueRepository(get()) }
     single { MemoRepository(get()) }
     single { TimelineEventRepository(get()) }
+
+    single {
+        AppStateBackupCompatibilityService(
+            aquariumRepository = get(),
+            livestockRepository = get(),
+            taskTemplateRepository = get(),
+            taskExecutionRepository = get(),
+            reminderGroupRepository = get(),
+            dosingLogRepository = get(),
+            assetRepository = get(),
+            consumableRepository = get(),
+            waterParameterLogRepository = get(),
+            issueRepository = get(),
+            memoRepository = get(),
+            timelineEventRepository = get()
+        )
+    }
 }

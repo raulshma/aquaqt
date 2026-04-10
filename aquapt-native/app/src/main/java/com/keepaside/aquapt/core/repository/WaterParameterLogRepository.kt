@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.map
 class WaterParameterLogRepository(
     private val dao: WaterParameterLogDao
 ) {
+    fun getAll(): Flow<List<WaterParameterLog>> =
+        dao.getAll().map { list -> list.map { it.toDomain() } }
+
     fun getByAquariumId(aquariumId: String): Flow<List<WaterParameterLog>> =
         dao.getByAquariumId(aquariumId).map { list -> list.map { it.toDomain() } }
 

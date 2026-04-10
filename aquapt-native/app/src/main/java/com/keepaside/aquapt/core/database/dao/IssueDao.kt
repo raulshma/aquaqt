@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface IssueDao {
+    @Query("SELECT * FROM issues ORDER BY createdAt DESC")
+    fun getAll(): Flow<List<IssueEntity>>
+
     @Query("SELECT * FROM issues WHERE aquariumId = :aquariumId ORDER BY createdAt DESC")
     fun getByAquariumId(aquariumId: String): Flow<List<IssueEntity>>
 

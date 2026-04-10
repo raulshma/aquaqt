@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.map
 class TaskExecutionRepository(
     private val dao: TaskExecutionDao
 ) {
+    fun getAll(): Flow<List<TaskExecution>> =
+        dao.getAll().map { list -> list.map { it.toDomain() } }
+
     fun getByTemplateId(templateId: String): Flow<List<TaskExecution>> =
         dao.getByTemplateId(templateId).map { list -> list.map { it.toDomain() } }
 

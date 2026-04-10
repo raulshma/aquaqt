@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.map
 class AssetRepository(
     private val dao: AssetDao
 ) {
+    fun getAll(): Flow<List<Asset>> =
+        dao.getAll().map { list -> list.map { it.toDomain() } }
+
     fun getByAquariumId(aquariumId: String): Flow<List<Asset>> =
         dao.getByAquariumId(aquariumId).map { list -> list.map { it.toDomain() } }
 
