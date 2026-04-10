@@ -6,8 +6,10 @@ import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.model.WaterType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 import java.time.ZoneOffset
 
 class TimelineViewModelTest {
@@ -123,6 +125,52 @@ class TimelineViewModelTest {
         assertEquals("Memo", state.dayGroups.single().events.single().title)
         assertEquals(display.id, state.quickMemoDraft.aquariumId)
         assertEquals("Memo added to Display.", state.statusMessage)
+    }
+
+    @Test
+    fun `quick memo draft carries custom timestamp and photo uri`() {
+        val aquarium = Aquarium(
+            id = "a-display",
+            name = "Display",
+            volumeLiters = 180.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val draft = TimelineQuickMemoDraft(
+            aquariumId = aquarium.id,
+            content = "Trim plants after water change.",
+            createdAtInput = "2026-04-11 18:30",
+            photoUri = "content://photos/memo-1"
+        )
+
+        val state = assembleTimelineUiState(
+            aquariums = listOf(aquarium),
+            events = emptyList(),
+            selectedAquariumId = aquarium.id,
+            selectedType = null,
+            quickMemoDraft = draft,
+            zoneId = ZoneOffset.UTC,
+            statusMessage = null
+        )
+
+        assertEquals("2026-04-11 18:30", state.quickMemoDraft.createdAtInput)
+        assertEquals("content://photos/memo-1", state.quickMemoDraft.photoUri)
+    }
+
+    @Test
+    fun `timeline memo date-time input accepts friendly and iso formats`() {
+        assertEquals(
+            Instant.parse("2026-04-11T18:30:00Z"),
+            parseTimelineDateTimeInput("2026-04-11 18:30", ZoneOffset.UTC)
+        )
+        assertEquals(
+            Instant.parse("2026-04-11T18:30:00Z"),
+            parseTimelineDateTimeInput("2026-04-11T18:30:00Z", ZoneOffset.UTC)
+        )
+        assertEquals(
+            Instant.parse("2026-04-11T00:00:00Z"),
+            parseTimelineDateTimeInput("2026-04-11", ZoneOffset.UTC)
+        )
+        assertNull(parseTimelineDateTimeInput("not a date", ZoneOffset.UTC))
     }
 
     @Test

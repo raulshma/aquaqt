@@ -64,7 +64,9 @@ data class TimelineDayGroup(
 
 data class TimelineQuickMemoDraft(
     val aquariumId: String? = null,
-    val content: String = ""
+    val content: String = "",
+    val createdAtInput: String = "",
+    val photoUri: String? = null
 )
 
 data class TimelineUiState(
@@ -125,7 +127,12 @@ class TimelineViewModel(
             ?: state.aquariumFilters.firstOrNull()?.aquariumId
 
         quickMemoDraft.update { draft ->
-            draft.copy(aquariumId = preferredAquariumId)
+            draft.copy(
+                aquariumId = preferredAquariumId,
+                createdAtInput = draft.createdAtInput.ifBlank {
+                    formatDateTimeInput(nowProvider(), zoneId)
+                }
+            )
         }
     }
 
@@ -137,10 +144,21 @@ class TimelineViewModel(
         quickMemoDraft.update { draft -> draft.copy(content = content) }
     }
 
+    fun onQuickMemoCreatedAtChanged(createdAtInput: String) {
+        quickMemoDraft.update { draft -> draft.copy(createdAtInput = createdAtInput) }
+    }
+
+    fun onQuickMemoPhotoUriChanged(photoUri: String?) {
+        quickMemoDraft.update { draft ->
+            draft.copy(photoUri = photoUri?.trim()?.takeIf { it.isNotEmpty() })
+        }
+    }
+
     fun saveQuickMemo() {
         val draft = quickMemoDraft.value
         val aquariumId = draft.aquariumId
         val content = draft.content.trim()
+        val createdAt = parseTimelineDateTimeInput(draft.createdAtInput, zoneId)
 
         if (aquariumId == null) {
             statusMessage.value = "Add a tank before logging a memo."
@@ -152,18 +170,24 @@ class TimelineViewModel(
             return
         }
 
+        if (createdAt == null) {
+            statusMessage.value = timelineDateTimeErrorMessage
+            return
+        }
+
         viewModelScope.launch {
             runCatching {
                 val memoId = idProvider()
                 val eventId = idProvider()
-                val createdAt = nowProvider().toString()
+                val createdAtIso = createdAt.toString()
 
                 memoRepository.upsert(
                     Memo(
                         id = memoId,
                         aquariumId = aquariumId,
                         content = content,
-                        createdAt = createdAt
+                        createdAt = createdAtIso,
+                        photoUri = draft.photoUri
                     )
                 )
                 timelineEventRepository.upsert(
@@ -171,13 +195,20 @@ class TimelineViewModel(
                         id = eventId,
                         aquariumId = aquariumId,
                         type = TimelineEventType.MEMO,
-                        createdAt = createdAt,
+                        createdAt = createdAtIso,
                         title = "Memo",
-                        description = content
+                        description = content,
+                        photoUri = draft.photoUri
                     )
                 )
             }.onSuccess {
-                quickMemoDraft.update { it.copy(content = "") }
+                quickMemoDraft.update {
+                    it.copy(
+                        content = "",
+                        createdAtInput = formatDateTimeInput(nowProvider(), zoneId),
+                        photoUri = null
+                    )
+                }
                 val aquariumName = _uiState.value.aquariumFilters
                     .firstOrNull { it.aquariumId == aquariumId }
                     ?.aquariumName
@@ -328,9 +359,35 @@ private fun TimelineEventType.label(): String =
 
 private fun Int.plural(): String = if (this == 1) "" else "s"
 
+internal const val timelineDateTimeErrorMessage =
+    "Use a valid memo time like 2026-04-11 18:30."
+
+internal fun parseTimelineDateTimeInput(raw: String, zoneId: ZoneId): Instant? {
+    val value = raw.trim()
+    if (value.isEmpty()) return null
+
+    val localDateTimeFormatters = listOf(
+        DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    )
+
+    return runCatching { Instant.parse(value) }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+        ?: localDateTimeFormatters.firstNotNullOfOrNull { formatter ->
+            runCatching { LocalDateTime.parse(value, formatter).atZone(zoneId).toInstant() }.getOrNull()
+        }
+        ?: runCatching { LocalDate.parse(value).atStartOfDay(zoneId).toInstant() }.getOrNull()
+}
+
+internal fun formatDateTimeInput(instant: Instant, zoneId: ZoneId): String {
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    return formatter.format(instant.atZone(zoneId))
+}
+
 private fun formatDateTime(raw: String, zoneId: ZoneId): String {
     val instant = parseToInstant(raw, zoneId) ?: return raw
-    return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").format(instant.atZone(zoneId))
+    return formatDateTimeInput(instant, zoneId)
 }
 
 private fun formatDate(raw: String, zoneId: ZoneId): String {

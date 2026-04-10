@@ -1,5 +1,8 @@
 package com.keepaside.aquapt.feature.timeline
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +26,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -70,6 +74,11 @@ fun TimelineScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     var showQuickMemoSheet by rememberSaveable { mutableStateOf(false) }
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        viewModel.onQuickMemoPhotoUriChanged(uri?.toString())
+    }
 
     Box(
         modifier = modifier
@@ -210,6 +219,15 @@ fun TimelineScreen(
                     uiState = uiState,
                     onAquariumSelected = viewModel::onQuickMemoAquariumSelected,
                     onContentChanged = viewModel::onQuickMemoContentChanged,
+                    onCreatedAtChanged = viewModel::onQuickMemoCreatedAtChanged,
+                    onPickPhoto = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest.Builder()
+                                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                .build()
+                        )
+                    },
+                    onRemovePhoto = { viewModel.onQuickMemoPhotoUriChanged(null) },
                     onSave = {
                         viewModel.saveQuickMemo()
                         showQuickMemoSheet = false
@@ -353,6 +371,9 @@ private fun QuickMemoSheet(
     uiState: TimelineUiState,
     onAquariumSelected: (String) -> Unit,
     onContentChanged: (String) -> Unit,
+    onCreatedAtChanged: (String) -> Unit,
+    onPickPhoto: () -> Unit,
+    onRemovePhoto: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -386,6 +407,38 @@ private fun QuickMemoSheet(
             minLines = 3
         )
 
+        OutlinedTextField(
+            value = uiState.quickMemoDraft.createdAtInput,
+            onValueChange = onCreatedAtChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Memo time") },
+            supportingText = { Text("Use yyyy-MM-dd HH:mm") },
+            singleLine = true
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(onClick = onPickPhoto) {
+                Text(if (uiState.quickMemoDraft.photoUri == null) "Attach photo" else "Change photo")
+            }
+            uiState.quickMemoDraft.photoUri?.let {
+                TextButton(onClick = onRemovePhoto) {
+                    Text("Remove")
+                }
+            }
+        }
+
+        uiState.quickMemoDraft.photoUri?.let {
+            Text(
+                text = "Photo selected",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
@@ -396,7 +449,8 @@ private fun QuickMemoSheet(
             FilledTonalButton(
                 onClick = onSave,
                 enabled = uiState.quickMemoDraft.aquariumId != null &&
-                    uiState.quickMemoDraft.content.isNotBlank()
+                    uiState.quickMemoDraft.content.isNotBlank() &&
+                    uiState.quickMemoDraft.createdAtInput.isNotBlank()
             ) {
                 Text("Save")
             }

@@ -9,17 +9,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +73,8 @@ fun TasksDashboardScreen(
     )
 
     val uiState by viewModel.uiState.collectAsState()
+    var completionDialogState by remember { mutableStateOf<CompletionDialogState?>(null) }
+    var editDialogState by remember { mutableStateOf<EditExecutionDialogState?>(null) }
 
     Box(
         modifier = modifier
@@ -180,6 +187,16 @@ fun TasksDashboardScreen(
                                             Text("Backdate 1 day")
                                         }
                                     }
+                                    OutlinedButton(
+                                        onClick = {
+                                            completionDialogState = CompletionDialogState(
+                                                dueTask = due,
+                                                completedAtInput = viewModel.currentCompletionDateTimeInput()
+                                            )
+                                        }
+                                    ) {
+                                        Text("Add note/time")
+                                    }
                                 }
                             }
                         }
@@ -234,11 +251,19 @@ fun TasksDashboardScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             uiState.recentExecutions.take(8).forEach { execution ->
-                                Text(
-                                    text = "${execution.completedAtLabel} • ${execution.taskTitle} • ${execution.aquariumName}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                RecentExecutionRow(
+                                    execution = execution,
+                                    onEdit = {
+                                        editDialogState = EditExecutionDialogState(
+                                            executionId = execution.executionId,
+                                            taskTitle = execution.taskTitle,
+                                            completedAtInput = execution.completedAtInput,
+                                            note = execution.note.orEmpty()
+                                        )
+                                    },
+                                    onDelete = {
+                                        viewModel.deleteExecution(execution.executionId)
+                                    }
                                 )
                             }
                         }
@@ -263,7 +288,147 @@ fun TasksDashboardScreen(
                 }
             }
         }
+
+        completionDialogState?.let { dialogState ->
+            TaskCompletionDialog(
+                title = "Complete ${dialogState.dueTask.taskTitle}",
+                supportingText = dialogState.dueTask.aquariumName,
+                completedAtInput = dialogState.completedAtInput,
+                note = dialogState.note,
+                confirmLabel = "Save completion",
+                onCompletedAtChange = { value ->
+                    completionDialogState = dialogState.copy(completedAtInput = value)
+                },
+                onNoteChange = { value ->
+                    completionDialogState = dialogState.copy(note = value)
+                },
+                onDismiss = { completionDialogState = null },
+                onConfirm = {
+                    viewModel.completeTaskAt(
+                        item = dialogState.dueTask,
+                        completedAtInput = dialogState.completedAtInput,
+                        note = dialogState.note
+                    )
+                    completionDialogState = null
+                }
+            )
+        }
+
+        editDialogState?.let { dialogState ->
+            TaskCompletionDialog(
+                title = "Edit completion",
+                supportingText = dialogState.taskTitle,
+                completedAtInput = dialogState.completedAtInput,
+                note = dialogState.note,
+                confirmLabel = "Update",
+                onCompletedAtChange = { value ->
+                    editDialogState = dialogState.copy(completedAtInput = value)
+                },
+                onNoteChange = { value ->
+                    editDialogState = dialogState.copy(note = value)
+                },
+                onDismiss = { editDialogState = null },
+                onConfirm = {
+                    viewModel.updateExecution(
+                        executionId = dialogState.executionId,
+                        completedAtInput = dialogState.completedAtInput,
+                        note = dialogState.note
+                    )
+                    editDialogState = null
+                }
+            )
+        }
     }
+}
+
+@Composable
+private fun RecentExecutionRow(
+    execution: RecentTaskExecutionItem,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = "${execution.completedAtLabel} • ${execution.taskTitle} • ${execution.aquariumName}",
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        execution.note?.takeIf { it.isNotBlank() }?.let { note ->
+            Text(
+                text = note,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onEdit) {
+                Text("Edit")
+            }
+            TextButton(onClick = onDelete) {
+                Text("Delete")
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskCompletionDialog(
+    title: String,
+    supportingText: String,
+    completedAtInput: String,
+    note: String,
+    confirmLabel: String,
+    onCompletedAtChange: (String) -> Unit,
+    onNoteChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = supportingText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = completedAtInput,
+                    onValueChange = onCompletedAtChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Completed at") },
+                    supportingText = { Text("Use yyyy-MM-dd HH:mm") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = onNoteChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Note") },
+                    minLines = 3
+                )
+            }
+        },
+        confirmButton = {
+            FilledTonalButton(
+                onClick = onConfirm,
+                enabled = completedAtInput.isNotBlank()
+            ) {
+                Text(confirmLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -295,3 +460,16 @@ private fun SummaryTile(
         }
     }
 }
+
+private data class CompletionDialogState(
+    val dueTask: DueTaskMatrixItem,
+    val completedAtInput: String,
+    val note: String = ""
+)
+
+private data class EditExecutionDialogState(
+    val executionId: String,
+    val taskTitle: String,
+    val completedAtInput: String,
+    val note: String
+)

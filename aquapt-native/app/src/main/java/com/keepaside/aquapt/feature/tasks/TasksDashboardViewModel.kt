@@ -49,6 +49,7 @@ data class RecentTaskExecutionItem(
     val taskTitle: String,
     val aquariumName: String,
     val completedAtLabel: String,
+    val completedAtInput: String,
     val note: String?
 )
 
@@ -109,6 +110,61 @@ class TasksDashboardViewModel(
         )
     }
 
+    fun currentCompletionDateTimeInput(): String =
+        formatDateTimeInput(nowProvider(), zoneId)
+
+    fun completeTaskAt(item: DueTaskMatrixItem, completedAtInput: String, note: String? = null) {
+        val completedAt = parseTaskDateTimeInput(completedAtInput, zoneId)
+        if (completedAt == null) {
+            _statusMessage.value = dateTimeErrorMessage
+            return
+        }
+
+        completeTask(
+            item = item,
+            completedAt = completedAt,
+            note = note,
+            successMessage = "Saved '${item.taskTitle}' completion for ${item.aquariumName}."
+        )
+    }
+
+    fun updateExecution(executionId: String, completedAtInput: String, note: String? = null) {
+        val completedAt = parseTaskDateTimeInput(completedAtInput, zoneId)
+        if (completedAt == null) {
+            _statusMessage.value = dateTimeErrorMessage
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                val existing = taskExecutionRepository.getById(executionId)
+                    ?: error("Task execution was not found.")
+                taskExecutionRepository.upsert(
+                    existing.copy(
+                        completedAt = completedAt.toString(),
+                        note = note.normalizeNote()
+                    )
+                )
+            }.onSuccess {
+                _statusMessage.value = "Updated task completion."
+            }.onFailure { error ->
+                _statusMessage.value = error.message ?: "Unable to update task completion."
+            }
+        }
+    }
+
+    fun deleteExecution(executionId: String) {
+        viewModelScope.launch {
+            runCatching {
+                taskExecutionRepository.deleteById(executionId)
+            }.onSuccess {
+                _statusMessage.value = "Deleted task completion."
+            }.onFailure { error ->
+                _statusMessage.value = error.message ?: "Unable to delete task completion."
+            }
+        }
+    }
+
     private fun completeTask(
         item: DueTaskMatrixItem,
         completedAt: Instant,
@@ -123,7 +179,7 @@ class TasksDashboardViewModel(
                         taskTemplateId = item.taskId,
                         aquariumId = item.aquariumId,
                         completedAt = completedAt.toString(),
-                        note = note
+                        note = note.normalizeNote()
                     )
                 )
             }.onSuccess {
@@ -240,6 +296,7 @@ internal fun assembleTasksDashboardUiState(
                 taskTitle = taskTitleById[execution.taskTemplateId] ?: "Unknown task",
                 aquariumName = aquariumNameById[execution.aquariumId] ?: "Unknown tank",
                 completedAtLabel = formatDateTime(execution.completedAt, zoneId),
+                completedAtInput = formatDateTimeInput(execution.completedAt, zoneId),
                 note = execution.note
             )
         }
@@ -281,10 +338,40 @@ internal fun assembleTasksDashboardUiState(
     )
 }
 
-private fun formatDateTime(raw: String, zoneId: ZoneId): String {
-    val instant = parseToInstant(raw, zoneId) ?: return raw
+internal const val dateTimeErrorMessage =
+    "Use a valid completion time like 2026-04-11 18:30."
+
+internal fun parseTaskDateTimeInput(raw: String, zoneId: ZoneId): Instant? {
+    val value = raw.trim()
+    if (value.isEmpty()) return null
+
+    val localDateTimeFormatters = listOf(
+        DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    )
+
+    return runCatching { Instant.parse(value) }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+        ?: localDateTimeFormatters.firstNotNullOfOrNull { formatter ->
+            runCatching { LocalDateTime.parse(value, formatter).atZone(zoneId).toInstant() }.getOrNull()
+        }
+        ?: runCatching { LocalDate.parse(value).atStartOfDay(zoneId).toInstant() }.getOrNull()
+}
+
+internal fun formatDateTimeInput(instant: Instant, zoneId: ZoneId): String {
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     return formatter.format(instant.atZone(zoneId))
+}
+
+private fun formatDateTime(raw: String, zoneId: ZoneId): String {
+    val instant = parseToInstant(raw, zoneId) ?: return raw
+    return formatDateTimeInput(instant, zoneId)
+}
+
+private fun formatDateTimeInput(raw: String, zoneId: ZoneId): String {
+    val instant = parseToInstant(raw, zoneId) ?: return raw
+    return formatDateTimeInput(instant, zoneId)
 }
 
 private fun parseToInstant(raw: String, zoneId: ZoneId): Instant? {
@@ -296,3 +383,6 @@ private fun parseToInstant(raw: String, zoneId: ZoneId): Instant? {
         ?: runCatching { LocalDateTime.parse(value).atZone(zoneId).toInstant() }.getOrNull()
         ?: runCatching { LocalDate.parse(value).atStartOfDay(zoneId).toInstant() }.getOrNull()
 }
+
+private fun String?.normalizeNote(): String? =
+    this?.trim()?.takeIf { it.isNotEmpty() }

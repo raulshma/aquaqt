@@ -120,6 +120,7 @@ class TasksDashboardViewModelTest {
         assertEquals(2, state.recentExecutions.size)
         assertEquals("Swap floss", state.recentExecutions.first().taskTitle)
         assertEquals("Check salinity", state.recentExecutions.last().taskTitle)
+        assertEquals("2026-04-11 10:00", state.recentExecutions.first().completedAtInput)
     }
 
     @Test
@@ -161,5 +162,19 @@ class TasksDashboardViewModelTest {
         assertEquals(1, state.dosingSnapshots.size)
         assertEquals(2, state.dosingSnapshots.first().count)
         assertEquals("Fertilizer B", state.dosingSnapshots.first().latestProduct)
+    }
+
+    @Test
+    fun `task date time input accepts friendly local value`() {
+        val parsed = parseTaskDateTimeInput("2026-04-11 18:30", ZoneOffset.UTC)
+
+        assertEquals(Instant.parse("2026-04-11T18:30:00Z"), parsed)
+    }
+
+    @Test
+    fun `task date time input rejects invalid value`() {
+        val parsed = parseTaskDateTimeInput("next water change", ZoneOffset.UTC)
+
+        assertEquals(null, parsed)
     }
 }
