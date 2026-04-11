@@ -118,6 +118,79 @@ class EntityFormViewModelTest {
     }
 
     @Test
+    fun `dosing validation enforces product and positive amount`() {
+        val missingProductError = validateEntityFormDraft(
+            kind = EntityKind.DOSING,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                dosingProduct = "  ",
+                dosingAmountMl = "5"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC
+        )
+        val invalidAmountError = validateEntityFormDraft(
+            kind = EntityKind.DOSING,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                dosingProduct = "Microbe Lift",
+                dosingAmountMl = "0"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertEquals("Name the dosing product before saving.", missingProductError)
+        assertEquals(entityFormDosingAmountErrorMessage, invalidAmountError)
+    }
+
+    @Test
+    fun `parameter validation requires at least one finite value`() {
+        val missingValuesError = validateEntityFormDraft(
+            kind = EntityKind.PARAMETER_LOG,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC
+        )
+        val invalidValueError = validateEntityFormDraft(
+            kind = EntityKind.PARAMETER_LOG,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                ammonia = "oops"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC
+        )
+        val validStateError = validateEntityFormDraft(
+            kind = EntityKind.PARAMETER_LOG,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                nitrate = "15.5",
+                ph = "7.2"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertEquals(entityFormParameterErrorMessage, missingValuesError)
+        assertEquals(entityFormParameterErrorMessage, invalidValueError)
+        assertEquals(null, validStateError)
+    }
+
+    @Test
+    fun `entity form supports dosing and parameter kinds`() {
+        assertTrue(isEntityFormSupported(EntityKind.DOSING))
+        assertTrue(isEntityFormSupported(EntityKind.PARAMETER_LOG))
+    }
+
+    @Test
     fun `entity form date parser accepts friendly local input`() {
         val parsed = parseEntityFormDateTimeInput("2026-04-11 18:30", ZoneOffset.UTC)
 

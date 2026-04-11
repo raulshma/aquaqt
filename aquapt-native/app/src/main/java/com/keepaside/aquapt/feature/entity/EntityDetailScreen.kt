@@ -276,6 +276,12 @@ fun EntityDetailScreen(
                         },
                         onCreateMemo = {
                             onOpenEntityForm(EntityKind.MEMO, uiState.aquariumId)
+                        },
+                        onCreateDosing = {
+                            onOpenEntityForm(EntityKind.DOSING, uiState.aquariumId)
+                        },
+                        onCreateParameters = {
+                            onOpenEntityForm(EntityKind.PARAMETER_LOG, uiState.aquariumId)
                         }
                     )
                 }
@@ -532,7 +538,9 @@ private fun IssueActionsCard(
 private fun EntityCreateActionsCard(
     isBusy: Boolean,
     onCreateIssue: () -> Unit,
-    onCreateMemo: () -> Unit
+    onCreateMemo: () -> Unit,
+    onCreateDosing: () -> Unit,
+    onCreateParameters: () -> Unit
 ) {
     Card {
         Column(
@@ -548,7 +556,7 @@ private fun EntityCreateActionsCard(
             )
 
             Text(
-                text = "Open native forms to add an issue or memo for this tank.",
+                text = "Open native forms to add an issue, memo, dosing log, or parameter log for this tank.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -566,6 +574,22 @@ private fun EntityCreateActionsCard(
                     enabled = !isBusy
                 ) {
                     Text("New memo")
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onCreateDosing,
+                    enabled = !isBusy
+                ) {
+                    Text("New dosing")
+                }
+
+                OutlinedButton(
+                    onClick = onCreateParameters,
+                    enabled = !isBusy
+                ) {
+                    Text("New parameters")
                 }
             }
         }

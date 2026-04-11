@@ -1,5 +1,12 @@
 package com.keepaside.aquapt.feature.entity
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -20,21 +28,28 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.repository.AquariumRepository
+import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
 import com.keepaside.aquapt.core.repository.MemoRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
+import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
 import org.koin.java.KoinJavaComponent
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Composable
 fun EntityFormScreen(
@@ -44,6 +59,7 @@ fun EntityFormScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp)
 ) {
+    val context = LocalContext.current
     val aquariumRepository: AquariumRepository = remember {
         KoinJavaComponent.get(AquariumRepository::class.java)
     }
@@ -52,6 +68,12 @@ fun EntityFormScreen(
     }
     val memoRepository: MemoRepository = remember {
         KoinJavaComponent.get(MemoRepository::class.java)
+    }
+    val dosingLogRepository: DosingLogRepository = remember {
+        KoinJavaComponent.get(DosingLogRepository::class.java)
+    }
+    val waterParameterLogRepository: WaterParameterLogRepository = remember {
+        KoinJavaComponent.get(WaterParameterLogRepository::class.java)
     }
     val timelineEventRepository: TimelineEventRepository = remember {
         KoinJavaComponent.get(TimelineEventRepository::class.java)
@@ -64,6 +86,8 @@ fun EntityFormScreen(
             aquariumRepository,
             issueRepository,
             memoRepository,
+            dosingLogRepository,
+            waterParameterLogRepository,
             timelineEventRepository
         ) {
             EntityFormViewModel.factory(
@@ -72,12 +96,19 @@ fun EntityFormScreen(
                 aquariumRepository = aquariumRepository,
                 issueRepository = issueRepository,
                 memoRepository = memoRepository,
+                dosingLogRepository = dosingLogRepository,
+                waterParameterLogRepository = waterParameterLogRepository,
                 timelineEventRepository = timelineEventRepository
             )
         }
     )
 
     val uiState by formViewModel.uiState.collectAsState()
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        formViewModel.onMemoPhotoUriChanged(uri?.toString().orEmpty())
+    }
 
     Box(
         modifier = modifier
@@ -174,6 +205,18 @@ fun EntityFormScreen(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !uiState.isSaving
                         )
+                        OutlinedButton(
+                            onClick = {
+                                openNativeEntityFormDateTimePicker(
+                                    context = context,
+                                    initialInput = uiState.draft.createdAtInput,
+                                    onSelected = formViewModel::onCreatedAtInputChanged
+                                )
+                            },
+                            enabled = !uiState.isSaving
+                        ) {
+                            Text("Pick date & time")
+                        }
 
                         when (uiState.kind) {
                             EntityKind.ISSUE -> {
@@ -195,13 +238,82 @@ fun EntityFormScreen(
                                     enabled = !uiState.isSaving,
                                     minLines = 3
                                 )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            photoPickerLauncher.launch(
+                                                PickVisualMediaRequest.Builder()
+                                                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                    .build()
+                                            )
+                                        },
+                                        enabled = !uiState.isSaving
+                                    ) {
+                                        Text(
+                                            if (uiState.draft.memoPhotoUri.isBlank()) "Attach photo" else "Change photo"
+                                        )
+                                    }
+
+                                    if (uiState.draft.memoPhotoUri.isNotBlank()) {
+                                        TextButton(
+                                            onClick = { formViewModel.onMemoPhotoUriChanged("") },
+                                            enabled = !uiState.isSaving
+                                        ) {
+                                            Text("Remove")
+                                        }
+                                    }
+                                }
+
+                                if (uiState.draft.memoPhotoUri.isNotBlank()) {
+                                    Text(
+                                        text = "Photo selected",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            EntityKind.DOSING -> {
                                 OutlinedTextField(
-                                    value = uiState.draft.memoPhotoUri,
-                                    onValueChange = formViewModel::onMemoPhotoUriChanged,
-                                    label = { Text("Photo URI (optional)") },
+                                    value = uiState.draft.dosingProduct,
+                                    onValueChange = formViewModel::onDosingProductChanged,
+                                    label = { Text("Product") },
                                     modifier = Modifier.fillMaxWidth(),
                                     enabled = !uiState.isSaving
                                 )
+                                OutlinedTextField(
+                                    value = uiState.draft.dosingAmountMl,
+                                    onValueChange = formViewModel::onDosingAmountMlChanged,
+                                    label = { Text("Amount ml") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !uiState.isSaving,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                )
+                                OutlinedTextField(
+                                    value = uiState.draft.dosingNote,
+                                    onValueChange = formViewModel::onDosingNoteChanged,
+                                    label = { Text("Note (optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !uiState.isSaving,
+                                    minLines = 2
+                                )
+                            }
+
+                            EntityKind.PARAMETER_LOG -> {
+                                EntityFormParameterField.entries.forEach { field ->
+                                    OutlinedTextField(
+                                        value = uiState.draft.parameterValue(field),
+                                        onValueChange = { value ->
+                                            formViewModel.onParameterValueChanged(field, value)
+                                        },
+                                        label = { Text(field.label) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = !uiState.isSaving,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    )
+                                }
                             }
 
                             else -> {
@@ -260,4 +372,36 @@ fun EntityFormScreen(
             }
         }
     }
+}
+
+private fun openNativeEntityFormDateTimePicker(
+    context: Context,
+    initialInput: String,
+    onSelected: (String) -> Unit
+) {
+    val zoneId = ZoneId.systemDefault()
+    val initialDateTime = parseEntityFormDateTimeInput(initialInput, zoneId)
+        ?.atZone(zoneId)
+        ?.toLocalDateTime()
+        ?: LocalDateTime.now(zoneId)
+
+    DatePickerDialog(
+        context,
+        { _, year, monthOfYear, dayOfMonth ->
+            TimePickerDialog(
+                context,
+                { _, hourOfDay, minute ->
+                    val dateTime = LocalDateTime.of(year, monthOfYear + 1, dayOfMonth, hourOfDay, minute)
+                    val selectedInstant = dateTime.atZone(zoneId).toInstant()
+                    onSelected(formatEntityFormDateTimeInput(selectedInstant, zoneId))
+                },
+                initialDateTime.hour,
+                initialDateTime.minute,
+                true
+            ).show()
+        },
+        initialDateTime.year,
+        initialDateTime.monthValue - 1,
+        initialDateTime.dayOfMonth
+    ).show()
 }
