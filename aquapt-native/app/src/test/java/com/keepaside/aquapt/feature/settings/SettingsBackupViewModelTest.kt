@@ -5,7 +5,9 @@ import com.keepaside.aquapt.core.backup.BackupCloudObject
 import com.keepaside.aquapt.core.backup.BackupCloudDeleteOutcome
 import com.keepaside.aquapt.core.backup.BackupCloudSyncGateway
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
+import com.keepaside.aquapt.core.backup.BackupRestorePreview
 import com.keepaside.aquapt.core.backup.BackupRestoreOutcome
+import com.keepaside.aquapt.core.backup.BackupSnapshotSummary
 import com.keepaside.aquapt.core.backup.BackupSyncOutcome
 import com.keepaside.aquapt.core.backup.PersistedAppStateSnapshot
 import com.keepaside.aquapt.core.backup.S3HistoryCleanupOutcome
@@ -379,6 +381,104 @@ class SettingsBackupViewModelTest {
         assertEquals("aquapt/backups/latest.enc.json", state.selectedCloudObjectKey)
         assertTrue(state.statusMessage.contains("Prune complete"))
     }
+
+    @Test
+    fun `load selected cloud restore preview computes collection and settings diffs`() = runTest {
+        val fakeGateway = FakeBackupGateway(exportJson = "{}")
+        val fakeCloudGateway = FakeBackupCloudGateway(
+            restorePreview = BackupRestorePreview(
+                sourceObjectKey = "aquapt/backups/history/2026-04-12.enc.json",
+                exportedAt = "2026-04-12T03:00:00Z",
+                snapshotSummary = BackupSnapshotSummary(
+                    aquariums = 2,
+                    taskTemplates = 1,
+                    reminderGroups = 1
+                ),
+                restoredSettings = AppSettings(
+                    themePreference = AppThemePreference.DARK,
+                    notificationsEnabled = true
+                )
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(
+                backupS3Endpoint = "https://s3.example.com",
+                backupS3Bucket = "aquapt-backups",
+                backupS3ObjectKey = "aquapt/backups/latest.enc.json",
+                themePreference = AppThemePreference.LIGHT,
+                notificationsEnabled = false
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStoreForBackupViewModel(
+            masterKey = "valid-master-key-123",
+            credentials = BackupS3Credentials("AKIA123", "secret")
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            backupCloudSyncGateway = fakeCloudGateway,
+            externalScope = this
+        )
+
+        viewModel.onSelectedCloudObjectChanged("aquapt/backups/history/2026-04-12.enc.json")
+        viewModel.loadSelectedCloudBackupPreview()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        val preview = state.restorePreview
+        assertEquals(1, fakeCloudGateway.previewCalls)
+        assertEquals("aquapt/backups/history/2026-04-12.enc.json", fakeCloudGateway.lastPreviewObjectKey)
+        requireNotNull(preview)
+        assertEquals("aquapt/backups/history/2026-04-12.enc.json", preview.sourceObjectKey)
+
+        val aquariumDiff = preview.collectionDiffs.firstOrNull { diff -> diff.label == "Aquariums" }
+        requireNotNull(aquariumDiff)
+        assertEquals(0, aquariumDiff.currentCount)
+        assertEquals(2, aquariumDiff.incomingCount)
+        assertTrue(preview.changedSettingLabels.contains("Theme preference"))
+        assertTrue(preview.changedSettingLabels.contains("Notifications enabled"))
+        assertTrue(state.statusMessage.contains("Restore preview loaded"))
+    }
+
+    @Test
+    fun `changing selected object clears restore preview`() = runTest {
+        val fakeGateway = FakeBackupGateway(exportJson = "{}")
+        val fakeCloudGateway = FakeBackupCloudGateway(
+            restorePreview = BackupRestorePreview(
+                sourceObjectKey = "aquapt/backups/history/2026-04-12.enc.json",
+                exportedAt = "2026-04-12T03:00:00Z",
+                snapshotSummary = BackupSnapshotSummary(aquariums = 1),
+                restoredSettings = AppSettings(themePreference = AppThemePreference.DARK)
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(
+                backupS3Endpoint = "https://s3.example.com",
+                backupS3Bucket = "aquapt-backups"
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStoreForBackupViewModel(
+            masterKey = "valid-master-key-123",
+            credentials = BackupS3Credentials("AKIA123", "secret")
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            backupCloudSyncGateway = fakeCloudGateway,
+            externalScope = this
+        )
+
+        viewModel.onSelectedCloudObjectChanged("aquapt/backups/history/2026-04-12.enc.json")
+        viewModel.loadSelectedCloudBackupPreview()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.restorePreview != null)
+
+        viewModel.onSelectedCloudObjectChanged("aquapt/backups/history/2026-04-10.enc.json")
+
+        assertEquals(null, viewModel.uiState.value.restorePreview)
+    }
 }
 
 private class FakeBackupGateway(
@@ -460,6 +560,12 @@ private class FakeBackupCloudGateway(
         sourceObjectKey = "aquapt/backups/latest.enc.json",
         exportedAt = "2026-04-11T03:00:00Z",
         restoredSettings = AppSettings()
+    ),
+    private val restorePreview: BackupRestorePreview = BackupRestorePreview(
+        sourceObjectKey = "aquapt/backups/latest.enc.json",
+        exportedAt = "2026-04-11T03:00:00Z",
+        snapshotSummary = BackupSnapshotSummary(),
+        restoredSettings = AppSettings()
     )
 ) : BackupCloudSyncGateway {
 
@@ -469,9 +575,11 @@ private class FakeBackupCloudGateway(
     var listCalls: Int = 0
     var restoreObjectCalls: Int = 0
     var restoreLatestCalls: Int = 0
+    var previewCalls: Int = 0
     var deleteCalls: Int = 0
     var pruneCalls: Int = 0
     var lastRestoreObjectKey: String? = null
+    var lastPreviewObjectKey: String? = null
     var lastDeletedObjectKey: String? = null
 
     override suspend fun syncCurrentStateToCloud(
@@ -511,6 +619,18 @@ private class FakeBackupCloudGateway(
     ): BackupRestoreOutcome {
         restoreLatestCalls += 1
         return restoreOutcome
+    }
+
+    override suspend fun previewCloudRestoreObject(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials,
+        objectKey: String
+    ): BackupRestorePreview {
+        previewCalls += 1
+        val normalizedObjectKey = objectKey.trim()
+        lastPreviewObjectKey = normalizedObjectKey
+        return restorePreview.copy(sourceObjectKey = normalizedObjectKey)
     }
 
     override suspend fun deleteCloudBackupObject(

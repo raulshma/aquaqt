@@ -88,6 +88,15 @@ fun SettingsBackupScreen(
     val selectedCloudObject = uiState.cloudBackups.firstOrNull { cloudObject ->
         cloudObject.objectKey == uiState.selectedCloudObjectKey
     }
+    val selectedRestorePreview = uiState.restorePreview?.takeIf { preview ->
+        preview.sourceObjectKey == uiState.selectedCloudObjectKey
+    }
+    val latestCloudObjectKey = uiState.cloudBackups.firstOrNull { cloudObject ->
+        cloudObject.isLatestObject
+    }?.objectKey
+    val latestRestorePreview = uiState.restorePreview?.takeIf { preview ->
+        preview.sourceObjectKey == latestCloudObjectKey
+    }
 
     val settingsPreferencesViewModel: SettingsPreferencesViewModel = viewModel(
         factory = remember(appSettingsStore, backupSecretsStore) {
@@ -395,8 +404,63 @@ fun SettingsBackupScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
+
+                        selectedRestorePreview?.let { preview ->
+                            Text(
+                                text = "Exported at: ${preview.exportedAt}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                text =
+                                    "Collection changes: ${preview.changedCollectionCount}/${preview.collectionDiffs.size} groups differ.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+
+                            preview.collectionDiffs.forEach { diff ->
+                                Text(
+                                    text = "${diff.label}: ${diff.currentCount} → ${diff.incomingCount} " +
+                                        "(${formatSignedDelta(diff.delta)})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+
+                            Text(
+                                text = if (preview.changedSettingLabels.isEmpty()) {
+                                    "App preference changes: none"
+                                } else {
+                                    "App preference changes: ${preview.changedSettingLabels.joinToString()}"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        } ?: Text(
+                            text =
+                                "Load restore diff to compare incoming backup counts and app preferences against local state.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+
+                        if (uiState.isRestorePreviewLoading) {
+                            CircularProgressIndicator()
+                        }
                     }
                 }
+            }
+
+            OutlinedButton(
+                onClick = viewModel::loadSelectedCloudBackupPreview,
+                enabled = !uiState.isBusy && uiState.selectedCloudObjectKey.isNotBlank()
+            ) {
+                Text(
+                    if (uiState.isRestorePreviewLoading) {
+                        "Loading restore diff..."
+                    } else {
+                        "Refresh restore diff"
+                    }
+                )
             }
 
             Row(
@@ -613,7 +677,8 @@ fun SettingsBackupScreen(
                                 "This will replace existing local state before import."
                             } else {
                                 "This will merge imported records with local state."
-                            }
+                            } +
+                            buildRestorePreviewSummaryText(selectedRestorePreview)
                     )
                 },
                 confirmButton = {
@@ -653,7 +718,8 @@ fun SettingsBackupScreen(
                                 "This will replace existing local state before import."
                             } else {
                                 "This will merge imported records with local state."
-                            }
+                            } +
+                            buildRestorePreviewSummaryText(latestRestorePreview)
                     )
                 },
                 confirmButton = {
@@ -1264,3 +1330,25 @@ private fun createNotificationSettingsIntent(context: Context): Intent =
     Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
         putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
     }
+
+private fun formatSignedDelta(value: Int): String = when {
+    value > 0 -> "+$value"
+    value < 0 -> value.toString()
+    else -> "0"
+}
+
+private fun buildRestorePreviewSummaryText(preview: CloudRestorePreviewUiState?): String {
+    if (preview == null) {
+        return "\n\nNo pre-restore diff loaded yet. Use \"Refresh restore diff\" for a safer preview."
+    }
+
+    val settingsSummary = if (preview.changedSettingLabels.isEmpty()) {
+        "No app preference changes detected."
+    } else {
+        "App preference changes: ${preview.changedSettingLabels.joinToString()}."
+    }
+
+    return "\n\nPreview exported at ${preview.exportedAt}. " +
+        "${preview.changedCollectionCount} collection group(s) differ. " +
+        settingsSummary
+}

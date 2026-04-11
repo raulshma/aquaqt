@@ -85,9 +85,61 @@ data class BackupCloudObject(
     val isLatestObject: Boolean = false
 )
 
+data class BackupSnapshotSummary(
+    val aquariums: Int = 0,
+    val taskTemplates: Int = 0,
+    val livestock: Int = 0,
+    val taskExecutions: Int = 0,
+    val dosingLogs: Int = 0,
+    val assets: Int = 0,
+    val consumables: Int = 0,
+    val parameterLogs: Int = 0,
+    val issues: Int = 0,
+    val memos: Int = 0,
+    val timeline: Int = 0,
+    val reminderGroups: Int = 0
+) {
+    val totalRecords: Int
+        get() =
+            aquariums +
+                taskTemplates +
+                livestock +
+                taskExecutions +
+                dosingLogs +
+                assets +
+                consumables +
+                parameterLogs +
+                issues +
+                memos +
+                timeline +
+                reminderGroups
+
+    fun toNamedCounts(): List<Pair<String, Int>> = listOf(
+        "Aquariums" to aquariums,
+        "Task templates" to taskTemplates,
+        "Livestock" to livestock,
+        "Task executions" to taskExecutions,
+        "Dosing logs" to dosingLogs,
+        "Assets" to assets,
+        "Consumables" to consumables,
+        "Parameter logs" to parameterLogs,
+        "Issues" to issues,
+        "Memos" to memos,
+        "Timeline events" to timeline,
+        "Reminder groups" to reminderGroups
+    )
+}
+
 data class BackupCloudDeleteOutcome(
     val deletedObjectKey: String,
     val wasLatestObject: Boolean
+)
+
+data class BackupRestorePreview(
+    val sourceObjectKey: String,
+    val exportedAt: String,
+    val snapshotSummary: BackupSnapshotSummary,
+    val restoredSettings: AppSettings
 )
 
 data class BackupRestoreOutcome(
@@ -144,6 +196,13 @@ interface BackupCloudSyncGateway {
         credentials: BackupS3Credentials,
         replaceExisting: Boolean = true
     ): BackupRestoreOutcome
+
+    suspend fun previewCloudRestoreObject(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials,
+        objectKey: String
+    ): BackupRestorePreview
 
     suspend fun deleteCloudBackupObject(
         settings: AppSettings,
@@ -265,39 +324,45 @@ class BackupCloudSyncService(
         objectKey: String,
         replaceExisting: Boolean
     ): BackupRestoreOutcome {
-        val normalizedObjectKey = normalizeKeyPrefix(objectKey)
-        require(normalizedObjectKey.isNotEmpty()) {
-            "Cloud backup object key is required."
-        }
-
-        val config = parseS3SyncConfig(settings, credentials)
-        val encryptedPayload = downloadEncryptedBackupFromS3(
-            configInput = config.copy(objectKey = normalizedObjectKey)
-        ) ?: throw IllegalStateException(
-            "Cloud backup object not found: $normalizedObjectKey"
-        )
-
-        val envelope = decryptBackupEnvelope(
-            encryptedPayloadJson = encryptedPayload,
-            masterKey = masterKey
-        )
-
-        val appStateJson = backupJson.encodeToString(
-            JsonElement.serializer(),
-            envelope.appState
+        val decodedSnapshot = loadCloudBackupSnapshot(
+            settings = settings,
+            masterKey = masterKey,
+            credentials = credentials,
+            objectKey = objectKey
         )
 
         val importResult = backupGateway.importFromJson(
-            payload = appStateJson,
+            payload = decodedSnapshot.appStateJson,
             replaceExisting = replaceExisting
         )
 
         return BackupRestoreOutcome(
             restoredAt = Instant.now().toString(),
-            sourceObjectKey = normalizedObjectKey,
-            exportedAt = envelope.exportedAt,
+            sourceObjectKey = decodedSnapshot.sourceObjectKey,
+            exportedAt = decodedSnapshot.exportedAt,
             restoredSettings = importResult.snapshot.settings,
             skippedCounts = importResult.skippedCounts
+        )
+    }
+
+    override suspend fun previewCloudRestoreObject(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials,
+        objectKey: String
+    ): BackupRestorePreview {
+        val decodedSnapshot = loadCloudBackupSnapshot(
+            settings = settings,
+            masterKey = masterKey,
+            credentials = credentials,
+            objectKey = objectKey
+        )
+
+        return BackupRestorePreview(
+            sourceObjectKey = decodedSnapshot.sourceObjectKey,
+            exportedAt = decodedSnapshot.exportedAt,
+            snapshotSummary = buildBackupSnapshotSummary(decodedSnapshot.snapshot),
+            restoredSettings = decodedSnapshot.snapshot.settings
         )
     }
 
@@ -368,6 +433,65 @@ class BackupCloudSyncService(
             retentionDays = retentionDays
         )
     }
+}
+
+fun buildBackupSnapshotSummary(snapshot: PersistedAppStateSnapshot): BackupSnapshotSummary =
+    BackupSnapshotSummary(
+        aquariums = snapshot.aquariums.size,
+        taskTemplates = snapshot.taskTemplates.size,
+        livestock = snapshot.livestock.size,
+        taskExecutions = snapshot.taskExecutions.size,
+        dosingLogs = snapshot.dosingLogs.size,
+        assets = snapshot.assets.size,
+        consumables = snapshot.consumables.size,
+        parameterLogs = snapshot.parameterLogs.size,
+        issues = snapshot.issues.size,
+        memos = snapshot.memos.size,
+        timeline = snapshot.timeline.size,
+        reminderGroups = snapshot.reminderGroups.size
+    )
+
+private data class LoadedCloudBackupSnapshot(
+    val sourceObjectKey: String,
+    val exportedAt: String,
+    val appStateJson: String,
+    val snapshot: PersistedAppStateSnapshot
+)
+
+private suspend fun loadCloudBackupSnapshot(
+    settings: AppSettings,
+    masterKey: String,
+    credentials: BackupS3Credentials,
+    objectKey: String
+): LoadedCloudBackupSnapshot {
+    val normalizedObjectKey = normalizeKeyPrefix(objectKey)
+    require(normalizedObjectKey.isNotEmpty()) {
+        "Cloud backup object key is required."
+    }
+
+    val config = parseS3SyncConfig(settings, credentials)
+    val encryptedPayload = downloadEncryptedBackupFromS3(
+        configInput = config.copy(objectKey = normalizedObjectKey)
+    ) ?: throw IllegalStateException(
+        "Cloud backup object not found: $normalizedObjectKey"
+    )
+
+    val envelope = decryptBackupEnvelope(
+        encryptedPayloadJson = encryptedPayload,
+        masterKey = masterKey
+    )
+
+    val appStateJson = backupJson.encodeToString(
+        JsonElement.serializer(),
+        envelope.appState
+    )
+
+    return LoadedCloudBackupSnapshot(
+        sourceObjectKey = normalizedObjectKey,
+        exportedAt = envelope.exportedAt,
+        appStateJson = appStateJson,
+        snapshot = AppStateJsonCompatibility.decode(appStateJson)
+    )
 }
 
 fun createBackupEnvelope(
