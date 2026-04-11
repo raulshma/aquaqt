@@ -15,7 +15,6 @@ import androidx.compose.material.icons.rounded.Assistant
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.Timeline
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,6 +37,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.keepaside.aquapt.core.model.EntityKind
+import com.keepaside.aquapt.feature.entity.EntityDetailScreen
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
 import com.keepaside.aquapt.feature.livestock.LivestockScreen
 import com.keepaside.aquapt.feature.tasks.TasksDashboardScreen
@@ -195,7 +195,7 @@ fun AquaPTApp() {
                 val entityId = AquaPTRoute.parseEntityId(backStackEntry.arguments?.getString("id"))
                 val aquariumId = AquaPTRoute.parseEntityAquariumId(backStackEntry.arguments?.getString("aquariumId"))
 
-                EntityDeepLinkScreen(
+                EntityDetailScreen(
                     kind = kind,
                     entityId = entityId,
                     aquariumId = aquariumId
@@ -217,32 +217,9 @@ private fun topBarTitleForRoute(route: String?): String = when {
     else -> "AquaPT"
 }
 
-@Composable
-private fun EntityDeepLinkScreen(
-    kind: EntityKind?,
-    entityId: String,
-    aquariumId: String?
-) {
-    val kindLabel = kind?.label() ?: "entity"
-    PlaceholderScreen(
-        title = "${kindLabel.replaceFirstChar { it.uppercaseChar() }} details",
-        subtitle = buildString {
-            append("Opened via timeline deep link for ${kindLabel.lowercase()} ID $entityId.")
-            aquariumId?.let {
-                append(" Tank ID: $it.")
-            }
-            append(" Full native entity detail screens are continuing in upcoming slices.")
-        },
-        icon = { Icon(Icons.Rounded.Tune, contentDescription = null) }
-    )
-}
-
 private fun NavDestination?.isOnRoute(route: String): Boolean {
     return this?.hierarchy?.any { it.route == route } == true
 }
-
-private fun EntityKind.label(): String =
-    name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
 
 @Composable
 private fun PlaceholderScreen(
