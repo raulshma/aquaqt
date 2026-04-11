@@ -139,6 +139,84 @@ class EntityDetailViewModelTest {
     }
 
     @Test
+    fun `task detail surfaces linked entity navigation targets`() {
+        val aquarium = Aquarium(
+            id = "a-task-links",
+            name = "Task Links",
+            volumeLiters = 90.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val resident = Livestock(
+            id = "l-task-target",
+            aquariumId = aquarium.id,
+            name = "Neon group"
+        )
+        val task = TaskTemplate(
+            id = "task-feed-neons",
+            title = "Feed neons",
+            frequency = TaskFrequency.DAILY,
+            aquariumIds = listOf(aquarium.id),
+            livestockId = resident.id
+        )
+        val memo = Memo(
+            id = "memo-linked",
+            aquariumId = aquarium.id,
+            content = "Feeding response looked strong.",
+            createdAt = "2026-04-11T09:15:00Z"
+        )
+        val events = listOf(
+            TimelineEvent(
+                id = "event-task-link",
+                aquariumId = aquarium.id,
+                type = TimelineEventType.TASK,
+                createdAt = "2026-04-11T10:00:00Z",
+                title = "Feed task completed",
+                source = EntityRef(EntityKind.TASK, task.id, aquarium.id),
+                related = listOf(EntityRef(EntityKind.MEMO, memo.id, aquarium.id))
+            )
+        )
+
+        val state = assembleEntityDetailUiState(
+            kind = EntityKind.TASK,
+            entityId = task.id,
+            routeAquariumId = aquarium.id,
+            aquariums = listOf(aquarium),
+            taskTemplates = listOf(task),
+            taskExecutions = emptyList(),
+            livestock = listOf(resident),
+            assets = emptyList(),
+            consumables = emptyList(),
+            issues = emptyList(),
+            memos = listOf(memo),
+            dosingLogs = emptyList(),
+            parameterLogs = emptyList(),
+            timelineEvents = events,
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertTrue(
+            state.linkedEntities.any {
+                it.kind == EntityKind.AQUARIUM && it.entityId == aquarium.id
+            }
+        )
+        assertTrue(
+            state.linkedEntities.any {
+                it.kind == EntityKind.LIVESTOCK && it.entityId == resident.id
+            }
+        )
+        assertTrue(
+            state.linkedEntities.any {
+                it.kind == EntityKind.MEMO && it.entityId == memo.id
+            }
+        )
+        assertTrue(
+            state.linkedEntities.none {
+                it.kind == EntityKind.TASK && it.entityId == task.id
+            }
+        )
+    }
+
+    @Test
     fun `aquarium detail surfaces aggregate metrics`() {
         val aquarium = Aquarium(
             id = "a-community",
@@ -214,6 +292,80 @@ class EntityDetailViewModelTest {
         assertEquals("1", metricByLabel["Linked events"])
         assertEquals("240 L", fieldByLabel["Volume"])
         assertEquals("2026-01-10", fieldByLabel["Setup date"])
+    }
+
+    @Test
+    fun `aquarium detail includes linked collection shortcuts`() {
+        val aquarium = Aquarium(
+            id = "a-collections",
+            name = "Collection Tank",
+            volumeLiters = 150.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val task = TaskTemplate(
+            id = "task-maintenance",
+            title = "Weekly maintenance",
+            frequency = TaskFrequency.WEEKLY,
+            aquariumIds = listOf(aquarium.id)
+        )
+        val resident = Livestock(
+            id = "l-collection",
+            aquariumId = aquarium.id,
+            name = "Otocinclus"
+        )
+        val asset = Asset(
+            id = "asset-collection",
+            aquariumId = aquarium.id,
+            category = AssetCategory.FILTER,
+            brandModel = "Flow Pro"
+        )
+        val consumable = Consumable(
+            id = "consumable-collection",
+            aquariumId = aquarium.id,
+            name = "Fertilizer",
+            unit = ConsumableUnit.ML,
+            remaining = 120.0,
+            updatedAt = "2026-04-11T09:00:00Z"
+        )
+        val issue = Issue(
+            id = "issue-collection",
+            aquariumId = aquarium.id,
+            title = "Minor algae",
+            status = IssueStatus.OPEN,
+            createdAt = "2026-04-11T08:30:00Z"
+        )
+        val memo = Memo(
+            id = "memo-collection",
+            aquariumId = aquarium.id,
+            content = "Observed improved flow after filter clean.",
+            createdAt = "2026-04-11T10:30:00Z"
+        )
+
+        val state = assembleEntityDetailUiState(
+            kind = EntityKind.AQUARIUM,
+            entityId = aquarium.id,
+            routeAquariumId = null,
+            aquariums = listOf(aquarium),
+            taskTemplates = listOf(task),
+            taskExecutions = emptyList(),
+            livestock = listOf(resident),
+            assets = listOf(asset),
+            consumables = listOf(consumable),
+            issues = listOf(issue),
+            memos = listOf(memo),
+            dosingLogs = emptyList(),
+            parameterLogs = emptyList(),
+            timelineEvents = emptyList(),
+            zoneId = ZoneOffset.UTC
+        )
+
+        val linkedKinds = state.linkedEntities.map { it.kind }.toSet()
+        assertTrue(linkedKinds.contains(EntityKind.TASK))
+        assertTrue(linkedKinds.contains(EntityKind.LIVESTOCK))
+        assertTrue(linkedKinds.contains(EntityKind.ASSET))
+        assertTrue(linkedKinds.contains(EntityKind.CONSUMABLE))
+        assertTrue(linkedKinds.contains(EntityKind.ISSUE))
+        assertTrue(linkedKinds.contains(EntityKind.MEMO))
     }
 
     @Test

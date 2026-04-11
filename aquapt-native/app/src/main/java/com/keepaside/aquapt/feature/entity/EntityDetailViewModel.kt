@@ -64,6 +64,15 @@ data class EntityRelatedEventItem(
     val supportingText: String
 )
 
+data class EntityLinkedEntityItem(
+    val id: String,
+    val kind: EntityKind,
+    val entityId: String,
+    val aquariumId: String?,
+    val title: String,
+    val supportingText: String
+)
+
 data class EntityRelatedPhotoItem(
     val id: String,
     val uri: String,
@@ -147,6 +156,7 @@ data class EntityDetailUiState(
     val metrics: List<EntityDetailMetric> = emptyList(),
     val fields: List<EntityDetailField> = emptyList(),
     val taskExecutionHistory: List<EntityTaskExecutionItem> = emptyList(),
+    val linkedEntities: List<EntityLinkedEntityItem> = emptyList(),
     val relatedPhotos: List<EntityRelatedPhotoItem> = emptyList(),
     val relatedEvents: List<EntityRelatedEventItem> = emptyList(),
     val livestockEditor: EntityLivestockEditorState? = null,
@@ -165,6 +175,7 @@ private data class ResolvedEntityDetail(
     val metrics: List<EntityDetailMetric> = emptyList(),
     val fields: List<EntityDetailField> = emptyList(),
     val taskExecutionHistory: List<EntityTaskExecutionItem> = emptyList(),
+    val linkedEntityRefs: List<EntityRef> = emptyList(),
     val livestockEditor: EntityLivestockEditorState? = null,
     val assetEditor: EntityAssetEditorState? = null,
     val consumableEditor: EntityConsumableEditorState? = null,
@@ -944,6 +955,50 @@ internal fun assembleEntityDetailUiState(
                     aquarium.investmentCost?.let {
                         add(EntityDetailField("Investment", formatAmount(it)))
                     }
+                },
+                linkedEntityRefs = buildList {
+                    taskTemplates
+                        .filter { it.aquariumIds.contains(aquarium.id) }
+                        .sortedBy { it.title.lowercase() }
+                        .take(6)
+                        .forEach { task ->
+                            add(EntityRef(EntityKind.TASK, task.id, aquarium.id))
+                        }
+                    livestock
+                        .filter { it.aquariumId == aquarium.id }
+                        .sortedBy { it.name.ifBlank { it.species }.lowercase() }
+                        .take(6)
+                        .forEach { resident ->
+                            add(EntityRef(EntityKind.LIVESTOCK, resident.id, aquarium.id))
+                        }
+                    assets
+                        .filter { it.aquariumId == aquarium.id }
+                        .sortedBy { it.brandModel.lowercase() }
+                        .take(4)
+                        .forEach { asset ->
+                            add(EntityRef(EntityKind.ASSET, asset.id, aquarium.id))
+                        }
+                    consumables
+                        .filter { it.aquariumId == aquarium.id }
+                        .sortedBy { it.name.lowercase() }
+                        .take(4)
+                        .forEach { consumable ->
+                            add(EntityRef(EntityKind.CONSUMABLE, consumable.id, aquarium.id))
+                        }
+                    issues
+                        .filter { it.aquariumId == aquarium.id }
+                        .sortedByDescending { parseToInstant(it.createdAt, zoneId)?.toEpochMilli() ?: Long.MIN_VALUE }
+                        .take(4)
+                        .forEach { issue ->
+                            add(EntityRef(EntityKind.ISSUE, issue.id, aquarium.id))
+                        }
+                    memos
+                        .filter { it.aquariumId == aquarium.id }
+                        .sortedByDescending { parseToInstant(it.createdAt, zoneId)?.toEpochMilli() ?: Long.MIN_VALUE }
+                        .take(4)
+                        .forEach { memo ->
+                            add(EntityRef(EntityKind.MEMO, memo.id, aquarium.id))
+                        }
                 }
             )
         }
@@ -1026,7 +1081,22 @@ internal fun assembleEntityDetailUiState(
                         add(EntityDetailField("Latest completion", it))
                     }
                 },
-                taskExecutionHistory = taskExecutionHistory
+                taskExecutionHistory = taskExecutionHistory,
+                linkedEntityRefs = buildList {
+                    task.aquariumIds
+                        .distinct()
+                        .forEach { taskAquariumId ->
+                            add(EntityRef(EntityKind.AQUARIUM, taskAquariumId, taskAquariumId))
+                        }
+                    task.livestockId
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { residentId ->
+                            val residentAquariumId = livestockById[residentId]?.aquariumId
+                                ?: task.aquariumIds.firstOrNull()
+                                ?: routeAquariumId
+                            add(EntityRef(EntityKind.LIVESTOCK, residentId, residentAquariumId))
+                        }
+                }
             )
         }
 
@@ -1040,6 +1110,12 @@ internal fun assembleEntityDetailUiState(
 
             val offspringCount = livestock.count { it.parentId == resident.id }
             val feedingTaskCount = taskTemplates.count { it.livestockId == resident.id }
+            val offspring = livestock
+                .filter { it.parentId == resident.id }
+                .sortedBy { it.name.ifBlank { it.species }.lowercase() }
+            val feedingTasks = taskTemplates
+                .filter { it.livestockId == resident.id }
+                .sortedBy { it.title.lowercase() }
 
             ResolvedEntityDetail(
                 title = resident.name.ifBlank { resident.species.ifBlank { "Resident" } },
@@ -1077,7 +1153,26 @@ internal fun assembleEntityDetailUiState(
                     status = resident.status,
                     dietaryNotes = resident.dietaryNotes.orEmpty(),
                     photoUri = resident.photoUri
-                )
+                ),
+                linkedEntityRefs = buildList {
+                    add(EntityRef(EntityKind.AQUARIUM, resident.aquariumId, resident.aquariumId))
+                    resident.parentId
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { parentId ->
+                            val parentAquariumId = livestockById[parentId]?.aquariumId ?: resident.aquariumId
+                            add(EntityRef(EntityKind.LIVESTOCK, parentId, parentAquariumId))
+                        }
+                    offspring
+                        .take(6)
+                        .forEach { child ->
+                            add(EntityRef(EntityKind.LIVESTOCK, child.id, child.aquariumId))
+                        }
+                    feedingTasks
+                        .take(6)
+                        .forEach { task ->
+                            add(EntityRef(EntityKind.TASK, task.id, task.aquariumIds.firstOrNull() ?: resident.aquariumId))
+                        }
+                }
             )
         }
 
@@ -1113,7 +1208,21 @@ internal fun assembleEntityDetailUiState(
                     purchasedAtInput = asset.purchasedAt?.let { formatDateTime(it, zoneId) }.orEmpty(),
                     priceInput = asset.price?.let(::formatAmount).orEmpty(),
                     photoUri = asset.photoUri
-                )
+                ),
+                linkedEntityRefs = buildList {
+                    add(EntityRef(EntityKind.AQUARIUM, asset.aquariumId, asset.aquariumId))
+                    asset.maintenanceTaskTemplateIds
+                        .distinct()
+                        .take(6)
+                        .forEach { taskId ->
+                            val taskAquariumId = taskTemplates
+                                .firstOrNull { it.id == taskId }
+                                ?.aquariumIds
+                                ?.firstOrNull()
+                                ?: asset.aquariumId
+                            add(EntityRef(EntityKind.TASK, taskId, taskAquariumId))
+                        }
+                }
             )
         }
 
@@ -1152,6 +1261,9 @@ internal fun assembleEntityDetailUiState(
                     remainingInput = formatAmount(consumable.remaining),
                     reorderAtInput = consumable.reorderAt?.let(::formatAmount).orEmpty(),
                     photoUri = consumable.photoUri
+                ),
+                linkedEntityRefs = listOf(
+                    EntityRef(EntityKind.AQUARIUM, consumable.aquariumId, consumable.aquariumId)
                 )
             )
         }
@@ -1180,6 +1292,9 @@ internal fun assembleEntityDetailUiState(
                     aquariumId = issue.aquariumId,
                     status = issue.status,
                     resolutionNote = issue.resolutionNote
+                ),
+                linkedEntityRefs = listOf(
+                    EntityRef(EntityKind.AQUARIUM, issue.aquariumId, issue.aquariumId)
                 )
             )
         }
@@ -1215,6 +1330,9 @@ internal fun assembleEntityDetailUiState(
                     aquariumId = memo.aquariumId,
                     content = memo.content,
                     photoUri = memo.photoUri
+                ),
+                linkedEntityRefs = listOf(
+                    EntityRef(EntityKind.AQUARIUM, memo.aquariumId, memo.aquariumId)
                 )
             )
         }
@@ -1236,7 +1354,10 @@ internal fun assembleEntityDetailUiState(
                     dosing.note?.takeIf { it.isNotBlank() }?.let {
                         add(EntityDetailField("Note", it))
                     }
-                }
+                },
+                linkedEntityRefs = listOf(
+                    EntityRef(EntityKind.AQUARIUM, dosing.aquariumId, dosing.aquariumId)
+                )
             )
         }
 
@@ -1258,7 +1379,10 @@ internal fun assembleEntityDetailUiState(
                 metrics = listOf(
                     EntityDetailMetric("Values", parameterFields.size.toString())
                 ),
-                fields = parameterFields
+                fields = parameterFields,
+                linkedEntityRefs = listOf(
+                    EntityRef(EntityKind.AQUARIUM, parameterLog.aquariumId, parameterLog.aquariumId)
+                )
             )
         }
     }
@@ -1307,6 +1431,24 @@ internal fun assembleEntityDetailUiState(
         zoneId = zoneId
     )
 
+    val linkedEntities = buildEntityLinkedEntities(
+        kind = kind,
+        entityId = trimmedEntityId,
+        directRefs = resolved.linkedEntityRefs,
+        matchingEvents = sortedMatchingEvents,
+        aquariums = aquariums,
+        taskTemplates = taskTemplates,
+        livestock = livestock,
+        assets = assets,
+        consumables = consumables,
+        issues = issues,
+        memos = memos,
+        dosingLogs = dosingLogs,
+        parameterLogs = parameterLogs,
+        aquariumNameById = aquariumNameById,
+        zoneId = zoneId
+    )
+
     return EntityDetailUiState(
         isNotFound = false,
         headline = "${kind.label()} details",
@@ -1320,6 +1462,7 @@ internal fun assembleEntityDetailUiState(
         metrics = resolved.metrics + EntityDetailMetric("Linked events", matchingEvents.size.toString()),
         fields = resolved.fields,
         taskExecutionHistory = resolved.taskExecutionHistory,
+        linkedEntities = linkedEntities,
         relatedPhotos = relatedPhotos,
         relatedEvents = relatedEvents,
         livestockEditor = resolved.livestockEditor,
@@ -1340,11 +1483,132 @@ private data class EntityPhotoKey(
     val id: String
 )
 
+private data class EntityLinkKey(
+    val kind: EntityKind,
+    val id: String
+)
+
 private data class EntityPhotoCandidate(
     val uri: String,
     val title: String,
     val supportingText: String
 )
+
+private fun buildEntityLinkedEntities(
+    kind: EntityKind,
+    entityId: String,
+    directRefs: List<EntityRef>,
+    matchingEvents: List<TimelineEvent>,
+    aquariums: List<Aquarium>,
+    taskTemplates: List<TaskTemplate>,
+    livestock: List<Livestock>,
+    assets: List<Asset>,
+    consumables: List<Consumable>,
+    issues: List<Issue>,
+    memos: List<Memo>,
+    dosingLogs: List<DosingLog>,
+    parameterLogs: List<WaterParameterLog>,
+    aquariumNameById: Map<String, String>,
+    zoneId: ZoneId
+): List<EntityLinkedEntityItem> {
+    val aquariumById = aquariums.associateBy { it.id }
+    val taskById = taskTemplates.associateBy { it.id }
+    val livestockById = livestock.associateBy { it.id }
+    val assetById = assets.associateBy { it.id }
+    val consumableById = consumables.associateBy { it.id }
+    val issueById = issues.associateBy { it.id }
+    val memoById = memos.associateBy { it.id }
+    val dosingById = dosingLogs.associateBy { it.id }
+    val parameterById = parameterLogs.associateBy { it.id }
+
+    fun resolveAquariumId(reference: EntityRef): String? {
+        if (!reference.aquariumId.isNullOrBlank()) return reference.aquariumId
+        return when (reference.kind) {
+            EntityKind.AQUARIUM -> reference.id
+            EntityKind.TASK -> taskById[reference.id]?.aquariumIds?.firstOrNull()
+            EntityKind.LIVESTOCK -> livestockById[reference.id]?.aquariumId
+            EntityKind.ASSET -> assetById[reference.id]?.aquariumId
+            EntityKind.CONSUMABLE -> consumableById[reference.id]?.aquariumId
+            EntityKind.ISSUE -> issueById[reference.id]?.aquariumId
+            EntityKind.MEMO -> memoById[reference.id]?.aquariumId
+            EntityKind.DOSING -> dosingById[reference.id]?.aquariumId
+            EntityKind.PARAMETER_LOG -> parameterById[reference.id]?.aquariumId
+        }
+    }
+
+    fun resolveTitle(reference: EntityRef): String {
+        return when (reference.kind) {
+            EntityKind.AQUARIUM -> aquariumById[reference.id]?.name ?: "Tank"
+            EntityKind.TASK -> taskById[reference.id]?.title ?: "Task"
+            EntityKind.LIVESTOCK -> livestockById[reference.id]
+                ?.let { it.name.ifBlank { it.species.ifBlank { "Resident" } } }
+                ?: "Resident"
+            EntityKind.ASSET -> assetById[reference.id]
+                ?.let { it.brandModel.ifBlank { it.category.label() } }
+                ?: "Asset"
+            EntityKind.CONSUMABLE -> consumableById[reference.id]?.name ?: "Consumable"
+            EntityKind.ISSUE -> issueById[reference.id]?.title ?: "Issue"
+            EntityKind.MEMO -> memoById[reference.id]
+                ?.content
+                ?.trim()
+                ?.take(48)
+                ?.ifBlank { "Memo" }
+                ?: "Memo"
+            EntityKind.DOSING -> dosingById[reference.id]
+                ?.let { "${it.product} (${formatAmount(it.amountMl)} ml)" }
+                ?: "Dosing log"
+            EntityKind.PARAMETER_LOG -> parameterById[reference.id]
+                ?.createdAt
+                ?.let { "Parameter log • ${formatDateTime(it, zoneId)}" }
+                ?: "Parameter log"
+        }
+    }
+
+    val seen = mutableSetOf<EntityLinkKey>()
+    val refs = buildList {
+        addAll(directRefs)
+        matchingEvents.forEach { event ->
+            event.source?.let { add(it) }
+            addAll(event.related)
+        }
+    }
+
+    return refs
+        .asSequence()
+        .mapNotNull { reference ->
+            val linkedId = reference.id.trim()
+            if (linkedId.isBlank()) {
+                return@mapNotNull null
+            }
+            if (reference.kind == kind && linkedId == entityId) {
+                return@mapNotNull null
+            }
+
+            val key = EntityLinkKey(kind = reference.kind, id = linkedId)
+            if (!seen.add(key)) {
+                return@mapNotNull null
+            }
+
+            val linkedAquariumId = resolveAquariumId(reference)
+            val aquariumLabel = linkedAquariumId?.let { aquariumNameById[it] ?: "Unknown tank" }
+            val supportingText = if (aquariumLabel == null) {
+                reference.kind.label()
+            } else {
+                "${reference.kind.label()} • $aquariumLabel"
+            }
+
+            EntityLinkedEntityItem(
+                id = "link-${reference.kind.name.lowercase()}-$linkedId",
+                kind = reference.kind,
+                entityId = linkedId,
+                aquariumId = linkedAquariumId,
+                title = resolveTitle(reference),
+                supportingText = supportingText
+            )
+        }
+        .take(20)
+        .toList()
+}
 
 private fun buildEntityRelatedPhotos(
     kind: EntityKind,

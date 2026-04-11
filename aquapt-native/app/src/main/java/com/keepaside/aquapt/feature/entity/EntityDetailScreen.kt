@@ -63,6 +63,7 @@ fun EntityDetailScreen(
     kind: EntityKind?,
     entityId: String,
     aquariumId: String?,
+    onOpenEntityDeepLink: (EntityKind, String, String?) -> Unit = { _, _, _ -> },
     onOpenEntityForm: (EntityKind, String?, String?) -> Unit = { _, _, _ -> },
     onOpenEntityEdit: (EntityEditKind, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
@@ -366,6 +367,22 @@ fun EntityDetailScreen(
                         },
                         onEditExecution = { executionId ->
                             onOpenEntityEdit(EntityEditKind.TASK_EXECUTION, executionId)
+                        }
+                    )
+                }
+            }
+
+            if (!uiState.isNotFound && uiState.linkedEntities.isNotEmpty()) {
+                item {
+                    LinkedEntitiesCard(
+                        linkedEntities = uiState.linkedEntities,
+                        isBusy = uiState.isActionInProgress,
+                        onOpenEntity = { linked ->
+                            onOpenEntityDeepLink(
+                                linked.kind,
+                                linked.entityId,
+                                linked.aquariumId
+                            )
                         }
                     )
                 }
@@ -1258,6 +1275,76 @@ private fun MetricCard(metric: EntityDetailMetric) {
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
+        }
+    }
+}
+
+@Composable
+private fun LinkedEntitiesCard(
+    linkedEntities: List<EntityLinkedEntityItem>,
+    isBusy: Boolean,
+    onOpenEntity: (EntityLinkedEntityItem) -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Linked entities",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = "Open related records to continue edits and review connected activity.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            linkedEntities.forEach { linked ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = linked.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = linked.supportingText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = { onOpenEntity(linked) },
+                            enabled = !isBusy
+                        ) {
+                            Text("Open")
+                        }
+                    }
+                }
+            }
         }
     }
 }

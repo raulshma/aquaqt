@@ -272,6 +272,17 @@ fun AquaPTApp() {
                     kind = kind,
                     entityId = entityId,
                     aquariumId = aquariumId,
+                    onOpenEntityDeepLink = { linkedKind, linkedEntityId, linkedAquariumId ->
+                        navController.navigate(
+                            AquaPTRoute.entityDetailRoute(
+                                kind = linkedKind,
+                                id = linkedEntityId,
+                                aquariumId = linkedAquariumId
+                            )
+                        ) {
+                            launchSingleTop = true
+                        }
+                    },
                     onOpenEntityForm = { formKind, formAquariumId, targetEntityId ->
                         navController.navigate(
                             AquaPTRoute.entityFormRoute(
