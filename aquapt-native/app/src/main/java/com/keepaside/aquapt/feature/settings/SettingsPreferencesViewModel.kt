@@ -4,8 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.keepaside.aquapt.core.backup.backupAutoSyncDefaultHour
+import com.keepaside.aquapt.core.localization.convertCurrencyAmount
+import com.keepaside.aquapt.core.localization.defaultRegionalCurrencyCode
+import com.keepaside.aquapt.core.localization.defaultRegionalLocale
+import com.keepaside.aquapt.core.localization.formatCurrencyAmount
 import com.keepaside.aquapt.core.localization.ManualRegionalSettingsInput
 import com.keepaside.aquapt.core.localization.ManualRegionalSettingsResult
+import com.keepaside.aquapt.core.localization.normalizeCurrencyCode
 import com.keepaside.aquapt.core.localization.applyRegionalDefaults
 import com.keepaside.aquapt.core.localization.resolveManualRegionalSettings
 import com.keepaside.aquapt.core.localization.resolveRegionalDefaults
@@ -36,6 +41,16 @@ internal const val settingsBackupCredentialsErrorMessage =
 
 internal const val settingsBackupRetentionDaysErrorMessage =
     "Backup retention days must be between 1 and 3650."
+
+internal const val settingsRegionalPreviewAmountErrorMessage =
+    "Enter a valid amount for conversion preview."
+
+internal const val settingsRegionalPreviewCurrencyErrorMessage =
+    "Select valid base and target currency codes for conversion preview."
+
+fun interface RegionalCurrencyPreviewConverter {
+    suspend fun convert(value: Double, fromCurrency: String, toCurrency: String): Double
+}
 
 data class SettingsPreferencesDraft(
     val openRouterApiKey: String = "",
@@ -74,13 +89,26 @@ data class SettingsPreferencesUiState(
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val draft: SettingsPreferencesDraft = SettingsPreferencesDraft(),
-    val statusMessage: String = settingsPreferencesDefaultStatus
+    val statusMessage: String = settingsPreferencesDefaultStatus,
+    val regionalConversionAmountInput: String = "100",
+    val regionalConversionBaseCurrency: String = defaultRegionalCurrencyCode,
+    val regionalConversionPreviewLabel: String = "",
+    val regionalConversionErrorMessage: String? = null,
+    val isRegionalConversionLoading: Boolean = false
 )
 
 class SettingsPreferencesViewModel(
     private val appSettingsStore: AppSettingsStore,
     private val backupSecretsStore: BackupSecretsStore? = null,
-    private val externalScope: CoroutineScope? = null
+    private val externalScope: CoroutineScope? = null,
+    private val regionalCurrencyPreviewConverter: RegionalCurrencyPreviewConverter =
+        RegionalCurrencyPreviewConverter { value, fromCurrency, toCurrency ->
+            convertCurrencyAmount(
+                value = value,
+                fromCurrency = fromCurrency,
+                toCurrency = toCurrency
+            )
+        }
 ) : ViewModel() {
 
     private var observerJob: Job? = null
@@ -124,7 +152,15 @@ class SettingsPreferencesViewModel(
 
     fun onRegionalPreferencesModeChanged(value: RegionalPreferencesMode) {
         _uiState.update { state ->
-            state.copy(draft = state.draft.copy(regionalPreferencesMode = value))
+            state.copy(
+                draft = state.draft.copy(regionalPreferencesMode = value),
+                regionalConversionPreviewLabel = if (value == RegionalPreferencesMode.MANUAL) {
+                    state.regionalConversionPreviewLabel
+                } else {
+                    ""
+                },
+                regionalConversionErrorMessage = null
+            )
         }
     }
 
@@ -214,7 +250,11 @@ class SettingsPreferencesViewModel(
 
     fun onDefaultLocaleChanged(value: String) {
         _uiState.update { state ->
-            state.copy(draft = state.draft.copy(defaultLocale = value))
+            state.copy(
+                draft = state.draft.copy(defaultLocale = value),
+                regionalConversionPreviewLabel = "",
+                regionalConversionErrorMessage = null
+            )
         }
     }
 
@@ -238,7 +278,111 @@ class SettingsPreferencesViewModel(
 
     fun onDefaultCurrencyChanged(value: String) {
         _uiState.update { state ->
-            state.copy(draft = state.draft.copy(defaultCurrency = value))
+            state.copy(
+                draft = state.draft.copy(defaultCurrency = value),
+                regionalConversionPreviewLabel = "",
+                regionalConversionErrorMessage = null
+            )
+        }
+    }
+
+    fun onRegionalConversionAmountChanged(value: String) {
+        _uiState.update { state ->
+            state.copy(
+                regionalConversionAmountInput = value,
+                regionalConversionPreviewLabel = "",
+                regionalConversionErrorMessage = null
+            )
+        }
+    }
+
+    fun onRegionalConversionBaseCurrencyChanged(value: String) {
+        _uiState.update { state ->
+            state.copy(
+                regionalConversionBaseCurrency = value,
+                regionalConversionPreviewLabel = "",
+                regionalConversionErrorMessage = null
+            )
+        }
+    }
+
+    fun refreshRegionalConversionPreview() {
+        val current = _uiState.value
+        if (current.isRegionalConversionLoading || current.isSaving) return
+
+        val amount = parseSettingsRegionalPreviewAmountInput(current.regionalConversionAmountInput)
+        if (amount == null) {
+            _uiState.update {
+                it.copy(
+                    regionalConversionPreviewLabel = "",
+                    regionalConversionErrorMessage = settingsRegionalPreviewAmountErrorMessage
+                )
+            }
+            return
+        }
+
+        val fromCurrency = normalizeCurrencyCode(current.regionalConversionBaseCurrency)
+        val toCurrency = normalizeCurrencyCode(current.draft.defaultCurrency)
+        if (fromCurrency == null || toCurrency == null) {
+            _uiState.update {
+                it.copy(
+                    regionalConversionPreviewLabel = "",
+                    regionalConversionErrorMessage = settingsRegionalPreviewCurrencyErrorMessage
+                )
+            }
+            return
+        }
+
+        val localeTag = current.draft.defaultLocale
+            .trim()
+            .takeIf { value -> value.isNotEmpty() }
+            ?: defaultRegionalLocale
+
+        launchWork {
+            _uiState.update {
+                it.copy(
+                    isRegionalConversionLoading = true,
+                    regionalConversionErrorMessage = null
+                )
+            }
+
+            runCatching {
+                val convertedAmount = regionalCurrencyPreviewConverter.convert(
+                    value = amount,
+                    fromCurrency = fromCurrency,
+                    toCurrency = toCurrency
+                )
+                val sourceLabel = formatCurrencyAmount(
+                    value = amount,
+                    currencyCode = fromCurrency,
+                    localeTag = localeTag,
+                    maximumFractionDigits = 2
+                )
+                val targetLabel = formatCurrencyAmount(
+                    value = convertedAmount,
+                    currencyCode = toCurrency,
+                    localeTag = localeTag,
+                    maximumFractionDigits = 2
+                )
+                "$sourceLabel ≈ $targetLabel"
+            }.onSuccess { previewLabel ->
+                _uiState.update {
+                    it.copy(
+                        isRegionalConversionLoading = false,
+                        regionalConversionPreviewLabel = previewLabel,
+                        regionalConversionErrorMessage = null
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isRegionalConversionLoading = false,
+                        regionalConversionPreviewLabel = "",
+                        regionalConversionErrorMessage =
+                            error.message ?: "Unable to load conversion preview right now."
+                    )
+                }
+            }
         }
     }
 
@@ -509,6 +653,8 @@ class SettingsPreferencesViewModel(
         _uiState.update {
             it.copy(
                 draft = appSettingsStore.settings.value.toDraft(),
+                regionalConversionPreviewLabel = "",
+                regionalConversionErrorMessage = null,
                 statusMessage = "Reverted unsaved changes."
             )
         }
@@ -537,7 +683,15 @@ class SettingsPreferencesViewModel(
     companion object {
         fun factory(
             appSettingsStore: AppSettingsStore,
-            backupSecretsStore: BackupSecretsStore? = null
+            backupSecretsStore: BackupSecretsStore? = null,
+            regionalCurrencyPreviewConverter: RegionalCurrencyPreviewConverter =
+                RegionalCurrencyPreviewConverter { value, fromCurrency, toCurrency ->
+                    convertCurrencyAmount(
+                        value = value,
+                        fromCurrency = fromCurrency,
+                        toCurrency = toCurrency
+                    )
+                }
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -545,7 +699,8 @@ class SettingsPreferencesViewModel(
                     if (modelClass.isAssignableFrom(SettingsPreferencesViewModel::class.java)) {
                         return SettingsPreferencesViewModel(
                             appSettingsStore = appSettingsStore,
-                            backupSecretsStore = backupSecretsStore
+                            backupSecretsStore = backupSecretsStore,
+                            regionalCurrencyPreviewConverter = regionalCurrencyPreviewConverter
                         ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -579,6 +734,15 @@ internal fun parseSettingsBackupRetentionDaysInput(raw: String): Int? {
     if (value.isEmpty()) return null
 
     return value.toIntOrNull()?.takeIf { it in 1..3650 }
+}
+
+internal fun parseSettingsRegionalPreviewAmountInput(raw: String): Double? {
+    val parsed = raw.trim().toDoubleOrNull() ?: return null
+    if (!parsed.isFinite() || parsed < 0) {
+        return null
+    }
+
+    return parsed
 }
 
 private fun AppSettings.toDraft(): SettingsPreferencesDraft = SettingsPreferencesDraft(

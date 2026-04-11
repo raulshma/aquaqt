@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -48,6 +51,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.backup.BackupCloudSyncGateway
+import com.keepaside.aquapt.core.localization.RegionalCountryOption
+import com.keepaside.aquapt.core.localization.listRegionalCountryOptions
+import com.keepaside.aquapt.core.localization.listSupportedCurrencyCodes
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.model.RegionalPreferencesMode
 import com.keepaside.aquapt.core.repository.AppSettingsStore
@@ -214,6 +220,9 @@ fun SettingsBackupScreen(
                 onDefaultCountryCodeChanged = settingsPreferencesViewModel::onDefaultCountryCodeChanged,
                 onDefaultCountryNameChanged = settingsPreferencesViewModel::onDefaultCountryNameChanged,
                 onDefaultCurrencyChanged = settingsPreferencesViewModel::onDefaultCurrencyChanged,
+                onRegionalConversionAmountChanged = settingsPreferencesViewModel::onRegionalConversionAmountChanged,
+                onRegionalConversionBaseCurrencyChanged = settingsPreferencesViewModel::onRegionalConversionBaseCurrencyChanged,
+                onRefreshRegionalConversionPreview = settingsPreferencesViewModel::refreshRegionalConversionPreview,
                 onSave = settingsPreferencesViewModel::savePreferences,
                 onReset = settingsPreferencesViewModel::resetDraftToSaved
             )
@@ -990,6 +999,9 @@ private fun SettingsPreferencesSection(
     onDefaultCountryCodeChanged: (String) -> Unit,
     onDefaultCountryNameChanged: (String) -> Unit,
     onDefaultCurrencyChanged: (String) -> Unit,
+    onRegionalConversionAmountChanged: (String) -> Unit,
+    onRegionalConversionBaseCurrencyChanged: (String) -> Unit,
+    onRefreshRegionalConversionPreview: () -> Unit,
     onSave: () -> Unit,
     onReset: () -> Unit
 ) {
@@ -1390,6 +1402,10 @@ private fun SettingsPreferencesSection(
             }
 
             if (uiState.draft.regionalPreferencesMode == RegionalPreferencesMode.MANUAL) {
+                var showCountryPicker by remember { mutableStateOf(false) }
+                var showDefaultCurrencyPicker by remember { mutableStateOf(false) }
+                var showBaseCurrencyPicker by remember { mutableStateOf(false) }
+
                 OutlinedTextField(
                     value = uiState.draft.defaultLocale,
                     onValueChange = onDefaultLocaleChanged,
@@ -1407,6 +1423,25 @@ private fun SettingsPreferencesSection(
                     supportingText = { Text("Example: America/New_York") },
                     enabled = !uiState.isSaving
                 )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { showCountryPicker = true },
+                        enabled = !uiState.isSaving
+                    ) {
+                        Text("Pick country")
+                    }
+
+                    OutlinedButton(
+                        onClick = { showDefaultCurrencyPicker = true },
+                        enabled = !uiState.isSaving
+                    ) {
+                        Text("Pick currency")
+                    }
+                }
 
                 OutlinedTextField(
                     value = uiState.draft.defaultCountryCode,
@@ -1434,6 +1469,133 @@ private fun SettingsPreferencesSection(
                     supportingText = { Text("Example: USD") },
                     enabled = !uiState.isSaving
                 )
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Live currency preview",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+
+                        Text(
+                            text = "Preview conversion into ${uiState.draft.defaultCurrency.ifBlank { "the selected target currency" }}.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        OutlinedTextField(
+                            value = uiState.regionalConversionAmountInput,
+                            onValueChange = onRegionalConversionAmountChanged,
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Preview amount") },
+                            supportingText = { Text("Use a non-negative numeric value.") },
+                            enabled = !uiState.isSaving,
+                            singleLine = true
+                        )
+
+                        OutlinedTextField(
+                            value = uiState.regionalConversionBaseCurrency,
+                            onValueChange = onRegionalConversionBaseCurrencyChanged,
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Base currency") },
+                            supportingText = { Text("Example: USD") },
+                            enabled = !uiState.isSaving,
+                            singleLine = true
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showBaseCurrencyPicker = true },
+                                enabled = !uiState.isSaving
+                            ) {
+                                Text("Pick base currency")
+                            }
+
+                            Button(
+                                onClick = onRefreshRegionalConversionPreview,
+                                enabled =
+                                    !uiState.isSaving &&
+                                        !uiState.isRegionalConversionLoading
+                            ) {
+                                Text(
+                                    if (uiState.isRegionalConversionLoading) {
+                                        "Refreshing..."
+                                    } else {
+                                        "Refresh preview"
+                                    }
+                                )
+                            }
+                        }
+
+                        if (uiState.regionalConversionPreviewLabel.isNotBlank()) {
+                            Text(
+                                text = uiState.regionalConversionPreviewLabel,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+
+                        uiState.regionalConversionErrorMessage?.takeIf { message ->
+                            message.isNotBlank()
+                        }?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+
+                if (showCountryPicker) {
+                    CountryPickerDialog(
+                        selectedCountryCode = uiState.draft.defaultCountryCode,
+                        onDismiss = { showCountryPicker = false },
+                        onSelectCountry = { option ->
+                            onDefaultCountryCodeChanged(option.code)
+                            onDefaultCountryNameChanged(option.name)
+                            if (uiState.draft.defaultCurrency.isBlank()) {
+                                onDefaultCurrencyChanged(option.currency)
+                            }
+                            showCountryPicker = false
+                        }
+                    )
+                }
+
+                if (showDefaultCurrencyPicker) {
+                    CurrencyPickerDialog(
+                        title = "Pick default currency",
+                        selectedCurrency = uiState.draft.defaultCurrency,
+                        onDismiss = { showDefaultCurrencyPicker = false },
+                        onSelectCurrency = { currency ->
+                            onDefaultCurrencyChanged(currency)
+                            showDefaultCurrencyPicker = false
+                        }
+                    )
+                }
+
+                if (showBaseCurrencyPicker) {
+                    CurrencyPickerDialog(
+                        title = "Pick base currency",
+                        selectedCurrency = uiState.regionalConversionBaseCurrency,
+                        onDismiss = { showBaseCurrencyPicker = false },
+                        onSelectCurrency = { currency ->
+                            onRegionalConversionBaseCurrencyChanged(currency)
+                            showBaseCurrencyPicker = false
+                        }
+                    )
+                }
             }
 
             Row(
@@ -1538,4 +1700,135 @@ private fun buildHistoryRangeSummaryText(startDateInput: String, endDateInput: S
         end != null -> "up to $end"
         else -> "the provided date range"
     }
+}
+
+@Composable
+private fun CountryPickerDialog(
+    selectedCountryCode: String,
+    onDismiss: () -> Unit,
+    onSelectCountry: (RegionalCountryOption) -> Unit
+) {
+    val countryOptions = remember { listRegionalCountryOptions() }
+    var query by remember { mutableStateOf("") }
+    val normalizedQuery = query.trim()
+    val filteredOptions = remember(normalizedQuery, countryOptions) {
+        if (normalizedQuery.isEmpty()) {
+            countryOptions
+        } else {
+            countryOptions.filter { option ->
+                option.code.contains(normalizedQuery, ignoreCase = true) ||
+                    option.name.contains(normalizedQuery, ignoreCase = true) ||
+                    option.currency.contains(normalizedQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pick country") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Search") },
+                    supportingText = { Text("Search by country, code, or currency.") },
+                    singleLine = true
+                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(filteredOptions) { option ->
+                        TextButton(
+                            onClick = { onSelectCountry(option) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = if (option.code.equals(selectedCountryCode, ignoreCase = true)) {
+                                    "✓ ${option.name} (${option.code}) • ${option.currency}"
+                                } else {
+                                    "${option.name} (${option.code}) • ${option.currency}"
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+private fun CurrencyPickerDialog(
+    title: String,
+    selectedCurrency: String,
+    onDismiss: () -> Unit,
+    onSelectCurrency: (String) -> Unit
+) {
+    val currencyOptions = remember { listSupportedCurrencyCodes() }
+    var query by remember { mutableStateOf("") }
+    val normalizedQuery = query.trim()
+    val filteredOptions = remember(normalizedQuery, currencyOptions) {
+        if (normalizedQuery.isEmpty()) {
+            currencyOptions
+        } else {
+            currencyOptions.filter { currency ->
+                currency.contains(normalizedQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Search") },
+                    supportingText = { Text("Search by 3-letter currency code.") },
+                    singleLine = true
+                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(filteredOptions) { currency ->
+                        TextButton(
+                            onClick = { onSelectCurrency(currency) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = if (currency.equals(selectedCurrency, ignoreCase = true)) {
+                                    "✓ $currency"
+                                } else {
+                                    currency
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }

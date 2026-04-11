@@ -22,6 +22,81 @@ import org.junit.Test
 class SettingsPreferencesViewModelTest {
 
     @Test
+    fun `regional conversion preview uses converter and publishes formatted label`() = runTest {
+        val fakeStore = FakePreferencesAppSettingsStore(
+            AppSettings(
+                regionalPreferencesMode = RegionalPreferencesMode.MANUAL,
+                defaultLocale = "en-US",
+                defaultTimezone = "America/New_York",
+                defaultCountryCode = "US",
+                defaultCountryName = "United States",
+                defaultCurrency = "USD"
+            )
+        )
+        val converter = FakeRegionalCurrencyPreviewConverter(convertedAmount = 9162.5)
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            externalScope = this,
+            regionalCurrencyPreviewConverter = converter
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onDefaultCurrencyChanged("INR")
+            viewModel.onRegionalConversionBaseCurrencyChanged("USD")
+            viewModel.onRegionalConversionAmountChanged("100")
+            viewModel.refreshRegionalConversionPreview()
+            advanceUntilIdle()
+
+            assertEquals(1, converter.callCount)
+            assertEquals(100.0, converter.lastValue, 0.00001)
+            assertEquals("USD", converter.lastFromCurrency)
+            assertEquals("INR", converter.lastToCurrency)
+            assertTrue(viewModel.uiState.value.regionalConversionPreviewLabel.contains("≈"))
+            assertEquals(null, viewModel.uiState.value.regionalConversionErrorMessage)
+            assertFalse(viewModel.uiState.value.isRegionalConversionLoading)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `regional conversion preview rejects invalid amount input`() = runTest {
+        val fakeStore = FakePreferencesAppSettingsStore(
+            AppSettings(
+                regionalPreferencesMode = RegionalPreferencesMode.MANUAL,
+                defaultCurrency = "USD"
+            )
+        )
+        val converter = FakeRegionalCurrencyPreviewConverter(convertedAmount = 1.0)
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            externalScope = this,
+            regionalCurrencyPreviewConverter = converter
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onDefaultCurrencyChanged("EUR")
+            viewModel.onRegionalConversionBaseCurrencyChanged("USD")
+            viewModel.onRegionalConversionAmountChanged("abc")
+            viewModel.refreshRegionalConversionPreview()
+            advanceUntilIdle()
+
+            assertEquals(0, converter.callCount)
+            assertEquals(
+                settingsRegionalPreviewAmountErrorMessage,
+                viewModel.uiState.value.regionalConversionErrorMessage
+            )
+            assertEquals("", viewModel.uiState.value.regionalConversionPreviewLabel)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
     fun `save preferences persists normalized manual values`() = runTest {
         val fakeStore = FakePreferencesAppSettingsStore()
         val viewModel = SettingsPreferencesViewModel(
@@ -216,6 +291,11 @@ class SettingsPreferencesViewModelTest {
         assertEquals(30, parseSettingsBackupRetentionDaysInput("30"))
         assertEquals(null, parseSettingsBackupRetentionDaysInput("0"))
         assertEquals(null, parseSettingsBackupRetentionDaysInput(""))
+
+        assertEquals(42.5, parseSettingsRegionalPreviewAmountInput("42.5"))
+        assertEquals(0.0, parseSettingsRegionalPreviewAmountInput("0"))
+        assertEquals(null, parseSettingsRegionalPreviewAmountInput("-1"))
+        assertEquals(null, parseSettingsRegionalPreviewAmountInput("abc"))
     }
 
     @Test
@@ -373,5 +453,22 @@ private class FakeBackupSecretsStore(
 
     override suspend fun clearBackupS3Credentials() {
         credentials = null
+    }
+}
+
+private class FakeRegionalCurrencyPreviewConverter(
+    private val convertedAmount: Double
+) : RegionalCurrencyPreviewConverter {
+    var callCount: Int = 0
+    var lastValue: Double = 0.0
+    var lastFromCurrency: String = ""
+    var lastToCurrency: String = ""
+
+    override suspend fun convert(value: Double, fromCurrency: String, toCurrency: String): Double {
+        callCount += 1
+        lastValue = value
+        lastFromCurrency = fromCurrency
+        lastToCurrency = toCurrency
+        return convertedAmount
     }
 }
