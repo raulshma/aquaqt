@@ -8,6 +8,7 @@ import com.keepaside.aquapt.core.assistant.AssistantDictationController
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.assistant.AndroidSpeechAssistantDictationController
 import com.keepaside.aquapt.core.assistant.OpenRouterAssistantGateway
+import com.keepaside.aquapt.core.notifications.ReminderNotificationScheduler
 import com.keepaside.aquapt.core.database.dao.*
 import com.keepaside.aquapt.core.repository.*
 import org.koin.android.ext.koin.androidContext
@@ -48,6 +49,16 @@ val repositoryModule = module {
     single { IssueRepository(get()) }
     single { MemoRepository(get()) }
     single { TimelineEventRepository(get()) }
+
+    single {
+        ReminderNotificationScheduler(
+            appContext = androidContext(),
+            appSettingsStore = get(),
+            taskTemplateRepository = get(),
+            taskExecutionRepository = get(),
+            reminderGroupRepository = get()
+        )
+    }
 
     single {
         AppStateBackupCompatibilityService(

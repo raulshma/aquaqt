@@ -24,6 +24,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -149,11 +150,37 @@ private val topLevelDestinations = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AquaPTApp() {
+fun AquaPTApp(
+    externalRoute: String? = null,
+    onExternalRouteConsumed: (String) -> Unit = {}
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentRoute = currentDestination?.route
+
+    LaunchedEffect(externalRoute) {
+        val pendingRoute = externalRoute
+            ?.trim()
+            ?.takeIf { route -> route.isNotEmpty() }
+            ?: return@LaunchedEffect
+
+        val targetRoute = mapExternalRouteToNativeRoute(pendingRoute)
+            ?: run {
+                onExternalRouteConsumed(pendingRoute)
+                return@LaunchedEffect
+            }
+
+        navController.navigate(targetRoute) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+
+        onExternalRouteConsumed(pendingRoute)
+    }
 
     Scaffold(
         topBar = {
@@ -348,6 +375,22 @@ private fun topBarTitleForRoute(route: String?): String = when {
     route?.startsWith(AquaPTRoute.EntityEdit) == true -> "Edit activity"
     route?.startsWith(AquaPTRoute.Entity) == true -> "Entity details"
     else -> "AquaPT"
+}
+
+private fun mapExternalRouteToNativeRoute(route: String): String? {
+    val decoded = Uri.decode(route.trim())
+    val withoutScheme = decoded.removePrefix("aquapt://")
+
+    return when (withoutScheme) {
+        "/(tabs)/tanks", "/tanks", "tanks" -> AquaPTRoute.Tanks
+        "/(tabs)/tasks", "/tasks", "tasks" -> AquaPTRoute.Tasks
+        "/(tabs)/timeline", "/timeline", "timeline" -> AquaPTRoute.Timeline
+        "/(tabs)/assistant", "/assistant", "assistant" -> AquaPTRoute.Assistant
+        "/(tabs)/settings", "/settings", "settings" -> AquaPTRoute.Settings
+        "/livestock", "livestock" -> AquaPTRoute.Livestock
+        "/insights", "insights" -> AquaPTRoute.Insights
+        else -> null
+    }
 }
 
 private fun NavDestination?.isOnRoute(route: String): Boolean {
