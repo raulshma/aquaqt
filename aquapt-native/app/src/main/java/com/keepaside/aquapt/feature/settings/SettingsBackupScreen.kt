@@ -1,5 +1,13 @@
 package com.keepaside.aquapt.feature.settings
 
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,12 +30,18 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.model.AppThemePreference
@@ -42,6 +56,7 @@ fun SettingsBackupScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(24.dp)
 ) {
+    val context = LocalContext.current
     val backupGateway: BackupCompatibilityGateway = remember {
         KoinJavaComponent.get(BackupCompatibilityGateway::class.java)
     }
@@ -81,6 +96,29 @@ fun SettingsBackupScreen(
     )
     val reminderGroupsUiState by reminderGroupsViewModel.uiState.collectAsState()
 
+    var notificationPermissionStatus by remember {
+        mutableStateOf(resolveNotificationPermissionStatus(context))
+    }
+    val refreshNotificationPermissionStatus = remember(context) {
+        {
+            notificationPermissionStatus = resolveNotificationPermissionStatus(context)
+        }
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        refreshNotificationPermissionStatus()
+    }
+    val notificationSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        refreshNotificationPermissionStatus()
+    }
+
+    LaunchedEffect(context) {
+        refreshNotificationPermissionStatus()
+    }
+
 
     Box(
         modifier = modifier
@@ -102,6 +140,20 @@ fun SettingsBackupScreen(
                 onThemePreferenceChanged = settingsPreferencesViewModel::onThemePreferenceChanged,
                 onRegionalModeChanged = settingsPreferencesViewModel::onRegionalPreferencesModeChanged,
                 onNotificationsEnabledChanged = settingsPreferencesViewModel::onNotificationsEnabledChanged,
+                onBackupSyncEnabledChanged = settingsPreferencesViewModel::onBackupSyncEnabledChanged,
+                onBackupSyncHourChanged = settingsPreferencesViewModel::onBackupSyncHourChanged,
+                notificationPermissionStatus = notificationPermissionStatus,
+                onRequestNotificationPermission = {
+                    if (
+                        notificationPermissionStatus.runtimePermissionRequired &&
+                        !notificationPermissionStatus.runtimePermissionGranted
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                },
+                onOpenSystemNotificationSettings = {
+                    notificationSettingsLauncher.launch(createNotificationSettingsIntent(context))
+                },
                 onReminderHoursChanged = settingsPreferencesViewModel::onReminderHoursChanged,
                 onDefaultLocaleChanged = settingsPreferencesViewModel::onDefaultLocaleChanged,
                 onDefaultTimezoneChanged = settingsPreferencesViewModel::onDefaultTimezoneChanged,
@@ -319,6 +371,11 @@ private fun SettingsPreferencesSection(
     onThemePreferenceChanged: (AppThemePreference) -> Unit,
     onRegionalModeChanged: (RegionalPreferencesMode) -> Unit,
     onNotificationsEnabledChanged: (Boolean) -> Unit,
+    onBackupSyncEnabledChanged: (Boolean) -> Unit,
+    onBackupSyncHourChanged: (String) -> Unit,
+    notificationPermissionStatus: NotificationPermissionStatus,
+    onRequestNotificationPermission: () -> Unit,
+    onOpenSystemNotificationSettings: () -> Unit,
     onReminderHoursChanged: (String) -> Unit,
     onDefaultLocaleChanged: (String) -> Unit,
     onDefaultTimezoneChanged: (String) -> Unit,
@@ -443,6 +500,51 @@ private fun SettingsPreferencesSection(
                 )
             }
 
+            if (
+                uiState.draft.notificationsEnabled &&
+                !notificationPermissionStatus.canPostNotifications
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Reminder notifications need Android permission and app-level notification access.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+
+                        if (
+                            notificationPermissionStatus.runtimePermissionRequired &&
+                            !notificationPermissionStatus.runtimePermissionGranted
+                        ) {
+                            OutlinedButton(
+                                onClick = onRequestNotificationPermission,
+                                enabled = !uiState.isSaving
+                            ) {
+                                Text("Grant notification permission")
+                            }
+                        }
+
+                        if (!notificationPermissionStatus.appNotificationsEnabled) {
+                            OutlinedButton(
+                                onClick = onOpenSystemNotificationSettings,
+                                enabled = !uiState.isSaving
+                            ) {
+                                Text("Open notification settings")
+                            }
+                        }
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = uiState.draft.reminderHoursInput,
                 onValueChange = onReminderHoursChanged,
@@ -453,6 +555,67 @@ private fun SettingsPreferencesSection(
                 },
                 enabled = !uiState.isSaving
             )
+
+            Text(
+                text = "Backup automation",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Checkbox(
+                    checked = uiState.draft.backupSyncEnabled,
+                    onCheckedChange = { value -> onBackupSyncEnabledChanged(value) },
+                    enabled = !uiState.isSaving
+                )
+                Text(
+                    text = "Enable automatic backup sync",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            OutlinedTextField(
+                value = uiState.draft.backupSyncHourInput,
+                onValueChange = onBackupSyncHourChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Backup sync hour") },
+                supportingText = {
+                    Text("Runs once per day at/after this local 24h hour (default 3).")
+                },
+                enabled = !uiState.isSaving
+            )
+
+            Text(
+                text = "Last auto-sync date: ${uiState.draft.backupLastAutoSyncDate.ifBlank { "Never" }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = "Last successful sync: ${uiState.draft.backupLastSyncedAt.ifBlank { "Never" }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (uiState.draft.backupLastError.isNotBlank()) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Text(
+                        text = uiState.draft.backupLastError,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
 
             if (uiState.draft.regionalPreferencesMode == RegionalPreferencesMode.MANUAL) {
                 OutlinedTextField(
@@ -533,3 +696,36 @@ private fun RegionalPreferencesMode.toReadableLabel(): String = when (this) {
     RegionalPreferencesMode.AUTO -> "Auto"
     RegionalPreferencesMode.MANUAL -> "Manual"
 }
+
+private data class NotificationPermissionStatus(
+    val runtimePermissionRequired: Boolean,
+    val runtimePermissionGranted: Boolean,
+    val appNotificationsEnabled: Boolean
+) {
+    val canPostNotifications: Boolean
+        get() = runtimePermissionGranted && appNotificationsEnabled
+}
+
+private fun resolveNotificationPermissionStatus(
+    context: Context,
+    sdkInt: Int = Build.VERSION.SDK_INT
+): NotificationPermissionStatus {
+    val runtimePermissionRequired = sdkInt >= Build.VERSION_CODES.TIRAMISU
+    val runtimePermissionGranted = !runtimePermissionRequired ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    val appNotificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+
+    return NotificationPermissionStatus(
+        runtimePermissionRequired = runtimePermissionRequired,
+        runtimePermissionGranted = runtimePermissionGranted,
+        appNotificationsEnabled = appNotificationsEnabled
+    )
+}
+
+private fun createNotificationSettingsIntent(context: Context): Intent =
+    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    }

@@ -1,6 +1,7 @@
 package com.keepaside.aquapt
 
 import android.app.Application
+import com.keepaside.aquapt.core.backup.BackupAutoSyncScheduler
 import com.keepaside.aquapt.core.di.databaseModule
 import com.keepaside.aquapt.core.di.repositoryModule
 import com.keepaside.aquapt.core.notifications.ReminderNotificationScheduler
@@ -19,5 +20,9 @@ class AquaPTApplication : Application() {
         val reminderScheduler: ReminderNotificationScheduler =
             KoinJavaComponent.get(ReminderNotificationScheduler::class.java)
         reminderScheduler.start()
+
+        val backupAutoSyncScheduler: BackupAutoSyncScheduler =
+            KoinJavaComponent.get(BackupAutoSyncScheduler::class.java)
+        backupAutoSyncScheduler.start()
     }
 }

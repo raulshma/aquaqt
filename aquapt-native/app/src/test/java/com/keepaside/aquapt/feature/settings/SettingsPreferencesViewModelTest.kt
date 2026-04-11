@@ -28,6 +28,8 @@ class SettingsPreferencesViewModelTest {
             viewModel.onThemePreferenceChanged(AppThemePreference.DARK)
             viewModel.onRegionalPreferencesModeChanged(RegionalPreferencesMode.MANUAL)
             viewModel.onNotificationsEnabledChanged(true)
+            viewModel.onBackupSyncEnabledChanged(true)
+            viewModel.onBackupSyncHourChanged("5")
             viewModel.onAssistantMemoryEnabledChanged(true)
             viewModel.onAssistantMemoryModelChanged("openai/gpt-4o-mini")
             viewModel.onReminderHoursChanged("18, 8; 18")
@@ -44,6 +46,8 @@ class SettingsPreferencesViewModelTest {
             assertEquals(AppThemePreference.DARK, saved.themePreference)
             assertEquals(RegionalPreferencesMode.MANUAL, saved.regionalPreferencesMode)
             assertEquals(true, saved.notificationsEnabled)
+            assertEquals(true, saved.backupSyncEnabled)
+            assertEquals(5, saved.backupSyncHour)
             assertEquals(true, saved.assistantMemoryEnabled)
             assertEquals("openai/gpt-4o-mini", saved.assistantMemoryModel)
             assertEquals(listOf(8, 18), saved.reminderHours)
@@ -71,6 +75,25 @@ class SettingsPreferencesViewModelTest {
             advanceUntilIdle()
 
             assertEquals(settingsReminderHoursErrorMessage, viewModel.uiState.value.statusMessage)
+            assertEquals(0, fakeStore.setCalls)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `invalid backup sync hour blocks save`() = runTest {
+        val fakeStore = FakePreferencesAppSettingsStore()
+        val viewModel = SettingsPreferencesViewModel(fakeStore, this)
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onBackupSyncHourChanged("99")
+            viewModel.savePreferences()
+            advanceUntilIdle()
+
+            assertEquals(settingsBackupSyncHourErrorMessage, viewModel.uiState.value.statusMessage)
             assertEquals(0, fakeStore.setCalls)
         } finally {
             viewModel.disposeForTests()
@@ -115,6 +138,10 @@ class SettingsPreferencesViewModelTest {
         assertEquals(listOf(8, 18, 21), parseSettingsReminderHoursInput("18, 8; 21 8"))
         assertEquals(emptyList<Int>(), parseSettingsReminderHoursInput("   "))
         assertEquals(null, parseSettingsReminderHoursInput("9, 99"))
+
+        assertEquals(7, parseSettingsBackupSyncHourInput(" 7 "))
+        assertEquals(null, parseSettingsBackupSyncHourInput("24"))
+        assertEquals(null, parseSettingsBackupSyncHourInput(""))
     }
 }
 

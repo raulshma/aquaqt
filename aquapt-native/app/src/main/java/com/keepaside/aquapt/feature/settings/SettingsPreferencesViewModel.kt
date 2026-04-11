@@ -3,6 +3,7 @@ package com.keepaside.aquapt.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.keepaside.aquapt.core.backup.backupAutoSyncDefaultHour
 import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.model.RegionalPreferencesMode
@@ -21,6 +22,9 @@ internal const val settingsPreferencesDefaultStatus =
 internal const val settingsReminderHoursErrorMessage =
     "Reminder hours must be between 0 and 23."
 
+internal const val settingsBackupSyncHourErrorMessage =
+    "Backup sync hour must be between 0 and 23."
+
 data class SettingsPreferencesDraft(
     val openRouterApiKey: String = "",
     val aiModel: String = "",
@@ -29,6 +33,11 @@ data class SettingsPreferencesDraft(
     val themePreference: AppThemePreference = AppThemePreference.SYSTEM,
     val regionalPreferencesMode: RegionalPreferencesMode = RegionalPreferencesMode.AUTO,
     val notificationsEnabled: Boolean = false,
+    val backupSyncEnabled: Boolean = false,
+    val backupSyncHourInput: String = "",
+    val backupLastSyncedAt: String = "",
+    val backupLastAutoSyncDate: String = "",
+    val backupLastError: String = "",
     val reminderHoursInput: String = "",
     val defaultLocale: String = "",
     val defaultTimezone: String = "",
@@ -100,6 +109,18 @@ class SettingsPreferencesViewModel(
         }
     }
 
+    fun onBackupSyncEnabledChanged(value: Boolean) {
+        _uiState.update { state ->
+            state.copy(draft = state.draft.copy(backupSyncEnabled = value))
+        }
+    }
+
+    fun onBackupSyncHourChanged(value: String) {
+        _uiState.update { state ->
+            state.copy(draft = state.draft.copy(backupSyncHourInput = value))
+        }
+    }
+
     fun onReminderHoursChanged(value: String) {
         _uiState.update { state ->
             state.copy(draft = state.draft.copy(reminderHoursInput = value))
@@ -146,12 +167,24 @@ class SettingsPreferencesViewModel(
             return
         }
 
+        val backupSyncHour = parseSettingsBackupSyncHourInput(current.draft.backupSyncHourInput)
+        if (
+            backupSyncHour == null &&
+            current.draft.backupSyncHourInput.trim().isNotEmpty()
+        ) {
+            _uiState.update { it.copy(statusMessage = settingsBackupSyncHourErrorMessage) }
+            return
+        }
+
         launchWork {
             _uiState.update { it.copy(isSaving = true) }
 
             runCatching {
                 val existing = appSettingsStore.settings.value
                 val isManualMode = current.draft.regionalPreferencesMode == RegionalPreferencesMode.MANUAL
+                val normalizedBackupHour = backupSyncHour
+                    ?: existing.backupSyncHour
+                    ?: backupAutoSyncDefaultHour
 
                 appSettingsStore.setSettings(
                     existing.copy(
@@ -164,6 +197,8 @@ class SettingsPreferencesViewModel(
                         themePreference = current.draft.themePreference,
                         regionalPreferencesMode = current.draft.regionalPreferencesMode,
                         notificationsEnabled = current.draft.notificationsEnabled,
+                        backupSyncEnabled = current.draft.backupSyncEnabled,
+                        backupSyncHour = normalizedBackupHour,
                         reminderHours = reminderHours,
                         defaultLocale = if (isManualMode) {
                             current.draft.defaultLocale.trim().takeIf { it.isNotEmpty() }
@@ -274,6 +309,13 @@ internal fun parseSettingsReminderHoursInput(raw: String): List<Int>? {
         .sorted()
 }
 
+internal fun parseSettingsBackupSyncHourInput(raw: String): Int? {
+    val value = raw.trim()
+    if (value.isEmpty()) return null
+
+    return value.toIntOrNull()?.takeIf { it in 0..23 }
+}
+
 private fun AppSettings.toDraft(): SettingsPreferencesDraft = SettingsPreferencesDraft(
     openRouterApiKey = openRouterApiKey,
     aiModel = aiModel,
@@ -282,6 +324,11 @@ private fun AppSettings.toDraft(): SettingsPreferencesDraft = SettingsPreference
     themePreference = themePreference,
     regionalPreferencesMode = regionalPreferencesMode,
     notificationsEnabled = notificationsEnabled,
+    backupSyncEnabled = backupSyncEnabled,
+    backupSyncHourInput = (backupSyncHour ?: backupAutoSyncDefaultHour).toString(),
+    backupLastSyncedAt = backupLastSyncedAt.orEmpty(),
+    backupLastAutoSyncDate = backupLastAutoSyncDate.orEmpty(),
+    backupLastError = backupLastError.orEmpty(),
     reminderHoursInput = reminderHours.joinToString(", "),
     defaultLocale = defaultLocale.orEmpty(),
     defaultTimezone = defaultTimezone.orEmpty(),

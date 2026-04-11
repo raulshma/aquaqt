@@ -2,6 +2,7 @@ package com.keepaside.aquapt.core.di
 
 import com.keepaside.aquapt.core.backup.AppStateBackupCompatibilityService
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
+import com.keepaside.aquapt.core.backup.BackupAutoSyncScheduler
 import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
 import com.keepaside.aquapt.core.assistant.AssistantActionReviewServiceImpl
 import com.keepaside.aquapt.core.assistant.AssistantDictationController
@@ -57,6 +58,13 @@ val repositoryModule = module {
             taskTemplateRepository = get(),
             taskExecutionRepository = get(),
             reminderGroupRepository = get()
+        )
+    }
+
+    single {
+        BackupAutoSyncScheduler(
+            appContext = androidContext(),
+            appSettingsStore = get()
         )
     }
 
