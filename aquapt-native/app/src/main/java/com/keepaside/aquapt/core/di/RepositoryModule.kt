@@ -4,9 +4,12 @@ import com.keepaside.aquapt.core.backup.AppStateBackupCompatibilityService
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.database.dao.*
 import com.keepaside.aquapt.core.repository.*
+import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
 val repositoryModule = module {
+    single<AppSettingsStore> { AppSettingsRepository(androidContext()) }
+
     single { AquariumRepository(get()) }
     single { LivestockRepository(get()) }
     single { TaskTemplateRepository(get()) }

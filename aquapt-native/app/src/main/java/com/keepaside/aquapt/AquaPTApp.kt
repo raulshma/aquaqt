@@ -39,6 +39,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.feature.entity.EntityDetailScreen
+import com.keepaside.aquapt.feature.entity.EntityEditKind
+import com.keepaside.aquapt.feature.entity.EntityEditScreen
 import com.keepaside.aquapt.feature.entity.EntityFormScreen
 import com.keepaside.aquapt.feature.insights.GlobalInsightsScreen
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
@@ -64,16 +66,20 @@ private object AquaPTRoute {
     const val Insights = "insights"
     const val Entity = "entity"
     const val EntityForm = "entity-form"
+    const val EntityEdit = "entity-edit"
 
     private const val EntityKindArg = "kind"
     private const val EntityIdArg = "id"
     private const val EntityAquariumIdArg = "aquariumId"
     private const val EntityTargetIdArg = "targetId"
+    private const val EntityEditKindArg = "editKind"
+    private const val EntityEditIdArg = "editId"
     private const val MissingAquariumIdToken = "_"
 
     const val EntityDetailPattern = "$Entity/{$EntityKindArg}/{$EntityIdArg}/{$EntityAquariumIdArg}"
     const val EntityFormPattern =
         "$EntityForm/{$EntityKindArg}/{$EntityAquariumIdArg}?$EntityTargetIdArg={$EntityTargetIdArg}"
+    const val EntityEditPattern = "$EntityEdit/{$EntityEditKindArg}/{$EntityEditIdArg}"
 
     fun entityDetailRoute(kind: EntityKind, id: String, aquariumId: String?): String {
         val encodedKind = Uri.encode(kind.name)
@@ -98,6 +104,12 @@ private object AquaPTRoute {
         }
     }
 
+    fun entityEditRoute(kind: EntityEditKind, id: String): String {
+        val encodedKind = Uri.encode(kind.routeToken)
+        val encodedId = Uri.encode(id)
+        return "$EntityEdit/$encodedKind/$encodedId"
+    }
+
     fun parseEntityKind(value: String?): EntityKind? =
         runCatching { value?.let { EntityKind.valueOf(Uri.decode(it)) } }.getOrNull()
 
@@ -110,6 +122,11 @@ private object AquaPTRoute {
 
     fun parseEntityTargetId(value: String?): String? =
         value?.let(Uri::decode)?.takeIf { it.isNotBlank() }
+
+    fun parseEntityEditKind(value: String?): EntityEditKind? =
+        EntityEditKind.fromRouteToken(value?.let(Uri::decode))
+
+    fun parseEntityEditId(value: String?): String = value?.let(Uri::decode).orEmpty()
 }
 
 private val topLevelDestinations = listOf(
@@ -269,6 +286,16 @@ fun AquaPTApp() {
                         ) {
                             launchSingleTop = true
                         }
+                    },
+                    onOpenEntityEdit = { editKind, editId ->
+                        navController.navigate(
+                            AquaPTRoute.entityEditRoute(
+                                kind = editKind,
+                                id = editId
+                            )
+                        ) {
+                            launchSingleTop = true
+                        }
                     }
                 )
             }
@@ -281,6 +308,18 @@ fun AquaPTApp() {
                     kind = kind,
                     aquariumId = aquariumId,
                     targetEntityId = targetEntityId,
+                    onDone = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+            composable(AquaPTRoute.EntityEditPattern) { backStackEntry ->
+                val kind = AquaPTRoute.parseEntityEditKind(backStackEntry.arguments?.getString("editKind"))
+                val entityId = AquaPTRoute.parseEntityEditId(backStackEntry.arguments?.getString("editId"))
+
+                EntityEditScreen(
+                    kind = kind,
+                    entityId = entityId,
                     onDone = {
                         navController.popBackStack()
                     }
@@ -299,6 +338,7 @@ private fun topBarTitleForRoute(route: String?): String = when {
     route == AquaPTRoute.Livestock -> "Livestock"
     route == AquaPTRoute.Insights -> "Global insights"
     route?.startsWith(AquaPTRoute.EntityForm) == true -> "New activity"
+    route?.startsWith(AquaPTRoute.EntityEdit) == true -> "Edit activity"
     route?.startsWith(AquaPTRoute.Entity) == true -> "Entity details"
     else -> "AquaPT"
 }

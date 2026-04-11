@@ -3,7 +3,13 @@ package com.keepaside.aquapt.feature.settings
 import com.keepaside.aquapt.core.backup.AppStateImportResult
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.backup.PersistedAppStateSnapshot
+import com.keepaside.aquapt.core.model.AppSettings
+import com.keepaside.aquapt.core.model.AppThemePreference
+import com.keepaside.aquapt.core.repository.AppSettingsStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -20,7 +26,10 @@ class SettingsBackupViewModelTest {
             exportJson = "{\"aquariums\":[]}",
             exportError = null
         )
-        val viewModel = SettingsBackupViewModel(fake, this)
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fake,
+            externalScope = this
+        )
 
         viewModel.exportJson()
         advanceUntilIdle()
@@ -38,7 +47,10 @@ class SettingsBackupViewModelTest {
     @Test
     fun `import reports empty payload without gateway call`() = runTest {
         val fake = FakeBackupGateway()
-        val viewModel = SettingsBackupViewModel(fake, this)
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fake,
+            externalScope = this
+        )
 
         viewModel.importJson()
         advanceUntilIdle()
@@ -56,7 +68,10 @@ class SettingsBackupViewModelTest {
                 skippedCounts = mapOf("taskExecutions" to 2, "timeline" to 1)
             )
         )
-        val viewModel = SettingsBackupViewModel(fake, this)
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fake,
+            externalScope = this
+        )
         viewModel.onPayloadChanged("{\"aquariums\":[]}")
         viewModel.onReplaceExistingChanged(false)
 
@@ -77,7 +92,10 @@ class SettingsBackupViewModelTest {
             exportError = IllegalStateException("No data"),
             importError = IllegalArgumentException("Invalid payload")
         )
-        val viewModel = SettingsBackupViewModel(fake, this)
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fake,
+            externalScope = this
+        )
 
         viewModel.exportJson()
         advanceUntilIdle()
@@ -87,6 +105,38 @@ class SettingsBackupViewModelTest {
         viewModel.importJson()
         advanceUntilIdle()
         assertEquals("Invalid payload", viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun `export uses persisted settings and import restores snapshot settings`() = runTest {
+        val importedSettings = AppSettings(
+            themePreference = AppThemePreference.DARK,
+            defaultCurrency = "USD"
+        )
+        val fakeGateway = FakeBackupGateway(
+            importResult = AppStateImportResult(
+                snapshot = PersistedAppStateSnapshot(settings = importedSettings)
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(themePreference = AppThemePreference.LIGHT)
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            externalScope = this
+        )
+
+        viewModel.exportJson()
+        advanceUntilIdle()
+        assertEquals(AppThemePreference.LIGHT, fakeGateway.lastExportSettings?.themePreference)
+
+        viewModel.onPayloadChanged("{\"aquariums\":[]}")
+        viewModel.importJson()
+        advanceUntilIdle()
+
+        assertEquals(AppThemePreference.DARK, fakeStore.settings.value.themePreference)
+        assertEquals("USD", fakeStore.settings.value.defaultCurrency)
     }
 }
 
@@ -99,9 +149,11 @@ private class FakeBackupGateway(
     var exportCalls: Int = 0
     var importCalls: Int = 0
     var lastReplaceExisting: Boolean = true
+    var lastExportSettings: AppSettings? = null
 
     override suspend fun exportCurrentStateJson(settings: com.keepaside.aquapt.core.model.AppSettings, pretty: Boolean): String {
         exportCalls += 1
+        lastExportSettings = settings
         exportError?.let { throw it }
         return exportJson
     }
@@ -111,5 +163,17 @@ private class FakeBackupGateway(
         lastReplaceExisting = replaceExisting
         importError?.let { throw it }
         return importResult
+    }
+}
+
+private class FakeAppSettingsStore(
+    initial: AppSettings = AppSettings()
+) : AppSettingsStore {
+    private val flow = MutableStateFlow(initial)
+
+    override val settings: StateFlow<AppSettings> = flow.asStateFlow()
+
+    override suspend fun setSettings(settings: AppSettings) {
+        flow.value = settings
     }
 }

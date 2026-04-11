@@ -67,6 +67,14 @@ data class EntityRelatedPhotoItem(
     val supportingText: String
 )
 
+data class EntityTaskExecutionItem(
+    val id: String,
+    val aquariumId: String,
+    val aquariumName: String,
+    val completedAtLabel: String,
+    val note: String?
+)
+
 data class EntityIssueEditorState(
     val id: String,
     val title: String,
@@ -96,6 +104,7 @@ data class EntityDetailUiState(
     val photoUri: String? = null,
     val metrics: List<EntityDetailMetric> = emptyList(),
     val fields: List<EntityDetailField> = emptyList(),
+    val taskExecutionHistory: List<EntityTaskExecutionItem> = emptyList(),
     val relatedPhotos: List<EntityRelatedPhotoItem> = emptyList(),
     val relatedEvents: List<EntityRelatedEventItem> = emptyList(),
     val issueEditor: EntityIssueEditorState? = null,
@@ -110,6 +119,7 @@ private data class ResolvedEntityDetail(
     val photoUri: String? = null,
     val metrics: List<EntityDetailMetric> = emptyList(),
     val fields: List<EntityDetailField> = emptyList(),
+    val taskExecutionHistory: List<EntityTaskExecutionItem> = emptyList(),
     val issueEditor: EntityIssueEditorState? = null,
     val memoEditor: EntityMemoEditorState? = null
 )
@@ -539,6 +549,20 @@ internal fun assembleEntityDetailUiState(
             val taskExecutionsForTemplate = taskExecutions
                 .filter { it.taskTemplateId == task.id }
 
+            val taskExecutionHistory = taskExecutionsForTemplate
+                .sortedWith(compareByDescending<TaskExecution> {
+                    parseToInstant(it.completedAt, zoneId)?.toEpochMilli() ?: Long.MIN_VALUE
+                }.thenByDescending { it.completedAt })
+                .map { execution ->
+                    EntityTaskExecutionItem(
+                        id = execution.id,
+                        aquariumId = execution.aquariumId,
+                        aquariumName = aquariumNameById[execution.aquariumId] ?: "Unknown tank",
+                        completedAtLabel = formatDateTime(execution.completedAt, zoneId),
+                        note = execution.note
+                    )
+                }
+
             val latestCompletion = taskExecutionsForTemplate
                 .maxByOrNull { parseToInstant(it.completedAt, zoneId)?.toEpochMilli() ?: Long.MIN_VALUE }
                 ?.let { formatDateTime(it.completedAt, zoneId) }
@@ -591,7 +615,8 @@ internal fun assembleEntityDetailUiState(
                     latestCompletion?.let {
                         add(EntityDetailField("Latest completion", it))
                     }
-                }
+                },
+                taskExecutionHistory = taskExecutionHistory
             )
         }
 
@@ -856,6 +881,7 @@ internal fun assembleEntityDetailUiState(
         photoUri = resolved.photoUri,
         metrics = resolved.metrics + EntityDetailMetric("Linked events", matchingEvents.size.toString()),
         fields = resolved.fields,
+        taskExecutionHistory = resolved.taskExecutionHistory,
         relatedPhotos = relatedPhotos,
         relatedEvents = relatedEvents,
         issueEditor = resolved.issueEditor,

@@ -12,13 +12,20 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.keepaside.aquapt.core.model.AppThemePreference
 
 @Composable
 fun AquaPTTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themePreference: AppThemePreference = AppThemePreference.SYSTEM,
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val darkTheme = when (themePreference) {
+        AppThemePreference.SYSTEM -> isSystemInDarkTheme()
+        AppThemePreference.LIGHT -> false
+        AppThemePreference.DARK -> true
+    }
+
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current

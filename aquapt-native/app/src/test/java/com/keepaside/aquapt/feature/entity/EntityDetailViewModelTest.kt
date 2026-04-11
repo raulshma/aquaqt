@@ -128,6 +128,9 @@ class EntityDetailViewModelTest {
         assertEquals("Weekly", fieldByLabel["Frequency"])
         assertEquals("2026-04-11 09:30", fieldByLabel["Latest completion"])
         assertEquals(1, state.relatedEvents.size)
+        assertEquals(2, state.taskExecutionHistory.size)
+        assertEquals("exec-new", state.taskExecutionHistory.first().id)
+        assertEquals("Display", state.taskExecutionHistory.first().aquariumName)
     }
 
     @Test

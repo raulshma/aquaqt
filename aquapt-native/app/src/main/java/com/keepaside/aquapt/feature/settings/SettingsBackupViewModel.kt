@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
+import com.keepaside.aquapt.core.model.AppSettings
+import com.keepaside.aquapt.core.repository.AppSettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,7 @@ data class SettingsBackupUiState(
 
 class SettingsBackupViewModel(
     private val backupGateway: BackupCompatibilityGateway,
+    private val appSettingsStore: AppSettingsStore? = null,
     private val externalScope: CoroutineScope? = null
 ) : ViewModel() {
 
@@ -44,7 +47,10 @@ class SettingsBackupViewModel(
             _uiState.update { it.copy(isBusy = true) }
 
             runCatching {
-                backupGateway.exportCurrentStateJson(pretty = true)
+                backupGateway.exportCurrentStateJson(
+                    settings = appSettingsStore?.settings?.value ?: AppSettings(),
+                    pretty = true
+                )
             }.onSuccess { exported ->
                 _uiState.update {
                     it.copy(
@@ -77,10 +83,12 @@ class SettingsBackupViewModel(
             _uiState.update { it.copy(isBusy = true) }
 
             runCatching {
-                backupGateway.importFromJson(
+                val result = backupGateway.importFromJson(
                     payload = _uiState.value.payload,
                     replaceExisting = _uiState.value.replaceExisting
                 )
+                appSettingsStore?.setSettings(result.snapshot.settings)
+                result
             }.onSuccess { result ->
                 val skippedSummary = if (result.skippedCounts.isEmpty()) {
                     "No skipped records."
@@ -111,12 +119,18 @@ class SettingsBackupViewModel(
     }
 
     companion object {
-        fun factory(backupGateway: BackupCompatibilityGateway): ViewModelProvider.Factory =
+        fun factory(
+            backupGateway: BackupCompatibilityGateway,
+            appSettingsStore: AppSettingsStore? = null
+        ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     if (modelClass.isAssignableFrom(SettingsBackupViewModel::class.java)) {
-                        return SettingsBackupViewModel(backupGateway) as T
+                        return SettingsBackupViewModel(
+                            backupGateway = backupGateway,
+                            appSettingsStore = appSettingsStore
+                        ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
                 }

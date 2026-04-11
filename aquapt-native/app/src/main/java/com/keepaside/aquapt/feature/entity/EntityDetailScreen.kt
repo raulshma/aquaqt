@@ -59,6 +59,7 @@ fun EntityDetailScreen(
     entityId: String,
     aquariumId: String?,
     onOpenEntityForm: (EntityKind, String?, String?) -> Unit = { _, _, _ -> },
+    onOpenEntityEdit: (EntityEditKind, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp)
 ) {
@@ -300,6 +301,21 @@ fun EntityDetailScreen(
                                 uiState.aquariumId,
                                 uiState.entityId
                             )
+                        }
+                    )
+                }
+            }
+
+            if (!uiState.isNotFound && kind == EntityKind.TASK) {
+                item {
+                    TaskActionsCard(
+                        isBusy = uiState.isActionInProgress,
+                        executionHistory = uiState.taskExecutionHistory,
+                        onEditTemplate = {
+                            onOpenEntityEdit(EntityEditKind.TASK_TEMPLATE, uiState.entityId)
+                        },
+                        onEditExecution = { executionId ->
+                            onOpenEntityEdit(EntityEditKind.TASK_EXECUTION, executionId)
                         }
                     )
                 }
@@ -654,6 +670,86 @@ private fun ConsumableActionsCard(
                     enabled = !isBusy
                 ) {
                     Text("Use consumable")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskActionsCard(
+    isBusy: Boolean,
+    executionHistory: List<EntityTaskExecutionItem>,
+    onEditTemplate: () -> Unit,
+    onEditExecution: (String) -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Task actions",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = "Edit this recurring template or adjust completion history records.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onEditTemplate,
+                    enabled = !isBusy
+                ) {
+                    Text("Edit template")
+                }
+            }
+
+            Text(
+                text = "Recent completions",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (executionHistory.isEmpty()) {
+                Text(
+                    text = "No completion history yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                executionHistory.take(8).forEach { execution ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "${execution.completedAtLabel} • ${execution.aquariumName}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        execution.note?.takeIf { it.isNotBlank() }?.let { note ->
+                            Text(
+                                text = note,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = { onEditExecution(execution.id) },
+                            enabled = !isBusy
+                        ) {
+                            Text("Edit execution")
+                        }
+                    }
                 }
             }
         }
