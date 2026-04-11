@@ -6,6 +6,7 @@ import com.keepaside.aquapt.core.model.EntityRef
 import com.keepaside.aquapt.core.model.Issue
 import com.keepaside.aquapt.core.model.IssueStatus
 import com.keepaside.aquapt.core.model.Livestock
+import com.keepaside.aquapt.core.model.Memo
 import com.keepaside.aquapt.core.model.TaskCategory
 import com.keepaside.aquapt.core.model.TaskExecution
 import com.keepaside.aquapt.core.model.TaskFrequency
@@ -14,6 +15,7 @@ import com.keepaside.aquapt.core.model.TimelineEvent
 import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.model.WaterType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -237,5 +239,108 @@ class EntityDetailViewModelTest {
         assertEquals("Issue not found.", state.headline)
         assertEquals("Quarantine", state.aquariumName)
         assertNull(state.subtitle)
+    }
+
+    @Test
+    fun `issue detail exposes issue editor state`() {
+        val aquarium = Aquarium(
+            id = "a-hospital",
+            name = "Hospital",
+            volumeLiters = 60.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val issue = Issue(
+            id = "issue-fin-rot",
+            aquariumId = aquarium.id,
+            title = "Fin rot signs",
+            status = IssueStatus.MONITORING,
+            createdAt = "2026-04-11T08:00:00Z",
+            resolutionNote = "Salt + observation"
+        )
+
+        val state = assembleEntityDetailUiState(
+            kind = EntityKind.ISSUE,
+            entityId = issue.id,
+            routeAquariumId = aquarium.id,
+            aquariums = listOf(aquarium),
+            taskTemplates = emptyList(),
+            taskExecutions = emptyList(),
+            livestock = emptyList(),
+            assets = emptyList(),
+            consumables = emptyList(),
+            issues = listOf(issue),
+            memos = emptyList(),
+            dosingLogs = emptyList(),
+            parameterLogs = emptyList(),
+            timelineEvents = emptyList(),
+            zoneId = ZoneOffset.UTC
+        )
+
+        val editor = state.issueEditor
+        assertNotNull(editor)
+        assertEquals(issue.id, editor?.id)
+        assertEquals(issue.title, editor?.title)
+        assertEquals(IssueStatus.MONITORING, editor?.status)
+        assertEquals("Salt + observation", editor?.resolutionNote)
+    }
+
+    @Test
+    fun `memo detail exposes memo editor state`() {
+        val aquarium = Aquarium(
+            id = "a-betta",
+            name = "Betta",
+            volumeLiters = 25.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val memo = Memo(
+            id = "memo-1",
+            aquariumId = aquarium.id,
+            content = "Fish is eating better after lights dimmed.",
+            createdAt = "2026-04-11T07:30:00Z",
+            photoUri = "content://memo-photo"
+        )
+
+        val state = assembleEntityDetailUiState(
+            kind = EntityKind.MEMO,
+            entityId = memo.id,
+            routeAquariumId = aquarium.id,
+            aquariums = listOf(aquarium),
+            taskTemplates = emptyList(),
+            taskExecutions = emptyList(),
+            livestock = emptyList(),
+            assets = emptyList(),
+            consumables = emptyList(),
+            issues = emptyList(),
+            memos = listOf(memo),
+            dosingLogs = emptyList(),
+            parameterLogs = emptyList(),
+            timelineEvents = emptyList(),
+            zoneId = ZoneOffset.UTC
+        )
+
+        val editor = state.memoEditor
+        assertNotNull(editor)
+        assertEquals(memo.id, editor?.id)
+        assertEquals(memo.content, editor?.content)
+        assertEquals(memo.photoUri, editor?.photoUri)
+    }
+
+    @Test
+    fun `issue update description summarizes status and note changes`() {
+        val previous = Issue(
+            id = "issue-1",
+            aquariumId = "a-1",
+            title = "Cloudy water",
+            status = IssueStatus.OPEN,
+            createdAt = "2026-04-11T08:00:00Z",
+            resolutionNote = null
+        )
+        val updated = previous.copy(
+            status = IssueStatus.RESOLVED,
+            resolutionNote = "Resolved after large water change"
+        )
+
+        val description = buildIssueUpdateDescription(previous, updated)
+        assertEquals("Status Open → Resolved • Resolution note updated", description)
     }
 }

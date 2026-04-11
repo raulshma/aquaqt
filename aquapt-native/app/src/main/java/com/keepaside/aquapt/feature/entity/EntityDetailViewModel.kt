@@ -16,6 +16,7 @@ import com.keepaside.aquapt.core.model.Memo
 import com.keepaside.aquapt.core.model.TaskExecution
 import com.keepaside.aquapt.core.model.TaskTemplate
 import com.keepaside.aquapt.core.model.TimelineEvent
+import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.model.WaterParameterLog
 import com.keepaside.aquapt.core.model.WaterParameters
 import com.keepaside.aquapt.core.repository.AssetRepository
@@ -41,6 +42,7 @@ import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 data class EntityDetailField(
     val label: String,
@@ -58,8 +60,24 @@ data class EntityRelatedEventItem(
     val supportingText: String
 )
 
+data class EntityIssueEditorState(
+    val id: String,
+    val title: String,
+    val aquariumId: String,
+    val status: IssueStatus,
+    val resolutionNote: String?
+)
+
+data class EntityMemoEditorState(
+    val id: String,
+    val aquariumId: String,
+    val content: String,
+    val photoUri: String?
+)
+
 data class EntityDetailUiState(
     val isLoading: Boolean = true,
+    val isActionInProgress: Boolean = false,
     val isNotFound: Boolean = false,
     val headline: String = "Loading entity details...",
     val kindLabel: String = "Entity",
@@ -71,6 +89,8 @@ data class EntityDetailUiState(
     val metrics: List<EntityDetailMetric> = emptyList(),
     val fields: List<EntityDetailField> = emptyList(),
     val relatedEvents: List<EntityRelatedEventItem> = emptyList(),
+    val issueEditor: EntityIssueEditorState? = null,
+    val memoEditor: EntityMemoEditorState? = null,
     val statusMessage: String? = null
 )
 
@@ -80,7 +100,9 @@ private data class ResolvedEntityDetail(
     val aquariumId: String? = null,
     val photoUri: String? = null,
     val metrics: List<EntityDetailMetric> = emptyList(),
-    val fields: List<EntityDetailField> = emptyList()
+    val fields: List<EntityDetailField> = emptyList(),
+    val issueEditor: EntityIssueEditorState? = null,
+    val memoEditor: EntityMemoEditorState? = null
 )
 
 class EntityDetailViewModel(
@@ -98,6 +120,8 @@ class EntityDetailViewModel(
     private val dosingLogRepository: DosingLogRepository,
     private val waterParameterLogRepository: WaterParameterLogRepository,
     private val timelineEventRepository: TimelineEventRepository,
+    private val nowProvider: () -> Instant = { Instant.now() },
+    private val idProvider: () -> String = { UUID.randomUUID().toString() },
     private val zoneId: ZoneId = ZoneId.systemDefault()
 ) : ViewModel() {
 
@@ -120,6 +144,13 @@ class EntityDetailViewModel(
         val parameterLogs: List<WaterParameterLog>,
         val timelineEvents: List<TimelineEvent>
     )
+
+    private data class EntityActionState(
+        val isBusy: Boolean = false,
+        val statusMessage: String? = null
+    )
+
+    private val actionState = MutableStateFlow(EntityActionState())
 
     private val _uiState = MutableStateFlow(EntityDetailUiState())
     val uiState: StateFlow<EntityDetailUiState> = _uiState.asStateFlow()
@@ -173,9 +204,10 @@ class EntityDetailViewModel(
             combine(
                 coreDataFlow,
                 inventoryDataFlow,
-                logDataFlow
-            ) { coreData, inventoryData, logData ->
-                assembleEntityDetailUiState(
+                logDataFlow,
+                actionState
+            ) { coreData, inventoryData, logData, action ->
+                val assembled = assembleEntityDetailUiState(
                     kind = kind,
                     entityId = entityId,
                     routeAquariumId = routeAquariumId,
@@ -192,10 +224,183 @@ class EntityDetailViewModel(
                     timelineEvents = logData.timelineEvents,
                     zoneId = zoneId
                 )
+
+                assembled.copy(
+                    isActionInProgress = action.isBusy,
+                    statusMessage = action.statusMessage ?: assembled.statusMessage
+                )
             }.collect { next ->
                 _uiState.update { next.copy(isLoading = false) }
             }
         }
+    }
+
+    fun saveIssueUpdate(status: IssueStatus, resolutionNoteInput: String) {
+        if (kind != EntityKind.ISSUE) {
+            setActionStatus("Issue actions are only available for issue details.")
+            return
+        }
+
+        val normalizedNote = resolutionNoteInput.trim().ifBlank { null }
+        withAction(
+            errorFallback = "Unable to save issue changes."
+        ) {
+            val issue = issueRepository.getById(entityId.trim())
+                ?: error("Issue no longer exists.")
+
+            val updatedIssue = issue.copy(
+                status = status,
+                resolutionNote = normalizedNote
+            )
+
+            if (updatedIssue == issue) {
+                setActionStatus("No issue changes to save.")
+                return@withAction
+            }
+
+            issueRepository.upsert(updatedIssue)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = updatedIssue.aquariumId,
+                    type = TimelineEventType.ISSUE,
+                    createdAt = nowProvider().toString(),
+                    title = updatedIssue.title,
+                    description = buildIssueUpdateDescription(issue, updatedIssue),
+                    source = EntityRef(EntityKind.ISSUE, updatedIssue.id, updatedIssue.aquariumId),
+                    related = aquariumRelatedRefs(updatedIssue.aquariumId)
+                )
+            )
+
+            setActionStatus("Issue updated: ${updatedIssue.status.label()}.")
+        }
+    }
+
+    fun saveMemoContent(contentInput: String) {
+        if (kind != EntityKind.MEMO) {
+            setActionStatus("Memo actions are only available for memo details.")
+            return
+        }
+
+        val content = contentInput.trim()
+        if (content.isBlank()) {
+            setActionStatus("Write memo content before saving.")
+            return
+        }
+
+        withAction(
+            errorFallback = "Unable to save memo changes."
+        ) {
+            val memo = memoRepository.getById(entityId.trim())
+                ?: error("Memo no longer exists.")
+
+            if (memo.content.trim() == content) {
+                setActionStatus("No memo content changes to save.")
+                return@withAction
+            }
+
+            val updatedMemo = memo.copy(content = content)
+            memoRepository.upsert(updatedMemo)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = updatedMemo.aquariumId,
+                    type = TimelineEventType.MEMO,
+                    createdAt = nowProvider().toString(),
+                    title = "Memo updated",
+                    description = content,
+                    photoUri = updatedMemo.photoUri,
+                    source = EntityRef(EntityKind.MEMO, updatedMemo.id, updatedMemo.aquariumId),
+                    related = aquariumRelatedRefs(updatedMemo.aquariumId)
+                )
+            )
+
+            setActionStatus("Memo updated.")
+        }
+    }
+
+    fun deleteCurrentEntity() {
+        when (kind) {
+            EntityKind.ISSUE -> deleteIssue()
+            EntityKind.MEMO -> deleteMemo()
+            else -> setActionStatus("Delete is not available for this entity type yet.")
+        }
+    }
+
+    private fun deleteIssue() {
+        withAction(
+            errorFallback = "Unable to delete issue."
+        ) {
+            val issue = issueRepository.getById(entityId.trim())
+                ?: error("Issue no longer exists.")
+
+            issueRepository.deleteById(issue.id)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = issue.aquariumId,
+                    type = TimelineEventType.ISSUE,
+                    createdAt = nowProvider().toString(),
+                    title = "Deleted issue",
+                    description = issue.title,
+                    source = EntityRef(EntityKind.ISSUE, issue.id, issue.aquariumId),
+                    related = aquariumRelatedRefs(issue.aquariumId)
+                )
+            )
+
+            setActionStatus("Issue deleted.")
+        }
+    }
+
+    private fun deleteMemo() {
+        withAction(
+            errorFallback = "Unable to delete memo."
+        ) {
+            val memo = memoRepository.getById(entityId.trim())
+                ?: error("Memo no longer exists.")
+
+            memoRepository.deleteById(memo.id)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = memo.aquariumId,
+                    type = TimelineEventType.MEMO,
+                    createdAt = nowProvider().toString(),
+                    title = "Deleted memo",
+                    description = memo.content.trim().take(160).ifBlank { null },
+                    photoUri = memo.photoUri,
+                    source = EntityRef(EntityKind.MEMO, memo.id, memo.aquariumId),
+                    related = aquariumRelatedRefs(memo.aquariumId)
+                )
+            )
+
+            setActionStatus("Memo deleted.")
+        }
+    }
+
+    private fun withAction(
+        errorFallback: String,
+        action: suspend () -> Unit
+    ) {
+        viewModelScope.launch {
+            actionState.update { it.copy(isBusy = true) }
+
+            runCatching {
+                action()
+            }.onFailure { error ->
+                setActionStatus(error.message ?: errorFallback)
+            }
+
+            actionState.update { it.copy(isBusy = false) }
+        }
+    }
+
+    private fun setActionStatus(message: String) {
+        actionState.update { it.copy(statusMessage = message) }
     }
 
     companion object {
@@ -495,7 +700,14 @@ internal fun assembleEntityDetailUiState(
                     issue.resolutionNote?.takeIf { it.isNotBlank() }?.let {
                         add(EntityDetailField("Resolution note", it))
                     }
-                }
+                },
+                issueEditor = EntityIssueEditorState(
+                    id = issue.id,
+                    title = issue.title,
+                    aquariumId = issue.aquariumId,
+                    status = issue.status,
+                    resolutionNote = issue.resolutionNote
+                )
             )
         }
 
@@ -524,7 +736,13 @@ internal fun assembleEntityDetailUiState(
                     if (content.isNotBlank()) {
                         add(EntityDetailField("Content", content))
                     }
-                }
+                },
+                memoEditor = EntityMemoEditorState(
+                    id = memo.id,
+                    aquariumId = memo.aquariumId,
+                    content = memo.content,
+                    photoUri = memo.photoUri
+                )
             )
         }
 
@@ -611,6 +829,8 @@ internal fun assembleEntityDetailUiState(
         metrics = resolved.metrics + EntityDetailMetric("Linked events", matchingEvents.size.toString()),
         fields = resolved.fields,
         relatedEvents = relatedEvents,
+        issueEditor = resolved.issueEditor,
+        memoEditor = resolved.memoEditor,
         statusMessage = if (matchingEvents.isEmpty()) {
             "No linked timeline entries yet."
         } else {
@@ -658,6 +878,25 @@ private fun EntityKind.label(): String =
 
 private fun Enum<*>.label(): String =
     name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+
+internal fun buildIssueUpdateDescription(previous: Issue, updated: Issue): String {
+    val parts = mutableListOf<String>()
+    if (previous.status != updated.status) {
+        parts += "Status ${previous.status.label()} → ${updated.status.label()}"
+    }
+    if (previous.resolutionNote != updated.resolutionNote) {
+        if (updated.resolutionNote.isNullOrBlank()) {
+            parts += "Resolution note cleared"
+        } else {
+            parts += "Resolution note updated"
+        }
+    }
+
+    return parts.joinToString(" • ").ifBlank { "Issue updated" }
+}
+
+private fun aquariumRelatedRefs(aquariumId: String, vararg extras: EntityRef): List<EntityRef> =
+    listOf(EntityRef(EntityKind.AQUARIUM, aquariumId, aquariumId)) + extras
 
 private fun formatAmount(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()

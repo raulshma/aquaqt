@@ -11,15 +11,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -27,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.model.EntityKind
+import com.keepaside.aquapt.core.model.IssueStatus
 import com.keepaside.aquapt.core.repository.AssetRepository
 import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.ConsumableRepository
@@ -119,6 +128,23 @@ fun EntityDetailScreen(
     )
 
     val uiState by detailViewModel.uiState.collectAsState()
+    val issueEditor = uiState.issueEditor
+    val memoEditor = uiState.memoEditor
+
+    var issueStatusDraft by remember(issueEditor?.id, issueEditor?.status) {
+        mutableStateOf(issueEditor?.status ?: IssueStatus.OPEN)
+    }
+    var issueResolutionDraft by remember(issueEditor?.id, issueEditor?.resolutionNote) {
+        mutableStateOf(issueEditor?.resolutionNote.orEmpty())
+    }
+
+    var memoContentDraft by remember(memoEditor?.id, memoEditor?.content) {
+        mutableStateOf(memoEditor?.content.orEmpty())
+    }
+
+    var showDeleteDialog by remember(uiState.entityId, uiState.kindLabel) {
+        mutableStateOf(false)
+    }
 
     Box(
         modifier = modifier
@@ -236,6 +262,39 @@ fun EntityDetailScreen(
                 }
             }
 
+            if (!uiState.isNotFound && issueEditor != null) {
+                item {
+                    IssueActionsCard(
+                        status = issueStatusDraft,
+                        resolutionNote = issueResolutionDraft,
+                        isBusy = uiState.isActionInProgress,
+                        onStatusChanged = { issueStatusDraft = it },
+                        onResolutionNoteChanged = { issueResolutionDraft = it },
+                        onSave = {
+                            detailViewModel.saveIssueUpdate(
+                                status = issueStatusDraft,
+                                resolutionNoteInput = issueResolutionDraft
+                            )
+                        },
+                        onDelete = { showDeleteDialog = true }
+                    )
+                }
+            }
+
+            if (!uiState.isNotFound && memoEditor != null) {
+                item {
+                    MemoActionsCard(
+                        content = memoContentDraft,
+                        isBusy = uiState.isActionInProgress,
+                        onContentChanged = { memoContentDraft = it },
+                        onSave = {
+                            detailViewModel.saveMemoContent(memoContentDraft)
+                        },
+                        onDelete = { showDeleteDialog = true }
+                    )
+                }
+            }
+
             if (!uiState.isNotFound && uiState.relatedEvents.isNotEmpty()) {
                 item {
                     Card {
@@ -288,8 +347,152 @@ fun EntityDetailScreen(
                 }
             }
         }
+
+        if (showDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = {
+                    Text(text = "Delete ${uiState.kindLabel.lowercase()}?")
+                },
+                text = {
+                    Text(
+                        text = "This removes the ${uiState.kindLabel.lowercase()} record. " +
+                            "A timeline entry will still be added for activity history."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteDialog = false
+                            detailViewModel.deleteCurrentEntity()
+                        }
+                    ) {
+                        Text(text = "Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteDialog = false }) {
+                        Text(text = "Cancel")
+                    }
+                }
+            )
+        }
     }
 }
+
+@Composable
+private fun IssueActionsCard(
+    status: IssueStatus,
+    resolutionNote: String,
+    isBusy: Boolean,
+    onStatusChanged: (IssueStatus) -> Unit,
+    onResolutionNoteChanged: (String) -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Issue actions",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(IssueStatus.entries, key = { it.name }) { option ->
+                    FilterChip(
+                        selected = option == status,
+                        onClick = { onStatusChanged(option) },
+                        enabled = !isBusy,
+                        label = { Text(option.label()) }
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = resolutionNote,
+                onValueChange = onResolutionNoteChanged,
+                label = { Text("Resolution note") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy,
+                minLines = 2
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onSave,
+                    enabled = !isBusy
+                ) {
+                    Text("Save issue")
+                }
+
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = !isBusy
+                ) {
+                    Text("Delete")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoActionsCard(
+    content: String,
+    isBusy: Boolean,
+    onContentChanged: (String) -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Memo actions",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            OutlinedTextField(
+                value = content,
+                onValueChange = onContentChanged,
+                label = { Text("Memo content") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy,
+                minLines = 3
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onSave,
+                    enabled = !isBusy
+                ) {
+                    Text("Save memo")
+                }
+
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = !isBusy
+                ) {
+                    Text("Delete")
+                }
+            }
+        }
+    }
+}
+
+private fun IssueStatus.label(): String =
+    name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
 
 @Composable
 private fun MetricCard(metric: EntityDetailMetric) {
