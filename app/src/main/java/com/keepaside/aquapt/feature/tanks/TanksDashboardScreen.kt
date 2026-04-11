@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -73,6 +74,8 @@ import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
 import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
+import com.keepaside.aquapt.ui.theme.NeoHeroContainer
+import com.keepaside.aquapt.ui.theme.NeoHeroOnContainer
 import org.koin.java.KoinJavaComponent
 
 @Composable
@@ -181,8 +184,10 @@ fun TanksDashboardScreen(
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
+                        containerColor = NeoHeroContainer
+                    ),
+                    shape = MaterialTheme.shapes.large,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
                     Column(
                         modifier = Modifier
@@ -193,12 +198,12 @@ fun TanksDashboardScreen(
                         Text(
                             text = "Today at a glance",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = NeoHeroOnContainer
                         )
                         Text(
                             text = uiState.headline,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = NeoHeroOnContainer.copy(alpha = 0.78f)
                         )
 
                         Row(
@@ -268,7 +273,13 @@ fun TanksDashboardScreen(
 
             if (uiState.isEmpty) {
                 item {
-                    Card {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                         Text(
                             text = "No aquariums yet. Import a backup in Settings or add your first tank with the quick action above.",
                             modifier = Modifier.padding(16.dp),
@@ -280,7 +291,13 @@ fun TanksDashboardScreen(
 
             if (uiState.alerts.isNotEmpty()) {
                 item {
-                    Card {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -303,7 +320,13 @@ fun TanksDashboardScreen(
 
             if (uiState.dueTasks.isNotEmpty()) {
                 item {
-                    Card {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -335,7 +358,13 @@ fun TanksDashboardScreen(
             }
 
             items(uiState.aquariums, key = { it.aquariumId }) { aquarium ->
-                Card {
+                Card(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -496,6 +525,8 @@ fun TanksDashboardScreen(
                     viewModel.prepareQuickLog()
                     showQuickLog = true
                 },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(bottom = 16.dp, end = 16.dp)
@@ -536,7 +567,13 @@ private fun QuickCreateActionsCard(
     onCreateAsset: () -> Unit,
     onCreateConsumable: () -> Unit
 ) {
-    Card {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = NeoHeroContainer.copy(alpha = 0.92f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -546,12 +583,13 @@ private fun QuickCreateActionsCard(
             Text(
                 text = "Quick actions",
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = NeoHeroOnContainer
             )
             Text(
                 text = "Create tanks, residents, equipment, and consumables without leaving the dashboard.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = NeoHeroOnContainer.copy(alpha = 0.76f)
             )
 
             Row(
@@ -560,6 +598,10 @@ private fun QuickCreateActionsCard(
             ) {
                 FilledTonalButton(
                     onClick = onCreateAquarium,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Add tank")
@@ -567,6 +609,10 @@ private fun QuickCreateActionsCard(
                 FilledTonalButton(
                     onClick = onCreateLivestock,
                     enabled = hasAquariums,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Add resident")
@@ -580,6 +626,10 @@ private fun QuickCreateActionsCard(
                 FilledTonalButton(
                     onClick = onCreateAsset,
                     enabled = hasAquariums,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Add asset")
@@ -587,6 +637,10 @@ private fun QuickCreateActionsCard(
                 FilledTonalButton(
                     onClick = onCreateConsumable,
                     enabled = hasAquariums,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Add consumable")
@@ -987,9 +1041,11 @@ private fun MetricCard(
 ) {
     Card(
         modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+            containerColor = MaterialTheme.colorScheme.primary
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
@@ -998,12 +1054,13 @@ private fun MetricCard(
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.72f)
             )
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary
             )
         }
     }
@@ -1220,7 +1277,13 @@ private fun ParameterAnalyticsCard(
     onSelectMetric: (AnalyticMetric) -> Unit,
     onSelectAquarium: (String?) -> Unit
 ) {
-    Card {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1238,9 +1301,11 @@ private fun ParameterAnalyticsCard(
             )
 
             Card(
+                shape = MaterialTheme.shapes.medium,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
                 Column(
                     modifier = Modifier

@@ -1,5 +1,6 @@
 package com.keepaside.aquapt
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,8 +21,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +42,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.feature.assistant.AssistantScreen
 import com.keepaside.aquapt.feature.entity.EntityDetailScreen
@@ -212,59 +217,100 @@ fun AquaPTApp(
         onExternalRouteConsumed(pendingRoute)
     }
 
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        text = topBarTitleForRoute(currentRoute),
-                        style = MaterialTheme.typography.titleLarge
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.26f),
+                        MaterialTheme.colorScheme.background
                     )
-                },
-                actions = {
-                    if (currentRoute != AquaPTRoute.Insights) {
-                        IconButton(
-                            onClick = {
-                                navController.navigate(AquaPTRoute.Insights) {
-                                    launchSingleTop = true
-                                }
-                            }
+                )
+            )
+    ) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                CenterAlignedTopAppBar(
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    title = {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Analytics,
-                                contentDescription = "Open global insights"
+                            Text(
+                                text = topBarTitleForRoute(currentRoute),
+                                style = MaterialTheme.typography.titleLarge
                             )
+                            topBarSubtitleForRoute(currentRoute)?.let { subtitle ->
+                                Text(
+                                    text = subtitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        if (currentRoute != AquaPTRoute.Insights) {
+                            IconButton(
+                                onClick = {
+                                    navController.navigate(AquaPTRoute.Insights) {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Analytics,
+                                    contentDescription = "Open global insights"
+                                )
+                            }
                         }
                     }
-                }
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                topLevelDestinations.forEach { destination ->
-                    NavigationBarItem(
-                        selected = currentDestination.isOnRoute(destination.route),
-                        onClick = {
-                            navController.navigate(destination.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                )
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+                ) {
+                    topLevelDestinations.forEach { destination ->
+                        NavigationBarItem(
+                            selected = currentDestination.isOnRoute(destination.route),
+                            onClick = {
+                                navController.navigate(destination.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        label = { Text(destination.label) },
-                        icon = destination.icon
-                    )
+                            },
+                            label = { Text(destination.label) },
+                            icon = destination.icon,
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                indicatorColor = MaterialTheme.colorScheme.primary,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
+                    }
                 }
             }
-        }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = AquaPTRoute.Tanks,
-            modifier = Modifier.padding(innerPadding)
-        ) {
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = AquaPTRoute.Tanks,
+                modifier = Modifier.padding(innerPadding)
+            ) {
             composable(AquaPTRoute.Tanks) {
                 TanksDashboardScreen()
             }
@@ -480,6 +526,7 @@ fun AquaPTApp(
                     }
                 )
             }
+            }
         }
     }
 }
@@ -499,6 +546,17 @@ private fun topBarTitleForRoute(route: String?): String = when {
     route?.startsWith(AquaPTRoute.EntityEdit) == true -> "Edit activity"
     route?.startsWith(AquaPTRoute.Entity) == true -> "Entity details"
     else -> "AquaPT"
+}
+
+private fun topBarSubtitleForRoute(route: String?): String? = when {
+    route == AquaPTRoute.Tanks -> "Live tank health at a glance"
+    route == AquaPTRoute.Tasks -> "Recurring care, done on time"
+    route == AquaPTRoute.Timeline -> "Every event, one clear stream"
+    route == AquaPTRoute.Assistant -> "Context-aware aquarium copilot"
+    route == AquaPTRoute.Settings -> "Personalize your workflow"
+    route == AquaPTRoute.Insights -> "Cross-tank performance insights"
+    route?.startsWith(AquaPTRoute.Entity) == true -> "Detailed activity context"
+    else -> null
 }
 
 internal fun mapExternalRouteToNativeRoute(route: String): String? {

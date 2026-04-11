@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,6 +54,8 @@ import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.ReminderGroupRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
+import com.keepaside.aquapt.ui.theme.NeoHeroContainer
+import com.keepaside.aquapt.ui.theme.NeoHeroOnContainer
 import org.koin.java.KoinJavaComponent
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -125,8 +128,10 @@ fun TasksDashboardScreen(
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                    )
+                        containerColor = NeoHeroContainer
+                    ),
+                    shape = MaterialTheme.shapes.large,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
                     Column(
                         modifier = Modifier
@@ -137,12 +142,12 @@ fun TasksDashboardScreen(
                         Text(
                             text = "Tasks overview",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                            color = NeoHeroOnContainer
                         )
                         Text(
                             text = uiState.headline,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                            color = NeoHeroOnContainer.copy(alpha = 0.78f)
                         )
 
                         Row(
@@ -176,7 +181,13 @@ fun TasksDashboardScreen(
 
             if (uiState.isEmpty) {
                 item {
-                    Card {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                         Text(
                             text = "No task data yet. Create a care template here or import data in Settings.",
                             modifier = Modifier.padding(16.dp),
@@ -202,7 +213,13 @@ fun TasksDashboardScreen(
 
             if (uiState.dueTasks.isNotEmpty()) {
                 item {
-                    Card {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -231,7 +248,13 @@ fun TasksDashboardScreen(
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        FilledTonalButton(onClick = { viewModel.completeTaskNow(due) }) {
+                                        FilledTonalButton(
+                                            onClick = { viewModel.completeTaskNow(due) },
+                                            colors = ButtonDefaults.filledTonalButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.primary,
+                                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                            )
+                                        ) {
                                             Text("Complete now")
                                         }
                                         OutlinedButton(onClick = { viewModel.backdateTaskByDays(due, days = 1) }) {
@@ -260,7 +283,13 @@ fun TasksDashboardScreen(
 
             if (uiState.dosingSnapshots.any { it.count > 0 }) {
                 item {
-                    Card {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -294,7 +323,13 @@ fun TasksDashboardScreen(
 
             if (uiState.recentExecutions.isNotEmpty()) {
                 item {
-                    Card {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -443,7 +478,13 @@ private fun TaskTemplateManagementCard(
     onViewDetails: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
-    Card {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -472,7 +513,11 @@ private fun TaskTemplateManagementCard(
                 }
                 FilledTonalButton(
                     onClick = onCreate,
-                    enabled = uiState.aquariumOptions.isNotEmpty()
+                    enabled = uiState.aquariumOptions.isNotEmpty(),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
                     Text("Create")
                 }
@@ -889,9 +934,11 @@ private fun SummaryTile(
 ) {
     Card(
         modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+            containerColor = MaterialTheme.colorScheme.primary
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
@@ -900,12 +947,13 @@ private fun SummaryTile(
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.72f)
             )
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary
             )
         }
     }

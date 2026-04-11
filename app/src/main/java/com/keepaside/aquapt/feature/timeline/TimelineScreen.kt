@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,6 +60,8 @@ import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
 import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
+import com.keepaside.aquapt.ui.theme.NeoHeroContainer
+import com.keepaside.aquapt.ui.theme.NeoHeroOnContainer
 import org.koin.java.KoinJavaComponent
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -174,8 +177,10 @@ fun TimelineScreen(
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
+                        containerColor = NeoHeroContainer
+                    ),
+                    shape = MaterialTheme.shapes.large,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
                     Column(
                         modifier = Modifier
@@ -186,12 +191,12 @@ fun TimelineScreen(
                         Text(
                             text = "Activity timeline",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            color = NeoHeroOnContainer
                         )
                         Text(
                             text = uiState.headline,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            color = NeoHeroOnContainer.copy(alpha = 0.78f)
                         )
 
                         Row(
@@ -220,7 +225,11 @@ fun TimelineScreen(
                                 viewModel.prepareQuickLog()
                                 showQuickLogSheet = true
                             },
-                            enabled = uiState.aquariumFilters.isNotEmpty()
+                            enabled = uiState.aquariumFilters.isNotEmpty(),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
                         ) {
                             Text("Quick log")
                         }
@@ -238,7 +247,13 @@ fun TimelineScreen(
 
             if (uiState.isEmpty) {
                 item {
-                    Card {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                         Text(
                             text = if (uiState.aquariumFilters.isEmpty()) {
                                 "No tanks yet. Import a backup in Settings or add a tank in an upcoming creation flow."
@@ -254,7 +269,13 @@ fun TimelineScreen(
 
             if (uiState.dayGroups.isEmpty() && !uiState.isEmpty) {
                 item {
-                    Card {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                         Text(
                             text = "No events match these filters.",
                             modifier = Modifier.padding(16.dp),
@@ -365,7 +386,13 @@ private fun TimelineFilters(
     onAquariumSelected: (String?) -> Unit,
     onTypeSelected: (TimelineEventType?) -> Unit
 ) {
-    Card {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -420,7 +447,13 @@ private fun TimelineDayGroupCard(
     group: TimelineDayGroup,
     onEventSelected: (String) -> Unit
 ) {
-    Card {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -775,9 +808,11 @@ private fun SummaryTile(
 ) {
     Card(
         modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+            containerColor = MaterialTheme.colorScheme.primary
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
@@ -786,12 +821,13 @@ private fun SummaryTile(
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.72f)
             )
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary
             )
         }
     }
