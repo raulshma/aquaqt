@@ -42,6 +42,13 @@ private const val assistantMemoryCompactionSnippetLimit = 24
 private const val assistantMemoryCompactionSnippetCharLimit = 320
 private const val assistantMemoryCompactionFactCharLimit = 220
 
+val QUICK_PROMPT_SUGGESTIONS = listOf(
+    "What should I do for my tanks today?",
+    "Review my open issues and suggest priorities.",
+    "Plan this week's maintenance tasks.",
+    "Any dosing or parameter checks due today?"
+)
+
 private object NoOpAssistantMemoryStore : AssistantMemoryStore {
     private val empty = MutableStateFlow<List<AssistantMemorySnippet>>(emptyList())
 
@@ -214,6 +221,11 @@ class AssistantViewModel(
     fun onComposerTextChanged(value: String) {
         if (isBusy()) return
         composerText.update { value }
+    }
+
+    fun applyQuickPrompt(prompt: String) {
+        if (isBusy()) return
+        composerText.update { prompt }
     }
 
     fun onConversationSearchQueryChanged(value: String) {

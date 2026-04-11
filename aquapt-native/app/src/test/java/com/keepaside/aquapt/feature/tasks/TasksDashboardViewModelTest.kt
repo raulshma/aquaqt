@@ -296,7 +296,7 @@ class TasksDashboardViewModelTest {
             taskTemplates = listOf(template),
             taskExecutions = listOf(execution),
             dosingLogs = emptyList(),
-            now = now,
+            now = Instant.parse("2026-04-11T12:00:00Z"),
             zoneId = ZoneOffset.UTC,
             statusMessage = null
         )

@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -60,6 +63,7 @@ import com.keepaside.aquapt.core.model.AssistantMessageRole
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
 import com.keepaside.aquapt.core.repository.AssistantMemoryStore
 import com.keepaside.aquapt.core.repository.AppSettingsStore
+import com.keepaside.aquapt.feature.assistant.QUICK_PROMPT_SUGGESTIONS
 import kotlinx.coroutines.launch
 import org.koin.java.KoinJavaComponent
 
@@ -832,6 +836,28 @@ fun AssistantScreen(
                     }
                 }
             }
+
+                if (uiState.composerText.trim().isEmpty() && !uiState.isSending && !uiState.isDictating) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        QUICK_PROMPT_SUGGESTIONS.forEach { prompt ->
+                            AssistChip(
+                                onClick = { viewModel.applyQuickPrompt(prompt) },
+                                label = {
+                                    Text(
+                                        text = prompt,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

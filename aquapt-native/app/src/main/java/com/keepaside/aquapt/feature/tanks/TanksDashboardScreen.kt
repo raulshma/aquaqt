@@ -27,6 +27,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -35,7 +36,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -143,6 +146,19 @@ fun TanksDashboardScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     var aquariumDraft by remember { mutableStateOf<TanksAquariumDraft?>(null) }
+    var isEditingAquarium by remember { mutableStateOf(false) }
+    var editingAquariumId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(isEditingAquarium, editingAquariumId) {
+        val tankId = editingAquariumId
+        if (isEditingAquarium && tankId != null) {
+            val draft = viewModel.editAquariumDraft(tankId)
+            if (draft != null) {
+                aquariumDraft = draft
+            }
+            editingAquariumId = null
+        }
+    }
     var livestockDraft by remember { mutableStateOf<TanksLivestockDraft?>(null) }
     var assetDraft by remember { mutableStateOf<TanksAssetDraft?>(null) }
     var consumableDraft by remember { mutableStateOf<TanksConsumableDraft?>(null) }
@@ -336,12 +352,26 @@ fun TanksDashboardScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.weight(1f)
                             )
-                            AssistChip(
-                                onClick = {},
-                                label = {
-                                    Text("${aquarium.volumeLiters.toInt()}L")
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(
+                                    onClick = {
+                                        isEditingAquarium = true
+                                        editingAquariumId = aquarium.aquariumId
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit tank",
+                                        modifier = Modifier.padding(2.dp)
+                                    )
                                 }
-                            )
+                                AssistChip(
+                                    onClick = {},
+                                    label = {
+                                        Text("${aquarium.volumeLiters.toInt()}L")
+                                    }
+                                )
+                            }
                         }
 
                         Text(
@@ -408,10 +438,15 @@ fun TanksDashboardScreen(
             AquariumDraftDialog(
                 draft = draft,
                 onDraftChange = { aquariumDraft = it },
-                onDismiss = { aquariumDraft = null },
+                onDismiss = {
+                    aquariumDraft = null
+                    isEditingAquarium = false
+                    editingAquariumId = null
+                },
                 onConfirm = {
                     viewModel.saveAquariumDraft(draft)
                     aquariumDraft = null
+                    isEditingAquarium = false
                 }
             )
         }
@@ -568,9 +603,10 @@ private fun AquariumDraftDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
+    val isEdit = draft.id != null
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create tank") },
+        title = { Text(if (isEdit) "Edit tank" else "Create tank") },
         text = {
             Column(
                 modifier = Modifier
@@ -642,7 +678,7 @@ private fun AquariumDraftDialog(
                 onClick = onConfirm,
                 enabled = draft.name.isNotBlank() && draft.volumeLitersInput.isNotBlank()
             ) {
-                Text("Create")
+                Text(if (isEdit) "Save" else "Create")
             }
         },
         dismissButton = {

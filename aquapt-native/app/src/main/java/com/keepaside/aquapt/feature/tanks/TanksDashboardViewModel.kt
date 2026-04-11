@@ -146,6 +146,7 @@ data class TanksDashboardUiState(
 )
 
 data class TanksAquariumDraft(
+    val id: String? = null,
     val name: String = "",
     val volumeLitersInput: String = "",
     val dimensions: String = "",
@@ -310,6 +311,25 @@ class TanksDashboardViewModel(
             setupDateInput = DateTimeFormatter.ISO_LOCAL_DATE.format(nowProvider().atZone(zoneId))
         )
 
+    suspend fun editAquariumDraft(aquariumId: String): TanksAquariumDraft? {
+        val aquarium = aquariumRepository.getById(aquariumId) ?: return null
+        return TanksAquariumDraft(
+            id = aquarium.id,
+            name = aquarium.name,
+            volumeLitersInput = if (aquarium.volumeLiters == aquarium.volumeLiters.toInt().toDouble()) {
+                aquarium.volumeLiters.toInt().toString()
+            } else {
+                aquarium.volumeLiters.toString()
+            },
+            dimensions = aquarium.dimensions,
+            waterType = aquarium.waterType,
+            setupDateInput = aquarium.setupDate,
+            investmentCostInput = aquarium.investmentCost?.let { cost ->
+                if (cost == cost.toInt().toDouble()) cost.toInt().toString() else cost.toString()
+            } ?: ""
+        )
+    }
+
     fun newLivestockDraft(): TanksLivestockDraft? {
         val aquariumId = _uiState.value.aquariums.firstOrNull()?.aquariumId
         if (aquariumId == null) {
@@ -361,20 +381,28 @@ class TanksDashboardViewModel(
         val investmentCost = parseTanksNonNegativeDouble(draft.investmentCostInput)
 
         viewModelScope.launch {
+            val isEdit = draft.id != null
+            val existingAquarium = if (isEdit) aquariumRepository.getById(draft.id!!) else null
+
             runCatching {
                 val aquarium = Aquarium(
-                    id = idProvider(),
+                    id = draft.id ?: idProvider(),
                     name = draft.name.trim(),
                     volumeLiters = volumeLiters,
                     dimensions = draft.dimensions.trim(),
                     waterType = draft.waterType,
                     setupDate = draft.setupDateInput.trim(),
-                    investmentCost = investmentCost
+                    investmentCost = investmentCost,
+                    photoUri = existingAquarium?.photoUri
                 )
                 aquariumRepository.upsert(aquarium)
                 aquarium
             }.onSuccess { aquarium ->
-                setStatus("${aquarium.name} tank created.")
+                if (isEdit) {
+                    setStatus("${aquarium.name} tank updated.")
+                } else {
+                    setStatus("${aquarium.name} tank created.")
+                }
             }.onFailure { error ->
                 setStatus(error.message ?: "Unable to save tank.")
             }

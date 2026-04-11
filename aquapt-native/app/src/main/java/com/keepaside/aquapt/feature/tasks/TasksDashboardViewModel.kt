@@ -454,7 +454,7 @@ internal fun assembleTasksDashboardUiState(
                 taskTitle = taskTitleById[execution.taskTemplateId] ?: "Unknown task",
                 aquariumId = execution.aquariumId,
                 aquariumName = aquariumNameById[execution.aquariumId] ?: "Unknown tank",
-                completedAtLabel = formatDateTime(execution.completedAt, zoneId),
+                completedAtLabel = formatRelativeTime(execution.completedAt, zoneId, now),
                 completedAtInput = formatDateTimeInput(execution.completedAt, zoneId),
                 note = execution.note
             )
@@ -497,7 +497,7 @@ internal fun assembleTasksDashboardUiState(
                 reminderGroupId = template.reminderGroupId,
                 reminderGroupLabel = reminderGroupLabel,
                 completionCount = executionHistory.size,
-                latestCompletionLabel = executionHistory.firstOrNull()?.completedAtLabel
+                latestCompletionLabel = executionHistory.firstOrNull()?.completedAtInput
             )
         }
 
@@ -646,6 +646,22 @@ private fun formatDateTime(raw: String, zoneId: ZoneId): String {
 private fun formatDateTimeInput(raw: String, zoneId: ZoneId): String {
     val instant = parseToInstant(raw, zoneId) ?: return raw
     return formatDateTimeInput(instant, zoneId)
+}
+
+private fun formatRelativeTime(raw: String, zoneId: ZoneId, now: Instant): String {
+    val instant = parseToInstant(raw, zoneId) ?: return raw
+    val elapsed = now.toEpochMilli() - instant.toEpochMilli()
+    if (elapsed < 0) return formatDateTimeInput(instant, zoneId)
+    val seconds = elapsed / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+    return when {
+        days >= 1 -> formatDateTimeInput(instant, zoneId)
+        hours >= 1 -> "${hours}h ago"
+        minutes >= 1 -> "${minutes}m ago"
+        else -> "Just now"
+    }
 }
 
 private fun parseToInstant(raw: String, zoneId: ZoneId): Instant? {
