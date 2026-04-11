@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -194,7 +195,7 @@ private fun MarkdownInlineText(
 
     val uriHandler = LocalUriHandler.current
     val primary = MaterialTheme.colorScheme.primary
-    val textColor = MaterialTheme.colorScheme.onSurface
+    val textColor = LocalContentColor.current
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
     val annotated = remember(text, primary, textColor, surfaceVariant) {

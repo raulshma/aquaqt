@@ -184,7 +184,8 @@ fun TanksDashboardScreen(
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = NeoHeroContainer
+                        containerColor = NeoHeroContainer,
+                        contentColor = NeoHeroOnContainer
                     ),
                     shape = MaterialTheme.shapes.large,
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -276,7 +277,8 @@ fun TanksDashboardScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
@@ -294,7 +296,8 @@ fun TanksDashboardScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
@@ -323,7 +326,8 @@ fun TanksDashboardScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
@@ -361,7 +365,8 @@ fun TanksDashboardScreen(
                 Card(
                     shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
@@ -570,7 +575,8 @@ private fun QuickCreateActionsCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = NeoHeroContainer.copy(alpha = 0.92f)
+            containerColor = NeoHeroContainer.copy(alpha = 0.92f),
+            contentColor = NeoHeroOnContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
@@ -1280,7 +1286,8 @@ private fun ParameterAnalyticsCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            contentColor = MaterialTheme.colorScheme.onSurface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {

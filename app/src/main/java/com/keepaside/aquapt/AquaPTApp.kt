@@ -233,6 +233,7 @@ fun AquaPTApp(
     ) {
         Scaffold(
             containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
             topBar = {
                 CenterAlignedTopAppBar(
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -278,7 +279,8 @@ fun AquaPTApp(
             },
             bottomBar = {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
                     topLevelDestinations.forEach { destination ->
                         NavigationBarItem(

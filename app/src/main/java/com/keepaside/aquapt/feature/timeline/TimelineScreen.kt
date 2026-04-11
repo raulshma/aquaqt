@@ -177,7 +177,8 @@ fun TimelineScreen(
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = NeoHeroContainer
+                        containerColor = NeoHeroContainer,
+                        contentColor = NeoHeroOnContainer
                     ),
                     shape = MaterialTheme.shapes.large,
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -250,7 +251,8 @@ fun TimelineScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
@@ -272,7 +274,8 @@ fun TimelineScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
@@ -389,7 +392,8 @@ private fun TimelineFilters(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            contentColor = MaterialTheme.colorScheme.onSurface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
@@ -450,7 +454,8 @@ private fun TimelineDayGroupCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            contentColor = MaterialTheme.colorScheme.onSurface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
