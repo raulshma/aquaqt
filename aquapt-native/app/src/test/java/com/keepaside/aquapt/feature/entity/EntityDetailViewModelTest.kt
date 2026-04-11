@@ -1,11 +1,16 @@
 package com.keepaside.aquapt.feature.entity
 
 import com.keepaside.aquapt.core.model.Aquarium
+import com.keepaside.aquapt.core.model.Asset
+import com.keepaside.aquapt.core.model.AssetCategory
+import com.keepaside.aquapt.core.model.Consumable
+import com.keepaside.aquapt.core.model.ConsumableUnit
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.model.EntityRef
 import com.keepaside.aquapt.core.model.Issue
 import com.keepaside.aquapt.core.model.IssueStatus
 import com.keepaside.aquapt.core.model.Livestock
+import com.keepaside.aquapt.core.model.LivestockStatus
 import com.keepaside.aquapt.core.model.Memo
 import com.keepaside.aquapt.core.model.TaskCategory
 import com.keepaside.aquapt.core.model.TaskExecution
@@ -329,6 +334,152 @@ class EntityDetailViewModelTest {
     }
 
     @Test
+    fun `livestock detail exposes livestock editor state`() {
+        val aquarium = Aquarium(
+            id = "a-residents",
+            name = "Residents Tank",
+            volumeLiters = 180.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val resident = Livestock(
+            id = "l-ember",
+            aquariumId = aquarium.id,
+            name = "Ember",
+            species = "Betta",
+            quantity = 2,
+            status = LivestockStatus.ILL,
+            dietaryNotes = "Soft pellets and frozen food",
+            acquiredAt = "2026-04-11T08:45:00Z",
+            photoUri = "content://resident-photo"
+        )
+
+        val state = assembleEntityDetailUiState(
+            kind = EntityKind.LIVESTOCK,
+            entityId = resident.id,
+            routeAquariumId = aquarium.id,
+            aquariums = listOf(aquarium),
+            taskTemplates = emptyList(),
+            taskExecutions = emptyList(),
+            livestock = listOf(resident),
+            assets = emptyList(),
+            consumables = emptyList(),
+            issues = emptyList(),
+            memos = emptyList(),
+            dosingLogs = emptyList(),
+            parameterLogs = emptyList(),
+            timelineEvents = emptyList(),
+            zoneId = ZoneOffset.UTC
+        )
+
+        val editor = state.livestockEditor
+        val fieldByLabel = state.fields.associate { it.label to it.value }
+
+        assertNotNull(editor)
+        assertEquals(resident.id, editor?.id)
+        assertEquals("Ember", editor?.name)
+        assertEquals("Betta", editor?.species)
+        assertEquals("2", editor?.quantityInput)
+        assertEquals(LivestockStatus.ILL, editor?.status)
+        assertEquals("Soft pellets and frozen food", editor?.dietaryNotes)
+        assertEquals("2026-04-11 08:45", fieldByLabel["Acquired"])
+    }
+
+    @Test
+    fun `asset detail exposes asset editor state`() {
+        val aquarium = Aquarium(
+            id = "a-tech",
+            name = "Tech Tank",
+            volumeLiters = 120.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val asset = Asset(
+            id = "asset-filter",
+            aquariumId = aquarium.id,
+            category = AssetCategory.FILTER,
+            brandModel = "Canister X2",
+            purchasedAt = "2026-04-11T09:15:00Z",
+            price = 189.5,
+            photoUri = "content://asset-photo"
+        )
+
+        val state = assembleEntityDetailUiState(
+            kind = EntityKind.ASSET,
+            entityId = asset.id,
+            routeAquariumId = aquarium.id,
+            aquariums = listOf(aquarium),
+            taskTemplates = emptyList(),
+            taskExecutions = emptyList(),
+            livestock = emptyList(),
+            assets = listOf(asset),
+            consumables = emptyList(),
+            issues = emptyList(),
+            memos = emptyList(),
+            dosingLogs = emptyList(),
+            parameterLogs = emptyList(),
+            timelineEvents = emptyList(),
+            zoneId = ZoneOffset.UTC
+        )
+
+        val editor = state.assetEditor
+        val fieldByLabel = state.fields.associate { it.label to it.value }
+
+        assertNotNull(editor)
+        assertEquals(asset.id, editor?.id)
+        assertEquals(AssetCategory.FILTER, editor?.category)
+        assertEquals("Canister X2", editor?.brandModel)
+        assertEquals("2026-04-11 09:15", editor?.purchasedAtInput)
+        assertEquals("189.5", editor?.priceInput)
+        assertEquals("2026-04-11 09:15", fieldByLabel["Purchased"])
+    }
+
+    @Test
+    fun `consumable detail exposes consumable editor state`() {
+        val aquarium = Aquarium(
+            id = "a-dosing",
+            name = "Dosing Tank",
+            volumeLiters = 180.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val consumable = Consumable(
+            id = "consumable-ferts",
+            aquariumId = aquarium.id,
+            name = "All-in-one Fert",
+            unit = ConsumableUnit.ML,
+            remaining = 350.0,
+            reorderAt = 100.0,
+            updatedAt = "2026-04-11T10:00:00Z",
+            photoUri = "content://consumable-photo"
+        )
+
+        val state = assembleEntityDetailUiState(
+            kind = EntityKind.CONSUMABLE,
+            entityId = consumable.id,
+            routeAquariumId = aquarium.id,
+            aquariums = listOf(aquarium),
+            taskTemplates = emptyList(),
+            taskExecutions = emptyList(),
+            livestock = emptyList(),
+            assets = emptyList(),
+            consumables = listOf(consumable),
+            issues = emptyList(),
+            memos = emptyList(),
+            dosingLogs = emptyList(),
+            parameterLogs = emptyList(),
+            timelineEvents = emptyList(),
+            zoneId = ZoneOffset.UTC
+        )
+
+        val editor = state.consumableEditor
+
+        assertNotNull(editor)
+        assertEquals(consumable.id, editor?.id)
+        assertEquals("All-in-one Fert", editor?.name)
+        assertEquals(ConsumableUnit.ML, editor?.unit)
+        assertEquals("350", editor?.remainingInput)
+        assertEquals("100", editor?.reorderAtInput)
+    }
+
+    @Test
     fun `issue detail gallery includes linked event and entity photos without duplicates`() {
         val aquarium = Aquarium(
             id = "a-reef",
@@ -430,5 +581,80 @@ class EntityDetailViewModelTest {
 
         val description = buildIssueUpdateDescription(previous, updated)
         assertEquals("Status Open → Resolved • Resolution note updated", description)
+    }
+
+    @Test
+    fun `asset update description summarizes changed fields`() {
+        val previous = Asset(
+            id = "asset-1",
+            aquariumId = "a-1",
+            category = AssetCategory.FILTER,
+            brandModel = "Filter A",
+            purchasedAt = "2026-04-01T09:00:00Z",
+            price = 120.0
+        )
+        val updated = previous.copy(
+            category = AssetCategory.HEATER,
+            brandModel = "Heater Z",
+            purchasedAt = null,
+            price = 89.0
+        )
+
+        val description = buildAssetUpdateDescription(previous, updated)
+        assertEquals(
+            "Category Filter → Heater • Brand/model updated • Purchase date cleared • Price updated",
+            description
+        )
+    }
+
+    @Test
+    fun `consumable update description summarizes inventory changes`() {
+        val previous = Consumable(
+            id = "consumable-1",
+            aquariumId = "a-1",
+            name = "Fertilizer",
+            unit = ConsumableUnit.ML,
+            remaining = 300.0,
+            reorderAt = 80.0,
+            updatedAt = "2026-04-01T09:00:00Z"
+        )
+        val updated = previous.copy(
+            name = "Macro Fert",
+            unit = ConsumableUnit.G,
+            remaining = 250.0,
+            reorderAt = null
+        )
+
+        val description = buildConsumableUpdateDescription(previous, updated)
+        assertEquals(
+            "Name updated • Unit ml → g • Remaining 300 → 250 • Reorder threshold cleared",
+            description
+        )
+    }
+
+    @Test
+    fun `livestock update description summarizes profile changes`() {
+        val previous = Livestock(
+            id = "l-1",
+            aquariumId = "a-1",
+            name = "Ember",
+            species = "Betta",
+            quantity = 1,
+            status = LivestockStatus.ACTIVE,
+            dietaryNotes = null
+        )
+        val updated = previous.copy(
+            name = "Ember Prime",
+            species = "",
+            quantity = 3,
+            status = LivestockStatus.DECEASED,
+            dietaryNotes = "Archived after lifecycle completion"
+        )
+
+        val description = buildLivestockUpdateDescription(previous, updated)
+        assertEquals(
+            "Name updated • Species cleared • Quantity 1 → 3 • Status Active → Deceased • Dietary notes updated",
+            description
+        )
     }
 }

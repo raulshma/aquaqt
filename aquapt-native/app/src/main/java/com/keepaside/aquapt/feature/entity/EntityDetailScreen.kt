@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -34,11 +35,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.keepaside.aquapt.core.model.AssetCategory
+import com.keepaside.aquapt.core.model.ConsumableUnit
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.model.IssueStatus
+import com.keepaside.aquapt.core.model.LivestockStatus
 import com.keepaside.aquapt.core.repository.AssetRepository
 import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.ConsumableRepository
@@ -134,8 +139,53 @@ fun EntityDetailScreen(
     )
 
     val uiState by detailViewModel.uiState.collectAsState()
+    val livestockEditor = uiState.livestockEditor
+    val assetEditor = uiState.assetEditor
+    val consumableEditor = uiState.consumableEditor
     val issueEditor = uiState.issueEditor
     val memoEditor = uiState.memoEditor
+
+    var livestockNameDraft by remember(livestockEditor?.id, livestockEditor?.name) {
+        mutableStateOf(livestockEditor?.name.orEmpty())
+    }
+    var livestockSpeciesDraft by remember(livestockEditor?.id, livestockEditor?.species) {
+        mutableStateOf(livestockEditor?.species.orEmpty())
+    }
+    var livestockQuantityDraft by remember(livestockEditor?.id, livestockEditor?.quantityInput) {
+        mutableStateOf(livestockEditor?.quantityInput.orEmpty())
+    }
+    var livestockStatusDraft by remember(livestockEditor?.id, livestockEditor?.status) {
+        mutableStateOf(livestockEditor?.status ?: LivestockStatus.ACTIVE)
+    }
+    var livestockDietaryNotesDraft by remember(livestockEditor?.id, livestockEditor?.dietaryNotes) {
+        mutableStateOf(livestockEditor?.dietaryNotes.orEmpty())
+    }
+
+    var assetCategoryDraft by remember(assetEditor?.id, assetEditor?.category) {
+        mutableStateOf(assetEditor?.category ?: AssetCategory.OTHER)
+    }
+    var assetBrandModelDraft by remember(assetEditor?.id, assetEditor?.brandModel) {
+        mutableStateOf(assetEditor?.brandModel.orEmpty())
+    }
+    var assetPurchasedAtDraft by remember(assetEditor?.id, assetEditor?.purchasedAtInput) {
+        mutableStateOf(assetEditor?.purchasedAtInput.orEmpty())
+    }
+    var assetPriceDraft by remember(assetEditor?.id, assetEditor?.priceInput) {
+        mutableStateOf(assetEditor?.priceInput.orEmpty())
+    }
+
+    var consumableNameDraft by remember(consumableEditor?.id, consumableEditor?.name) {
+        mutableStateOf(consumableEditor?.name.orEmpty())
+    }
+    var consumableUnitDraft by remember(consumableEditor?.id, consumableEditor?.unit) {
+        mutableStateOf(consumableEditor?.unit ?: ConsumableUnit.ML)
+    }
+    var consumableRemainingDraft by remember(consumableEditor?.id, consumableEditor?.remainingInput) {
+        mutableStateOf(consumableEditor?.remainingInput.orEmpty())
+    }
+    var consumableReorderAtDraft by remember(consumableEditor?.id, consumableEditor?.reorderAtInput) {
+        mutableStateOf(consumableEditor?.reorderAtInput.orEmpty())
+    }
 
     var issueStatusDraft by remember(issueEditor?.id, issueEditor?.status) {
         mutableStateOf(issueEditor?.status ?: IssueStatus.OPEN)
@@ -317,6 +367,87 @@ fun EntityDetailScreen(
                         onEditExecution = { executionId ->
                             onOpenEntityEdit(EntityEditKind.TASK_EXECUTION, executionId)
                         }
+                    )
+                }
+            }
+
+            if (!uiState.isNotFound && livestockEditor != null) {
+                item {
+                    LivestockActionsCard(
+                        name = livestockNameDraft,
+                        species = livestockSpeciesDraft,
+                        quantity = livestockQuantityDraft,
+                        status = livestockStatusDraft,
+                        dietaryNotes = livestockDietaryNotesDraft,
+                        isBusy = uiState.isActionInProgress,
+                        onNameChanged = { livestockNameDraft = it },
+                        onSpeciesChanged = { livestockSpeciesDraft = it },
+                        onQuantityChanged = { livestockQuantityDraft = it },
+                        onStatusChanged = { livestockStatusDraft = it },
+                        onDietaryNotesChanged = { livestockDietaryNotesDraft = it },
+                        onSave = {
+                            detailViewModel.saveLivestockDetails(
+                                nameInput = livestockNameDraft,
+                                speciesInput = livestockSpeciesDraft,
+                                quantityInput = livestockQuantityDraft,
+                                status = livestockStatusDraft,
+                                dietaryNotesInput = livestockDietaryNotesDraft
+                            )
+                        },
+                        onArchive = {
+                            detailViewModel.archiveLivestock()
+                        },
+                        onDelete = { showDeleteDialog = true }
+                    )
+                }
+            }
+
+            if (!uiState.isNotFound && assetEditor != null) {
+                item {
+                    AssetActionsCard(
+                        category = assetCategoryDraft,
+                        brandModel = assetBrandModelDraft,
+                        purchasedAt = assetPurchasedAtDraft,
+                        price = assetPriceDraft,
+                        isBusy = uiState.isActionInProgress,
+                        onCategoryChanged = { assetCategoryDraft = it },
+                        onBrandModelChanged = { assetBrandModelDraft = it },
+                        onPurchasedAtChanged = { assetPurchasedAtDraft = it },
+                        onPriceChanged = { assetPriceDraft = it },
+                        onSave = {
+                            detailViewModel.saveAssetDetails(
+                                category = assetCategoryDraft,
+                                brandModelInput = assetBrandModelDraft,
+                                purchasedAtInput = assetPurchasedAtDraft,
+                                priceInput = assetPriceDraft
+                            )
+                        },
+                        onDelete = { showDeleteDialog = true }
+                    )
+                }
+            }
+
+            if (!uiState.isNotFound && consumableEditor != null) {
+                item {
+                    ConsumableInventoryActionsCard(
+                        name = consumableNameDraft,
+                        unit = consumableUnitDraft,
+                        remaining = consumableRemainingDraft,
+                        reorderAt = consumableReorderAtDraft,
+                        isBusy = uiState.isActionInProgress,
+                        onNameChanged = { consumableNameDraft = it },
+                        onUnitChanged = { consumableUnitDraft = it },
+                        onRemainingChanged = { consumableRemainingDraft = it },
+                        onReorderAtChanged = { consumableReorderAtDraft = it },
+                        onSave = {
+                            detailViewModel.saveConsumableDetails(
+                                nameInput = consumableNameDraft,
+                                unit = consumableUnitDraft,
+                                remainingInput = consumableRemainingDraft,
+                                reorderAtInput = consumableReorderAtDraft
+                            )
+                        },
+                        onDelete = { showDeleteDialog = true }
                     )
                 }
             }
@@ -757,6 +888,298 @@ private fun TaskActionsCard(
 }
 
 @Composable
+private fun LivestockActionsCard(
+    name: String,
+    species: String,
+    quantity: String,
+    status: LivestockStatus,
+    dietaryNotes: String,
+    isBusy: Boolean,
+    onNameChanged: (String) -> Unit,
+    onSpeciesChanged: (String) -> Unit,
+    onQuantityChanged: (String) -> Unit,
+    onStatusChanged: (LivestockStatus) -> Unit,
+    onDietaryNotesChanged: (String) -> Unit,
+    onSave: () -> Unit,
+    onArchive: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Resident actions",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = "Adjust profile details, archive the resident, or remove with cleanup safeguards.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = onNameChanged,
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy
+            )
+
+            OutlinedTextField(
+                value = species,
+                onValueChange = onSpeciesChanged,
+                label = { Text("Species") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy
+            )
+
+            OutlinedTextField(
+                value = quantity,
+                onValueChange = onQuantityChanged,
+                label = { Text("Quantity") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(LivestockStatus.entries, key = { it.name }) { option ->
+                    FilterChip(
+                        selected = option == status,
+                        onClick = { onStatusChanged(option) },
+                        enabled = !isBusy,
+                        label = { Text(option.label()) }
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = dietaryNotes,
+                onValueChange = onDietaryNotesChanged,
+                label = { Text("Dietary notes") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy,
+                minLines = 2
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onSave,
+                    enabled = !isBusy
+                ) {
+                    Text("Save profile")
+                }
+
+                OutlinedButton(
+                    onClick = onArchive,
+                    enabled = !isBusy && status != LivestockStatus.DECEASED
+                ) {
+                    Text(
+                        if (status == LivestockStatus.DECEASED) {
+                            "Archived"
+                        } else {
+                            "Archive"
+                        }
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = !isBusy
+                ) {
+                    Text("Delete")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssetActionsCard(
+    category: AssetCategory,
+    brandModel: String,
+    purchasedAt: String,
+    price: String,
+    isBusy: Boolean,
+    onCategoryChanged: (AssetCategory) -> Unit,
+    onBrandModelChanged: (String) -> Unit,
+    onPurchasedAtChanged: (String) -> Unit,
+    onPriceChanged: (String) -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Asset actions",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = "Update category, purchase metadata, or remove this asset.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(AssetCategory.entries, key = { it.name }) { option ->
+                    FilterChip(
+                        selected = option == category,
+                        onClick = { onCategoryChanged(option) },
+                        enabled = !isBusy,
+                        label = { Text(option.label()) }
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = brandModel,
+                onValueChange = onBrandModelChanged,
+                label = { Text("Brand/model") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy
+            )
+
+            OutlinedTextField(
+                value = purchasedAt,
+                onValueChange = onPurchasedAtChanged,
+                label = { Text("Purchased at") },
+                supportingText = { Text("Optional • yyyy-MM-dd or yyyy-MM-dd HH:mm") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy
+            )
+
+            OutlinedTextField(
+                value = price,
+                onValueChange = onPriceChanged,
+                label = { Text("Price") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onSave,
+                    enabled = !isBusy
+                ) {
+                    Text("Save asset")
+                }
+
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = !isBusy
+                ) {
+                    Text("Delete")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConsumableInventoryActionsCard(
+    name: String,
+    unit: ConsumableUnit,
+    remaining: String,
+    reorderAt: String,
+    isBusy: Boolean,
+    onNameChanged: (String) -> Unit,
+    onUnitChanged: (ConsumableUnit) -> Unit,
+    onRemainingChanged: (String) -> Unit,
+    onReorderAtChanged: (String) -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Consumable inventory",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = "Adjust stock metadata and reorder thresholds for this consumable.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = onNameChanged,
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy
+            )
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(ConsumableUnit.entries, key = { it.name }) { option ->
+                    FilterChip(
+                        selected = option == unit,
+                        onClick = { onUnitChanged(option) },
+                        enabled = !isBusy,
+                        label = { Text(option.name.lowercase()) }
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = remaining,
+                onValueChange = onRemainingChanged,
+                label = { Text("Remaining") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+
+            OutlinedTextField(
+                value = reorderAt,
+                onValueChange = onReorderAtChanged,
+                label = { Text("Reorder threshold") },
+                supportingText = { Text("Optional") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isBusy,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onSave,
+                    enabled = !isBusy
+                ) {
+                    Text("Save inventory")
+                }
+
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = !isBusy
+                ) {
+                    Text("Delete")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MemoActionsCard(
     content: String,
     isBusy: Boolean,
@@ -806,6 +1229,12 @@ private fun MemoActionsCard(
 }
 
 private fun IssueStatus.label(): String =
+    name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+
+private fun AssetCategory.label(): String =
+    name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+
+private fun LivestockStatus.label(): String =
     name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
 
 @Composable

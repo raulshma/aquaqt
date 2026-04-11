@@ -4,14 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.keepaside.aquapt.core.model.Asset
+import com.keepaside.aquapt.core.model.AssetCategory
 import com.keepaside.aquapt.core.model.Aquarium
 import com.keepaside.aquapt.core.model.Consumable
+import com.keepaside.aquapt.core.model.ConsumableUnit
 import com.keepaside.aquapt.core.model.DosingLog
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.model.EntityRef
 import com.keepaside.aquapt.core.model.Issue
 import com.keepaside.aquapt.core.model.IssueStatus
 import com.keepaside.aquapt.core.model.Livestock
+import com.keepaside.aquapt.core.model.LivestockStatus
 import com.keepaside.aquapt.core.model.Memo
 import com.keepaside.aquapt.core.model.TaskExecution
 import com.keepaside.aquapt.core.model.TaskTemplate
@@ -34,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -90,6 +94,44 @@ data class EntityMemoEditorState(
     val photoUri: String?
 )
 
+data class EntityAssetEditorState(
+    val id: String,
+    val aquariumId: String,
+    val category: AssetCategory,
+    val brandModel: String,
+    val purchasedAtInput: String,
+    val priceInput: String,
+    val photoUri: String?
+)
+
+data class EntityConsumableEditorState(
+    val id: String,
+    val aquariumId: String,
+    val name: String,
+    val unit: ConsumableUnit,
+    val remainingInput: String,
+    val reorderAtInput: String,
+    val photoUri: String?
+)
+
+data class EntityLivestockEditorState(
+    val id: String,
+    val aquariumId: String,
+    val name: String,
+    val species: String,
+    val quantityInput: String,
+    val status: LivestockStatus,
+    val dietaryNotes: String,
+    val photoUri: String?
+)
+
+private data class EntityLivestockDeleteImpact(
+    val childUpdates: List<Livestock>,
+    val taskTemplateUpdates: List<TaskTemplate>,
+    val orphanedOffspringCount: Int,
+    val detachedTaskCount: Int
+)
+
 data class EntityDetailUiState(
     val isLoading: Boolean = true,
     val isActionInProgress: Boolean = false,
@@ -107,6 +149,9 @@ data class EntityDetailUiState(
     val taskExecutionHistory: List<EntityTaskExecutionItem> = emptyList(),
     val relatedPhotos: List<EntityRelatedPhotoItem> = emptyList(),
     val relatedEvents: List<EntityRelatedEventItem> = emptyList(),
+    val livestockEditor: EntityLivestockEditorState? = null,
+    val assetEditor: EntityAssetEditorState? = null,
+    val consumableEditor: EntityConsumableEditorState? = null,
     val issueEditor: EntityIssueEditorState? = null,
     val memoEditor: EntityMemoEditorState? = null,
     val statusMessage: String? = null
@@ -120,6 +165,9 @@ private data class ResolvedEntityDetail(
     val metrics: List<EntityDetailMetric> = emptyList(),
     val fields: List<EntityDetailField> = emptyList(),
     val taskExecutionHistory: List<EntityTaskExecutionItem> = emptyList(),
+    val livestockEditor: EntityLivestockEditorState? = null,
+    val assetEditor: EntityAssetEditorState? = null,
+    val consumableEditor: EntityConsumableEditorState? = null,
     val issueEditor: EntityIssueEditorState? = null,
     val memoEditor: EntityMemoEditorState? = null
 )
@@ -340,10 +388,267 @@ class EntityDetailViewModel(
         }
     }
 
+    fun saveAssetDetails(
+        category: AssetCategory,
+        brandModelInput: String,
+        purchasedAtInput: String,
+        priceInput: String
+    ) {
+        if (kind != EntityKind.ASSET) {
+            setActionStatus("Asset actions are only available for asset details.")
+            return
+        }
+
+        val normalizedBrandModel = brandModelInput.trim()
+        val normalizedPurchasedAt = purchasedAtInput.trim()
+        val normalizedPriceInput = priceInput.trim()
+
+        val purchasedAt = if (normalizedPurchasedAt.isEmpty()) {
+            null
+        } else {
+            parseToInstant(normalizedPurchasedAt, zoneId)?.toString()
+        }
+
+        if (normalizedPurchasedAt.isNotEmpty() && purchasedAt == null) {
+            setActionStatus("Use a valid purchase date like 2026-04-11 or 2026-04-11 14:30.")
+            return
+        }
+
+        val price = if (normalizedPriceInput.isEmpty()) {
+            null
+        } else {
+            parseNonNegativeAmountInput(normalizedPriceInput)
+        }
+
+        if (normalizedPriceInput.isNotEmpty() && price == null) {
+            setActionStatus("Price must be a number greater than or equal to 0.")
+            return
+        }
+
+        withAction(
+            errorFallback = "Unable to save asset changes."
+        ) {
+            val asset = assetRepository.getById(entityId.trim())
+                ?: error("Asset no longer exists.")
+
+            val updatedAsset = asset.copy(
+                category = category,
+                brandModel = normalizedBrandModel,
+                purchasedAt = purchasedAt,
+                price = price
+            )
+
+            if (!hasAssetChanges(asset, updatedAsset)) {
+                setActionStatus("No asset changes to save.")
+                return@withAction
+            }
+
+            assetRepository.upsert(updatedAsset)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = updatedAsset.aquariumId,
+                    type = TimelineEventType.ASSET,
+                    createdAt = nowProvider().toString(),
+                    title = "Asset updated",
+                    description = buildAssetUpdateDescription(asset, updatedAsset),
+                    photoUri = updatedAsset.photoUri,
+                    source = EntityRef(EntityKind.ASSET, updatedAsset.id, updatedAsset.aquariumId),
+                    related = aquariumRelatedRefs(updatedAsset.aquariumId)
+                )
+            )
+
+            setActionStatus("Asset updated.")
+        }
+    }
+
+    fun saveConsumableDetails(
+        nameInput: String,
+        unit: ConsumableUnit,
+        remainingInput: String,
+        reorderAtInput: String
+    ) {
+        if (kind != EntityKind.CONSUMABLE) {
+            setActionStatus("Consumable actions are only available for consumable details.")
+            return
+        }
+
+        val name = nameInput.trim()
+        if (name.isEmpty()) {
+            setActionStatus("Name the consumable before saving.")
+            return
+        }
+
+        val normalizedRemainingInput = remainingInput.trim()
+        val remaining = parseNonNegativeAmountInput(normalizedRemainingInput)
+        if (remaining == null) {
+            setActionStatus("Remaining amount must be a number greater than or equal to 0.")
+            return
+        }
+
+        val normalizedReorderInput = reorderAtInput.trim()
+        val reorderAt = if (normalizedReorderInput.isEmpty()) {
+            null
+        } else {
+            parseNonNegativeAmountInput(normalizedReorderInput)
+        }
+
+        if (normalizedReorderInput.isNotEmpty() && reorderAt == null) {
+            setActionStatus("Reorder threshold must be a number greater than or equal to 0.")
+            return
+        }
+
+        withAction(
+            errorFallback = "Unable to save consumable changes."
+        ) {
+            val consumable = consumableRepository.getById(entityId.trim())
+                ?: error("Consumable no longer exists.")
+
+            val updatedConsumable = consumable.copy(
+                name = name,
+                unit = unit,
+                remaining = remaining,
+                reorderAt = reorderAt,
+                updatedAt = nowProvider().toString()
+            )
+
+            if (!hasConsumableChanges(consumable, updatedConsumable)) {
+                setActionStatus("No consumable changes to save.")
+                return@withAction
+            }
+
+            consumableRepository.upsert(updatedConsumable)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = updatedConsumable.aquariumId,
+                    type = TimelineEventType.CONSUMABLE,
+                    createdAt = nowProvider().toString(),
+                    title = "Consumable updated",
+                    description = buildConsumableUpdateDescription(consumable, updatedConsumable),
+                    photoUri = updatedConsumable.photoUri,
+                    source = EntityRef(EntityKind.CONSUMABLE, updatedConsumable.id, updatedConsumable.aquariumId),
+                    related = aquariumRelatedRefs(updatedConsumable.aquariumId)
+                )
+            )
+
+            setActionStatus("Consumable inventory updated.")
+        }
+    }
+
+    fun saveLivestockDetails(
+        nameInput: String,
+        speciesInput: String,
+        quantityInput: String,
+        status: LivestockStatus,
+        dietaryNotesInput: String
+    ) {
+        if (kind != EntityKind.LIVESTOCK) {
+            setActionStatus("Livestock actions are only available for resident details.")
+            return
+        }
+
+        val name = nameInput.trim()
+        if (name.isBlank()) {
+            setActionStatus("Name the resident before saving.")
+            return
+        }
+
+        val quantity = quantityInput.trim().toIntOrNull()?.takeIf { it >= 1 }
+        if (quantity == null) {
+            setActionStatus("Quantity must be at least 1.")
+            return
+        }
+
+        val species = speciesInput.trim()
+        val dietaryNotes = dietaryNotesInput.trim().ifBlank { null }
+
+        withAction(
+            errorFallback = "Unable to save resident changes."
+        ) {
+            val resident = livestockRepository.getById(entityId.trim())
+                ?: error("Resident no longer exists.")
+
+            val updatedResident = resident.copy(
+                name = name,
+                species = species,
+                quantity = quantity,
+                status = status,
+                dietaryNotes = dietaryNotes
+            )
+
+            if (!hasLivestockChanges(resident, updatedResident)) {
+                setActionStatus("No resident changes to save.")
+                return@withAction
+            }
+
+            livestockRepository.upsert(updatedResident)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = updatedResident.aquariumId,
+                    type = TimelineEventType.LIVESTOCK,
+                    createdAt = nowProvider().toString(),
+                    title = "Resident updated",
+                    description = buildLivestockUpdateDescription(resident, updatedResident),
+                    photoUri = updatedResident.photoUri,
+                    source = EntityRef(EntityKind.LIVESTOCK, updatedResident.id, updatedResident.aquariumId),
+                    related = aquariumRelatedRefs(updatedResident.aquariumId)
+                )
+            )
+
+            setActionStatus("${updatedResident.name} profile updated.")
+        }
+    }
+
+    fun archiveLivestock() {
+        if (kind != EntityKind.LIVESTOCK) {
+            setActionStatus("Livestock actions are only available for resident details.")
+            return
+        }
+
+        withAction(
+            errorFallback = "Unable to archive resident."
+        ) {
+            val resident = livestockRepository.getById(entityId.trim())
+                ?: error("Resident no longer exists.")
+
+            if (resident.status == LivestockStatus.DECEASED) {
+                setActionStatus("${resident.name} is already archived.")
+                return@withAction
+            }
+
+            val archived = resident.copy(status = LivestockStatus.DECEASED)
+            livestockRepository.upsert(archived)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = archived.aquariumId,
+                    type = TimelineEventType.LIVESTOCK,
+                    createdAt = nowProvider().toString(),
+                    title = "Archived ${archived.name}",
+                    description = "Resident moved to archived/deceased status.",
+                    photoUri = archived.photoUri,
+                    source = EntityRef(EntityKind.LIVESTOCK, archived.id, archived.aquariumId),
+                    related = aquariumRelatedRefs(archived.aquariumId)
+                )
+            )
+
+            setActionStatus("${archived.name} archived.")
+        }
+    }
+
     fun deleteCurrentEntity() {
         when (kind) {
+            EntityKind.LIVESTOCK -> deleteLivestock()
             EntityKind.ISSUE -> deleteIssue()
             EntityKind.MEMO -> deleteMemo()
+            EntityKind.ASSET -> deleteAsset()
+            EntityKind.CONSUMABLE -> deleteConsumable()
             else -> setActionStatus("Delete is not available for this entity type yet.")
         }
     }
@@ -398,6 +703,111 @@ class EntityDetailViewModel(
             )
 
             setActionStatus("Memo deleted.")
+        }
+    }
+
+    private fun deleteLivestock() {
+        withAction(
+            errorFallback = "Unable to delete resident."
+        ) {
+            val resident = livestockRepository.getById(entityId.trim())
+                ?: error("Resident no longer exists.")
+
+            val allLivestock = livestockRepository.getAll().first()
+            val allTaskTemplates = taskTemplateRepository.getAll().first()
+            val impact = computeEntityLivestockDeleteImpact(
+                livestock = allLivestock,
+                taskTemplates = allTaskTemplates,
+                deletedLivestockId = resident.id
+            )
+
+            impact.childUpdates.forEach { offspring ->
+                livestockRepository.upsert(offspring)
+            }
+
+            impact.taskTemplateUpdates.forEach { template ->
+                val primaryAquariumId = template.aquariumIds.firstOrNull() ?: resident.aquariumId
+                taskTemplateRepository.upsert(template, primaryAquariumId)
+            }
+
+            livestockRepository.deleteById(resident.id)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = resident.aquariumId,
+                    type = TimelineEventType.LIVESTOCK,
+                    createdAt = nowProvider().toString(),
+                    title = "Deleted ${resident.name}",
+                    description = buildEntityLivestockDeleteDescription(impact),
+                    photoUri = resident.photoUri,
+                    source = EntityRef(EntityKind.LIVESTOCK, resident.id, resident.aquariumId),
+                    related = aquariumRelatedRefs(resident.aquariumId)
+                )
+            )
+
+            setActionStatus(buildEntityLivestockDeleteStatusMessage(resident.name, impact))
+        }
+    }
+
+    private fun deleteAsset() {
+        withAction(
+            errorFallback = "Unable to delete asset."
+        ) {
+            val asset = assetRepository.getById(entityId.trim())
+                ?: error("Asset no longer exists.")
+
+            assetRepository.deleteById(asset.id)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = asset.aquariumId,
+                    type = TimelineEventType.ASSET,
+                    createdAt = nowProvider().toString(),
+                    title = "Deleted asset",
+                    description = asset.brandModel.ifBlank { asset.category.label() },
+                    photoUri = asset.photoUri,
+                    source = EntityRef(EntityKind.ASSET, asset.id, asset.aquariumId),
+                    related = aquariumRelatedRefs(asset.aquariumId)
+                )
+            )
+
+            setActionStatus("Asset deleted.")
+        }
+    }
+
+    private fun deleteConsumable() {
+        withAction(
+            errorFallback = "Unable to delete consumable."
+        ) {
+            val consumable = consumableRepository.getById(entityId.trim())
+                ?: error("Consumable no longer exists.")
+
+            consumableRepository.deleteById(consumable.id)
+
+            timelineEventRepository.upsert(
+                TimelineEvent(
+                    id = idProvider(),
+                    aquariumId = consumable.aquariumId,
+                    type = TimelineEventType.CONSUMABLE,
+                    createdAt = nowProvider().toString(),
+                    title = "Deleted consumable",
+                    description = buildString {
+                        append(consumable.name)
+                        append(" (")
+                        append(formatAmount(consumable.remaining))
+                        append(' ')
+                        append(consumable.unit.name.lowercase())
+                        append(')')
+                    },
+                    photoUri = consumable.photoUri,
+                    source = EntityRef(EntityKind.CONSUMABLE, consumable.id, consumable.aquariumId),
+                    related = aquariumRelatedRefs(consumable.aquariumId)
+                )
+            )
+
+            setActionStatus("Consumable deleted.")
         }
     }
 
@@ -647,7 +1057,7 @@ internal fun assembleEntityDetailUiState(
                     }
                     add(EntityDetailField("Status", resident.status.label()))
                     resident.acquiredAt.takeIf { it.isNotBlank() }?.let {
-                        add(EntityDetailField("Acquired", it))
+                        add(EntityDetailField("Acquired", formatDateTime(it, zoneId)))
                     }
                     resident.dietaryNotes?.takeIf { it.isNotBlank() }?.let {
                         add(EntityDetailField("Dietary notes", it))
@@ -657,7 +1067,17 @@ internal fun assembleEntityDetailUiState(
                         ?.let { parent ->
                             add(EntityDetailField("Parent", parent.name.ifBlank { parent.species.ifBlank { "Resident" } }))
                         }
-                }
+                },
+                livestockEditor = EntityLivestockEditorState(
+                    id = resident.id,
+                    aquariumId = resident.aquariumId,
+                    name = resident.name,
+                    species = resident.species,
+                    quantityInput = resident.quantity.toString(),
+                    status = resident.status,
+                    dietaryNotes = resident.dietaryNotes.orEmpty(),
+                    photoUri = resident.photoUri
+                )
             )
         }
 
@@ -679,12 +1099,21 @@ internal fun assembleEntityDetailUiState(
                 ),
                 fields = buildList {
                     asset.purchasedAt?.takeIf { it.isNotBlank() }?.let {
-                        add(EntityDetailField("Purchased", it))
+                        add(EntityDetailField("Purchased", formatDateTime(it, zoneId)))
                     }
                     asset.price?.let {
                         add(EntityDetailField("Price", formatAmount(it)))
                     }
-                }
+                },
+                assetEditor = EntityAssetEditorState(
+                    id = asset.id,
+                    aquariumId = asset.aquariumId,
+                    category = asset.category,
+                    brandModel = asset.brandModel,
+                    purchasedAtInput = asset.purchasedAt?.let { formatDateTime(it, zoneId) }.orEmpty(),
+                    priceInput = asset.price?.let(::formatAmount).orEmpty(),
+                    photoUri = asset.photoUri
+                )
             )
         }
 
@@ -714,7 +1143,16 @@ internal fun assembleEntityDetailUiState(
                     consumable.updatedAt.takeIf { it.isNotBlank() }?.let {
                         add(EntityDetailField("Updated", formatDateTime(it, zoneId)))
                     }
-                }
+                },
+                consumableEditor = EntityConsumableEditorState(
+                    id = consumable.id,
+                    aquariumId = consumable.aquariumId,
+                    name = consumable.name,
+                    unit = consumable.unit,
+                    remainingInput = formatAmount(consumable.remaining),
+                    reorderAtInput = consumable.reorderAt?.let(::formatAmount).orEmpty(),
+                    photoUri = consumable.photoUri
+                )
             )
         }
 
@@ -884,6 +1322,9 @@ internal fun assembleEntityDetailUiState(
         taskExecutionHistory = resolved.taskExecutionHistory,
         relatedPhotos = relatedPhotos,
         relatedEvents = relatedEvents,
+        livestockEditor = resolved.livestockEditor,
+        assetEditor = resolved.assetEditor,
+        consumableEditor = resolved.consumableEditor,
         issueEditor = resolved.issueEditor,
         memoEditor = resolved.memoEditor,
         statusMessage = if (matchingEvents.isEmpty()) {
@@ -1092,6 +1533,163 @@ internal fun buildIssueUpdateDescription(previous: Issue, updated: Issue): Strin
     }
 
     return parts.joinToString(" • ").ifBlank { "Issue updated" }
+}
+
+internal fun buildAssetUpdateDescription(previous: Asset, updated: Asset): String {
+    val parts = mutableListOf<String>()
+    if (previous.category != updated.category) {
+        parts += "Category ${previous.category.label()} → ${updated.category.label()}"
+    }
+    if (previous.brandModel != updated.brandModel) {
+        parts += if (updated.brandModel.isBlank()) {
+            "Brand/model cleared"
+        } else {
+            "Brand/model updated"
+        }
+    }
+    if (previous.purchasedAt != updated.purchasedAt) {
+        parts += if (updated.purchasedAt.isNullOrBlank()) {
+            "Purchase date cleared"
+        } else {
+            "Purchase date updated"
+        }
+    }
+    if (!areSameNullableDouble(previous.price, updated.price)) {
+        parts += if (updated.price == null) {
+            "Price cleared"
+        } else {
+            "Price updated"
+        }
+    }
+
+    return parts.joinToString(" • ").ifBlank { "Asset updated" }
+}
+
+internal fun buildConsumableUpdateDescription(previous: Consumable, updated: Consumable): String {
+    val parts = mutableListOf<String>()
+    if (previous.name != updated.name) {
+        parts += "Name updated"
+    }
+    if (previous.unit != updated.unit) {
+        parts += "Unit ${previous.unit.name.lowercase()} → ${updated.unit.name.lowercase()}"
+    }
+    if (!areSameNullableDouble(previous.remaining, updated.remaining)) {
+        parts += "Remaining ${formatAmount(previous.remaining)} → ${formatAmount(updated.remaining)}"
+    }
+    if (!areSameNullableDouble(previous.reorderAt, updated.reorderAt)) {
+        parts += if (updated.reorderAt == null) {
+            "Reorder threshold cleared"
+        } else {
+            "Reorder threshold updated"
+        }
+    }
+
+    return parts.joinToString(" • ").ifBlank { "Consumable updated" }
+}
+
+internal fun buildLivestockUpdateDescription(previous: Livestock, updated: Livestock): String {
+    val parts = mutableListOf<String>()
+    if (previous.name != updated.name) {
+        parts += "Name updated"
+    }
+    if (previous.species != updated.species) {
+        parts += if (updated.species.isBlank()) {
+            "Species cleared"
+        } else {
+            "Species updated"
+        }
+    }
+    if (previous.quantity != updated.quantity) {
+        parts += "Quantity ${previous.quantity} → ${updated.quantity}"
+    }
+    if (previous.status != updated.status) {
+        parts += "Status ${previous.status.label()} → ${updated.status.label()}"
+    }
+    if (previous.dietaryNotes != updated.dietaryNotes) {
+        parts += if (updated.dietaryNotes.isNullOrBlank()) {
+            "Dietary notes cleared"
+        } else {
+            "Dietary notes updated"
+        }
+    }
+
+    return parts.joinToString(" • ").ifBlank { "Resident updated" }
+}
+
+private fun computeEntityLivestockDeleteImpact(
+    livestock: List<Livestock>,
+    taskTemplates: List<TaskTemplate>,
+    deletedLivestockId: String
+): EntityLivestockDeleteImpact {
+    val childUpdates = livestock
+        .filter { item -> item.parentId == deletedLivestockId }
+        .map { item -> item.copy(parentId = null) }
+
+    val taskTemplateUpdates = taskTemplates
+        .filter { template -> template.livestockId == deletedLivestockId }
+        .map { template -> template.copy(livestockId = null) }
+
+    return EntityLivestockDeleteImpact(
+        childUpdates = childUpdates,
+        taskTemplateUpdates = taskTemplateUpdates,
+        orphanedOffspringCount = childUpdates.size,
+        detachedTaskCount = taskTemplateUpdates.size
+    )
+}
+
+private fun buildEntityLivestockDeleteDescription(impact: EntityLivestockDeleteImpact): String? {
+    val parts = mutableListOf<String>()
+    if (impact.orphanedOffspringCount > 0) {
+        parts += "${impact.orphanedOffspringCount} offspring link${impact.orphanedOffspringCount.plural()} removed"
+    }
+    if (impact.detachedTaskCount > 0) {
+        parts += "${impact.detachedTaskCount} feeding task link${impact.detachedTaskCount.plural()} detached"
+    }
+    return parts.joinToString(" • ").ifBlank { null }
+}
+
+private fun buildEntityLivestockDeleteStatusMessage(
+    residentName: String,
+    impact: EntityLivestockDeleteImpact
+): String {
+    val details = buildEntityLivestockDeleteDescription(impact)
+    return if (details.isNullOrBlank()) {
+        "$residentName removed."
+    } else {
+        "$residentName removed. $details."
+    }
+}
+
+private fun hasAssetChanges(previous: Asset, updated: Asset): Boolean =
+    previous.category != updated.category ||
+        previous.brandModel != updated.brandModel ||
+        previous.purchasedAt != updated.purchasedAt ||
+        !areSameNullableDouble(previous.price, updated.price)
+
+private fun hasLivestockChanges(previous: Livestock, updated: Livestock): Boolean =
+    previous.name != updated.name ||
+        previous.species != updated.species ||
+        previous.quantity != updated.quantity ||
+        previous.status != updated.status ||
+        previous.dietaryNotes != updated.dietaryNotes
+
+private fun hasConsumableChanges(previous: Consumable, updated: Consumable): Boolean =
+    previous.name != updated.name ||
+        previous.unit != updated.unit ||
+        !areSameNullableDouble(previous.remaining, updated.remaining) ||
+        !areSameNullableDouble(previous.reorderAt, updated.reorderAt)
+
+private fun Int.plural(): String = if (this == 1) "" else "s"
+
+private fun parseNonNegativeAmountInput(raw: String): Double? {
+    val value = raw.trim().toDoubleOrNull() ?: return null
+    if (value.isNaN() || value.isInfinite()) return null
+    return value.takeIf { it >= 0.0 }
+}
+
+private fun areSameNullableDouble(first: Double?, second: Double?): Boolean {
+    if (first == null || second == null) return first == second
+    return kotlin.math.abs(first - second) < 1e-9
 }
 
 private fun aquariumRelatedRefs(aquariumId: String, vararg extras: EntityRef): List<EntityRef> =
