@@ -65,6 +65,9 @@ import org.koin.java.KoinJavaComponent
 @Composable
 fun SettingsBackupScreen(
     onOpenWorkflows: () -> Unit = {},
+    onOpenModelBrowser: (ModelBrowserTarget, String?) -> Unit = { _, _ -> },
+    selectedAssistantModelId: String? = null,
+    selectedMemoryModelId: String? = null,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(24.dp)
 ) {
@@ -120,6 +123,17 @@ fun SettingsBackupScreen(
         }
     )
     val settingsPreferencesUiState by settingsPreferencesViewModel.uiState.collectAsState()
+
+    LaunchedEffect(selectedAssistantModelId) {
+        selectedAssistantModelId?.let { modelId ->
+            settingsPreferencesViewModel.onAiModelChanged(modelId)
+        }
+    }
+    LaunchedEffect(selectedMemoryModelId) {
+        selectedMemoryModelId?.let { modelId ->
+            settingsPreferencesViewModel.onAssistantMemoryModelChanged(modelId)
+        }
+    }
 
     val reminderGroupRepository: ReminderGroupRepository = remember {
         KoinJavaComponent.get(ReminderGroupRepository::class.java)
@@ -231,6 +245,7 @@ fun SettingsBackupScreen(
                 onRegionalConversionAmountChanged = settingsPreferencesViewModel::onRegionalConversionAmountChanged,
                 onRegionalConversionBaseCurrencyChanged = settingsPreferencesViewModel::onRegionalConversionBaseCurrencyChanged,
                 onRefreshRegionalConversionPreview = settingsPreferencesViewModel::refreshRegionalConversionPreview,
+                onOpenModelBrowser = onOpenModelBrowser,
                 onSave = settingsPreferencesViewModel::savePreferences,
                 onReset = settingsPreferencesViewModel::resetDraftToSaved
             )
@@ -1010,6 +1025,7 @@ private fun SettingsPreferencesSection(
     onRegionalConversionAmountChanged: (String) -> Unit,
     onRegionalConversionBaseCurrencyChanged: (String) -> Unit,
     onRefreshRegionalConversionPreview: () -> Unit,
+    onOpenModelBrowser: (ModelBrowserTarget, String?) -> Unit = { _, _ -> },
     onSave: () -> Unit,
     onReset: () -> Unit
 ) {
@@ -1056,6 +1072,19 @@ private fun SettingsPreferencesSection(
                 singleLine = true
             )
 
+            OutlinedButton(
+                onClick = {
+                    onOpenModelBrowser(
+                        ModelBrowserTarget.ASSISTANT,
+                        uiState.draft.aiModel.takeIf { it.isNotBlank() }
+                    )
+                },
+                enabled = !uiState.isSaving,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Browse assistant models")
+            }
+
             OutlinedTextField(
                 value = uiState.draft.assistantMemoryModel,
                 onValueChange = onAssistantMemoryModelChanged,
@@ -1065,6 +1094,19 @@ private fun SettingsPreferencesSection(
                 enabled = !uiState.isSaving,
                 singleLine = true
             )
+
+            OutlinedButton(
+                onClick = {
+                    onOpenModelBrowser(
+                        ModelBrowserTarget.MEMORY,
+                        uiState.draft.assistantMemoryModel.takeIf { it.isNotBlank() }
+                    )
+                },
+                enabled = !uiState.isSaving,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Browse memory models")
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

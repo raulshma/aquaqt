@@ -11,6 +11,8 @@ import com.keepaside.aquapt.core.assistant.AssistantDictationController
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.assistant.AndroidSpeechAssistantDictationController
 import com.keepaside.aquapt.core.assistant.OpenRouterAssistantGateway
+import com.keepaside.aquapt.core.assistant.OpenRouterModelListingGateway
+import com.keepaside.aquapt.core.assistant.OpenRouterModelListingGatewayImpl
 import com.keepaside.aquapt.core.notifications.ReminderNotificationScheduler
 import com.keepaside.aquapt.core.database.dao.*
 import com.keepaside.aquapt.core.repository.*
@@ -23,6 +25,7 @@ val repositoryModule = module {
     single<AssistantConversationsStore> { AssistantConversationsRepository(androidContext()) }
     single<AssistantMemoryStore> { AssistantMemoryRepository(androidContext()) }
     single<AssistantGateway> { OpenRouterAssistantGateway() }
+    single<OpenRouterModelListingGateway> { OpenRouterModelListingGatewayImpl() }
     single<AssistantDictationController> { AndroidSpeechAssistantDictationController(androidContext()) }
     single<AssistantActionReviewService> {
         AssistantActionReviewServiceImpl(

@@ -26,6 +26,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -37,6 +39,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.runtime.collectAsState
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.feature.assistant.AssistantScreen
 import com.keepaside.aquapt.feature.entity.EntityDetailScreen
@@ -45,6 +48,8 @@ import com.keepaside.aquapt.feature.entity.EntityEditScreen
 import com.keepaside.aquapt.feature.entity.EntityFormScreen
 import com.keepaside.aquapt.feature.insights.GlobalInsightsScreen
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
+import com.keepaside.aquapt.feature.settings.ModelBrowserTarget
+import com.keepaside.aquapt.feature.settings.SettingsModelBrowserScreen
 import com.keepaside.aquapt.feature.settings.SettingsWorkflowScreen
 import com.keepaside.aquapt.feature.livestock.LivestockScreen
 import com.keepaside.aquapt.feature.tasks.TasksDashboardScreen
@@ -67,6 +72,7 @@ private object AquaPTRoute {
     const val Livestock = "livestock"
     const val Insights = "insights"
     const val Workflows = "workflows"
+    const val ModelBrowser = "model-browser"
     const val Entity = "entity"
     const val EntityForm = "entity-form"
     const val EntityEdit = "entity-edit"
@@ -78,6 +84,24 @@ private object AquaPTRoute {
     private const val EntityEditKindArg = "editKind"
     private const val EntityEditIdArg = "editId"
     private const val MissingAquariumIdToken = "_"
+
+    private const val ModelBrowserTargetArg = "target"
+    private const val ModelBrowserSelectedIdArg = "selectedId"
+
+    const val ModelBrowserPattern = "$ModelBrowser/{$ModelBrowserTargetArg}?$ModelBrowserSelectedIdArg={$ModelBrowserSelectedIdArg}"
+
+    fun modelBrowserRoute(target: ModelBrowserTarget, selectedModelId: String? = null): String {
+        val encodedTarget = Uri.encode(target.name)
+        val base = "$ModelBrowser/$encodedTarget"
+        val encodedId = selectedModelId?.trim()?.takeIf { it.isNotEmpty() }?.let(Uri::encode)
+        return if (encodedId == null) base else "$base?$ModelBrowserSelectedIdArg=$encodedId"
+    }
+
+    fun parseModelBrowserTarget(value: String?): ModelBrowserTarget? =
+        runCatching { value?.let { ModelBrowserTarget.valueOf(Uri.decode(it)) } }.getOrNull()
+
+    fun parseModelBrowserSelectedId(value: String?): String? =
+        value?.let(Uri::decode)?.takeIf { it.isNotBlank() }
 
     const val EntityDetailPattern = "$Entity/{$EntityKindArg}/{$EntityIdArg}/{$EntityAquariumIdArg}"
     const val EntityFormPattern =
@@ -262,12 +286,47 @@ fun AquaPTApp(
                 AssistantScreen()
             }
             composable(AquaPTRoute.Settings) {
+                val settingsEntry = navController.currentBackStackEntry
+                val selectedAssistantModelId by settingsEntry
+                    ?.savedStateHandle
+                    ?.getStateFlow<String?>("selectedAssistantModelId", null)
+                    ?.collectAsState()
+                    ?: remember { mutableStateOf(null) }
+                val selectedMemoryModelId by settingsEntry
+                    ?.savedStateHandle
+                    ?.getStateFlow<String?>("selectedMemoryModelId", null)
+                    ?.collectAsState()
+                    ?: remember { mutableStateOf(null) }
+
+                LaunchedEffect(selectedAssistantModelId) {
+                    selectedAssistantModelId?.let { id ->
+                        settingsEntry?.savedStateHandle?.remove<String>("selectedAssistantModelId")
+                    }
+                }
+                LaunchedEffect(selectedMemoryModelId) {
+                    selectedMemoryModelId?.let { id ->
+                        settingsEntry?.savedStateHandle?.remove<String>("selectedMemoryModelId")
+                    }
+                }
+
                 SettingsBackupScreen(
                     onOpenWorkflows = {
                         navController.navigate(AquaPTRoute.Workflows) {
                             launchSingleTop = true
                         }
-                    }
+                    },
+                    onOpenModelBrowser = { target, currentModelId ->
+                        navController.navigate(
+                            AquaPTRoute.modelBrowserRoute(
+                                target = target,
+                                selectedModelId = currentModelId
+                            )
+                        ) {
+                            launchSingleTop = true
+                        }
+                    },
+                    selectedAssistantModelId = selectedAssistantModelId,
+                    selectedMemoryModelId = selectedMemoryModelId
                 )
             }
             composable(AquaPTRoute.Livestock) {
@@ -300,6 +359,37 @@ fun AquaPTApp(
             }
             composable(AquaPTRoute.Workflows) {
                 SettingsWorkflowScreen(
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+            composable(AquaPTRoute.ModelBrowserPattern) { backStackEntry ->
+                val target = AquaPTRoute.parseModelBrowserTarget(
+                    backStackEntry.arguments?.getString("target")
+                ) ?: ModelBrowserTarget.ASSISTANT
+                val selectedId = AquaPTRoute.parseModelBrowserSelectedId(
+                    backStackEntry.arguments?.getString("selectedId")
+                )
+
+                SettingsModelBrowserScreen(
+                    initialTarget = target,
+                    initialModelId = selectedId,
+                    onModelSelected = { selectedTarget, modelId ->
+                        when (selectedTarget) {
+                            ModelBrowserTarget.ASSISTANT -> {
+                                navController.previousBackStackEntry?.savedStateHandle?.set(
+                                    "selectedAssistantModelId", modelId
+                                )
+                            }
+                            ModelBrowserTarget.MEMORY -> {
+                                navController.previousBackStackEntry?.savedStateHandle?.set(
+                                    "selectedMemoryModelId", modelId
+                                )
+                            }
+                        }
+                        navController.popBackStack()
+                    },
                     onBack = {
                         navController.popBackStack()
                     }
@@ -387,6 +477,7 @@ private fun topBarTitleForRoute(route: String?): String = when {
     route == AquaPTRoute.Livestock -> "Livestock"
     route == AquaPTRoute.Insights -> "Global insights"
     route == AquaPTRoute.Workflows -> "AI workflows"
+    route?.startsWith(AquaPTRoute.ModelBrowser) == true -> "Browse models"
     route?.startsWith(AquaPTRoute.EntityForm) == true -> "New activity"
     route?.startsWith(AquaPTRoute.EntityEdit) == true -> "Edit activity"
     route?.startsWith(AquaPTRoute.Entity) == true -> "Entity details"
@@ -406,6 +497,7 @@ private fun mapExternalRouteToNativeRoute(route: String): String? {
         "/livestock", "livestock" -> AquaPTRoute.Livestock
         "/insights", "insights" -> AquaPTRoute.Insights
         "/settings/workflows", "/workflows", "workflows" -> AquaPTRoute.Workflows
+        "/settings/models", "/models", "models" -> AquaPTRoute.modelBrowserRoute(ModelBrowserTarget.ASSISTANT)
         else -> null
     }
 }
