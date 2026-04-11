@@ -60,6 +60,13 @@ data class EntityRelatedEventItem(
     val supportingText: String
 )
 
+data class EntityRelatedPhotoItem(
+    val id: String,
+    val uri: String,
+    val title: String,
+    val supportingText: String
+)
+
 data class EntityIssueEditorState(
     val id: String,
     val title: String,
@@ -88,6 +95,7 @@ data class EntityDetailUiState(
     val photoUri: String? = null,
     val metrics: List<EntityDetailMetric> = emptyList(),
     val fields: List<EntityDetailField> = emptyList(),
+    val relatedPhotos: List<EntityRelatedPhotoItem> = emptyList(),
     val relatedEvents: List<EntityRelatedEventItem> = emptyList(),
     val issueEditor: EntityIssueEditorState? = null,
     val memoEditor: EntityMemoEditorState? = null,
@@ -803,10 +811,12 @@ internal fun assembleEntityDetailUiState(
     val aquariumId = resolved.aquariumId ?: routeAquariumId
     val aquariumName = aquariumId?.let { aquariumNameById[it] ?: "Unknown tank" }
 
-    val relatedEvents = matchingEvents
+    val sortedMatchingEvents = matchingEvents
         .sortedWith(compareByDescending<TimelineEvent> {
             parseToInstant(it.createdAt, zoneId)?.toEpochMilli() ?: Long.MIN_VALUE
         }.thenByDescending { it.createdAt })
+
+    val relatedEvents = sortedMatchingEvents
         .take(8)
         .map { event ->
             val eventAquariumName = aquariumNameById[event.aquariumId] ?: "Unknown tank"
@@ -816,6 +826,21 @@ internal fun assembleEntityDetailUiState(
                 supportingText = "${event.type.label()} • ${formatDateTime(event.createdAt, zoneId)} • $eventAquariumName"
             )
         }
+
+    val relatedPhotos = buildEntityRelatedPhotos(
+        kind = kind,
+        entityId = trimmedEntityId,
+        entityTitle = resolved.title,
+        resolvedPhotoUri = resolved.photoUri,
+        matchingEvents = sortedMatchingEvents,
+        aquariums = aquariums,
+        livestock = livestock,
+        assets = assets,
+        consumables = consumables,
+        memos = memos,
+        aquariumNameById = aquariumNameById,
+        zoneId = zoneId
+    )
 
     return EntityDetailUiState(
         isNotFound = false,
@@ -828,6 +853,7 @@ internal fun assembleEntityDetailUiState(
         photoUri = resolved.photoUri,
         metrics = resolved.metrics + EntityDetailMetric("Linked events", matchingEvents.size.toString()),
         fields = resolved.fields,
+        relatedPhotos = relatedPhotos,
         relatedEvents = relatedEvents,
         issueEditor = resolved.issueEditor,
         memoEditor = resolved.memoEditor,
@@ -838,6 +864,149 @@ internal fun assembleEntityDetailUiState(
         }
     )
 }
+
+private data class EntityPhotoKey(
+    val kind: EntityKind,
+    val id: String
+)
+
+private data class EntityPhotoCandidate(
+    val uri: String,
+    val title: String,
+    val supportingText: String
+)
+
+private fun buildEntityRelatedPhotos(
+    kind: EntityKind,
+    entityId: String,
+    entityTitle: String,
+    resolvedPhotoUri: String?,
+    matchingEvents: List<TimelineEvent>,
+    aquariums: List<Aquarium>,
+    livestock: List<Livestock>,
+    assets: List<Asset>,
+    consumables: List<Consumable>,
+    memos: List<Memo>,
+    aquariumNameById: Map<String, String>,
+    zoneId: ZoneId
+): List<EntityRelatedPhotoItem> {
+    val photoUriByEntity = mutableMapOf<EntityPhotoKey, String>()
+    val photoLabelByEntity = mutableMapOf<EntityPhotoKey, String>()
+
+    fun registerPhoto(kind: EntityKind, id: String, uri: String?, label: String) {
+        val normalizedUri = normalizePhotoUri(uri) ?: return
+        val key = EntityPhotoKey(kind = kind, id = id)
+        photoUriByEntity[key] = normalizedUri
+        photoLabelByEntity[key] = label
+    }
+
+    aquariums.forEach { aquarium ->
+        registerPhoto(
+            kind = EntityKind.AQUARIUM,
+            id = aquarium.id,
+            uri = aquarium.photoUri,
+            label = aquarium.name.ifBlank { "Aquarium" }
+        )
+    }
+
+    livestock.forEach { resident ->
+        registerPhoto(
+            kind = EntityKind.LIVESTOCK,
+            id = resident.id,
+            uri = resident.photoUri,
+            label = resident.name.ifBlank { resident.species.ifBlank { "Resident" } }
+        )
+    }
+
+    assets.forEach { asset ->
+        registerPhoto(
+            kind = EntityKind.ASSET,
+            id = asset.id,
+            uri = asset.photoUri,
+            label = asset.brandModel.ifBlank { "${asset.category.label()} asset" }
+        )
+    }
+
+    consumables.forEach { consumable ->
+        registerPhoto(
+            kind = EntityKind.CONSUMABLE,
+            id = consumable.id,
+            uri = consumable.photoUri,
+            label = consumable.name
+        )
+    }
+
+    memos.forEach { memo ->
+        val snippet = memo.content.trim()
+            .take(48)
+            .trim()
+            .ifBlank { "Memo" }
+
+        registerPhoto(
+            kind = EntityKind.MEMO,
+            id = memo.id,
+            uri = memo.photoUri,
+            label = snippet
+        )
+    }
+
+    val candidates = mutableListOf<EntityPhotoCandidate>()
+
+    normalizePhotoUri(resolvedPhotoUri)?.let { uri ->
+        candidates += EntityPhotoCandidate(
+            uri = uri,
+            title = "${kind.label()} • ${entityTitle.ifBlank { entityId }}",
+            supportingText = "Current entity"
+        )
+    }
+
+    matchingEvents.forEach { event ->
+        val eventDateLabel = formatDateTime(event.createdAt, zoneId)
+        normalizePhotoUri(event.photoUri)?.let { uri ->
+            candidates += EntityPhotoCandidate(
+                uri = uri,
+                title = event.title.ifBlank { "${event.type.label()} event" },
+                supportingText = "${event.type.label()} • $eventDateLabel"
+            )
+        }
+
+        buildList {
+            event.source?.let { add(it) }
+            addAll(event.related)
+        }.forEach { reference ->
+            val key = EntityPhotoKey(kind = reference.kind, id = reference.id)
+            val linkedUri = photoUriByEntity[key] ?: return@forEach
+            val linkedTitle = photoLabelByEntity[key] ?: reference.kind.label()
+            val aquariumLabel = reference.aquariumId
+                ?.let { aquariumNameById[it] ?: "Unknown tank" }
+                ?: "Unknown tank"
+
+            candidates += EntityPhotoCandidate(
+                uri = linkedUri,
+                title = "${reference.kind.label()} • $linkedTitle",
+                supportingText = "$aquariumLabel • Linked entity"
+            )
+        }
+    }
+
+    val seenUris = mutableSetOf<String>()
+    return candidates
+        .asSequence()
+        .filter { candidate -> seenUris.add(candidate.uri) }
+        .take(18)
+        .mapIndexed { index, candidate ->
+            EntityRelatedPhotoItem(
+                id = "photo-${index + 1}-${candidate.uri.hashCode()}",
+                uri = candidate.uri,
+                title = candidate.title,
+                supportingText = candidate.supportingText
+            )
+        }
+        .toList()
+}
+
+private fun normalizePhotoUri(rawUri: String?): String? =
+    rawUri?.trim()?.takeIf { it.isNotEmpty() }
 
 private fun missingEntityState(
     kind: EntityKind,

@@ -326,6 +326,91 @@ class EntityDetailViewModelTest {
     }
 
     @Test
+    fun `issue detail gallery includes linked event and entity photos without duplicates`() {
+        val aquarium = Aquarium(
+            id = "a-reef",
+            name = "Reef",
+            volumeLiters = 320.0,
+            waterType = WaterType.MARINE,
+            photoUri = "content://tank-photo"
+        )
+        val issue = Issue(
+            id = "issue-ph",
+            aquariumId = aquarium.id,
+            title = "pH swing",
+            status = IssueStatus.OPEN,
+            createdAt = "2026-04-11T08:00:00Z"
+        )
+        val resident = Livestock(
+            id = "l-clown",
+            aquariumId = aquarium.id,
+            name = "Clown pair",
+            photoUri = "content://resident-photo"
+        )
+        val memo = Memo(
+            id = "memo-coral",
+            aquariumId = aquarium.id,
+            content = "Coral extension looked strong after dosing.",
+            createdAt = "2026-04-11T09:00:00Z",
+            photoUri = "content://memo-photo"
+        )
+
+        val timelineEvents = listOf(
+            TimelineEvent(
+                id = "event-new",
+                aquariumId = aquarium.id,
+                type = TimelineEventType.ISSUE,
+                createdAt = "2026-04-11T11:00:00Z",
+                title = "Issue noted",
+                photoUri = "content://event-photo",
+                source = EntityRef(EntityKind.ISSUE, issue.id, aquarium.id),
+                related = listOf(
+                    EntityRef(EntityKind.MEMO, memo.id, aquarium.id),
+                    EntityRef(EntityKind.LIVESTOCK, resident.id, aquarium.id),
+                    EntityRef(EntityKind.AQUARIUM, aquarium.id, aquarium.id)
+                )
+            ),
+            TimelineEvent(
+                id = "event-old",
+                aquariumId = aquarium.id,
+                type = TimelineEventType.ISSUE,
+                createdAt = "2026-04-11T10:00:00Z",
+                title = "Duplicate image link",
+                photoUri = "content://event-photo",
+                source = EntityRef(EntityKind.ISSUE, issue.id, aquarium.id),
+                related = listOf(
+                    EntityRef(EntityKind.MEMO, memo.id, aquarium.id)
+                )
+            )
+        )
+
+        val state = assembleEntityDetailUiState(
+            kind = EntityKind.ISSUE,
+            entityId = issue.id,
+            routeAquariumId = aquarium.id,
+            aquariums = listOf(aquarium),
+            taskTemplates = emptyList(),
+            taskExecutions = emptyList(),
+            livestock = listOf(resident),
+            assets = emptyList(),
+            consumables = emptyList(),
+            issues = listOf(issue),
+            memos = listOf(memo),
+            dosingLogs = emptyList(),
+            parameterLogs = emptyList(),
+            timelineEvents = timelineEvents,
+            zoneId = ZoneOffset.UTC
+        )
+
+        val uris = state.relatedPhotos.map { it.uri }
+        assertEquals(4, uris.size)
+        assertEquals("content://event-photo", uris[0])
+        assertTrue(uris.contains("content://memo-photo"))
+        assertTrue(uris.contains("content://resident-photo"))
+        assertTrue(uris.contains("content://tank-photo"))
+    }
+
+    @Test
     fun `issue update description summarizes status and note changes`() {
         val previous = Issue(
             id = "issue-1",
