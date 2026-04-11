@@ -1482,6 +1482,10 @@ private class FakeAssistantMemoryStore(
         flow.value = flow.value.filterNot { it.id == id }
     }
 
+    override suspend fun clearAllSnippets() {
+        flow.value = emptyList()
+    }
+
     override suspend fun queryRelevantSnippets(
         prompt: String,
         limit: Int,

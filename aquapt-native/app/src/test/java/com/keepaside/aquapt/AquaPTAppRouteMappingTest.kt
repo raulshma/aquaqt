@@ -13,6 +13,7 @@ class AquaPTAppRouteMappingTest {
         assertEquals("livestock", mapExternalRouteToNativeRoute("/(tabs)/livestock"))
         assertEquals("insights", mapExternalRouteToNativeRoute("/modal"))
         assertEquals("workflows", mapExternalRouteToNativeRoute("/settings/workflows"))
+        assertEquals("settings-memory", mapExternalRouteToNativeRoute("/settings/memory"))
     }
 
     @Test

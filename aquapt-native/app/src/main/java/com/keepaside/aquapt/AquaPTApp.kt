@@ -48,6 +48,7 @@ import com.keepaside.aquapt.feature.entity.EntityFormScreen
 import com.keepaside.aquapt.feature.insights.GlobalInsightsScreen
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
 import com.keepaside.aquapt.feature.settings.ModelBrowserTarget
+import com.keepaside.aquapt.feature.settings.SettingsMemoryScreen
 import com.keepaside.aquapt.feature.settings.SettingsModelBrowserScreen
 import com.keepaside.aquapt.feature.settings.SettingsWorkflowScreen
 import com.keepaside.aquapt.feature.livestock.LivestockScreen
@@ -74,6 +75,7 @@ private object AquaPTRoute {
     const val Livestock = "livestock"
     const val Insights = "insights"
     const val Workflows = "workflows"
+    const val MemoryTools = "settings-memory"
     const val ModelBrowser = "model-browser"
     const val Entity = "entity"
     const val EntityForm = "entity-form"
@@ -317,6 +319,11 @@ fun AquaPTApp(
                             launchSingleTop = true
                         }
                     },
+                    onOpenMemoryTools = {
+                        navController.navigate(AquaPTRoute.MemoryTools) {
+                            launchSingleTop = true
+                        }
+                    },
                     onOpenModelBrowser = { target, currentModelId ->
                         navController.navigate(
                             AquaPTRoute.modelBrowserRoute(
@@ -361,6 +368,13 @@ fun AquaPTApp(
             }
             composable(AquaPTRoute.Workflows) {
                 SettingsWorkflowScreen(
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+            composable(AquaPTRoute.MemoryTools) {
+                SettingsMemoryScreen(
                     onBack = {
                         navController.popBackStack()
                     }
@@ -479,6 +493,7 @@ private fun topBarTitleForRoute(route: String?): String = when {
     route == AquaPTRoute.Livestock -> "Livestock"
     route == AquaPTRoute.Insights -> "Global insights"
     route == AquaPTRoute.Workflows -> "AI workflows"
+    route == AquaPTRoute.MemoryTools -> "Assistant memory"
     route?.startsWith(AquaPTRoute.ModelBrowser) == true -> "Browse models"
     route?.startsWith(AquaPTRoute.EntityForm) == true -> "New activity"
     route?.startsWith(AquaPTRoute.EntityEdit) == true -> "Edit activity"
@@ -526,10 +541,12 @@ internal fun mapExternalRouteToNativeRoute(route: String): String? {
         "livestock" -> AquaPTRoute.Livestock
         "modal", "insights" -> AquaPTRoute.Insights
         "workflows" -> AquaPTRoute.Workflows
+        "memory" -> AquaPTRoute.MemoryTools
 
         "settings" -> when (second) {
             "", "index", "assistant", "backup", "reminders", "reminder-groups" -> AquaPTRoute.Settings
             "workflows" -> AquaPTRoute.Workflows
+            "memory" -> AquaPTRoute.MemoryTools
             "models" -> {
                 val target = parseExternalModelBrowserTarget(
                     pathTarget = segments.getOrNull(2),

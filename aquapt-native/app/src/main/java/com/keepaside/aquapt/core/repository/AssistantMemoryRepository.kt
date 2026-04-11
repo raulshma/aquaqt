@@ -34,6 +34,8 @@ interface AssistantMemoryStore {
 
     suspend fun forgetSnippet(id: String)
 
+    suspend fun clearAllSnippets()
+
     suspend fun queryRelevantSnippets(
         prompt: String,
         limit: Int = 4,
@@ -150,6 +152,10 @@ class AssistantMemoryRepository(
         writeSnippets(
             snippets.value.filterNot { snippet -> snippet.id == normalized }
         )
+    }
+
+    override suspend fun clearAllSnippets() {
+        writeSnippets(emptyList())
     }
 
     override suspend fun queryRelevantSnippets(

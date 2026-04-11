@@ -65,6 +65,7 @@ import org.koin.java.KoinJavaComponent
 @Composable
 fun SettingsBackupScreen(
     onOpenWorkflows: () -> Unit = {},
+    onOpenMemoryTools: () -> Unit = {},
     onOpenModelBrowser: (ModelBrowserTarget, String?) -> Unit = { _, _ -> },
     selectedAssistantModelId: String? = null,
     selectedMemoryModelId: String? = null,
@@ -199,6 +200,13 @@ fun SettingsBackupScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("AI workflow tools")
+            }
+
+            OutlinedButton(
+                onClick = onOpenMemoryTools,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Assistant memory tools")
             }
 
             SettingsPreferencesSection(

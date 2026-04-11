@@ -74,6 +74,8 @@ private object NoOpAssistantMemoryStore : AssistantMemoryStore {
 
     override suspend fun forgetSnippet(id: String) = Unit
 
+    override suspend fun clearAllSnippets() = Unit
+
     override suspend fun queryRelevantSnippets(
         prompt: String,
         limit: Int,
