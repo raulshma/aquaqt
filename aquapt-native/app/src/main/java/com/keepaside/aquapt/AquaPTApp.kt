@@ -45,6 +45,7 @@ import com.keepaside.aquapt.feature.entity.EntityEditScreen
 import com.keepaside.aquapt.feature.entity.EntityFormScreen
 import com.keepaside.aquapt.feature.insights.GlobalInsightsScreen
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
+import com.keepaside.aquapt.feature.settings.SettingsWorkflowScreen
 import com.keepaside.aquapt.feature.livestock.LivestockScreen
 import com.keepaside.aquapt.feature.tasks.TasksDashboardScreen
 import com.keepaside.aquapt.feature.tanks.TanksDashboardScreen
@@ -65,6 +66,7 @@ private object AquaPTRoute {
 
     const val Livestock = "livestock"
     const val Insights = "insights"
+    const val Workflows = "workflows"
     const val Entity = "entity"
     const val EntityForm = "entity-form"
     const val EntityEdit = "entity-edit"
@@ -260,7 +262,13 @@ fun AquaPTApp(
                 AssistantScreen()
             }
             composable(AquaPTRoute.Settings) {
-                SettingsBackupScreen()
+                SettingsBackupScreen(
+                    onOpenWorkflows = {
+                        navController.navigate(AquaPTRoute.Workflows) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
             }
             composable(AquaPTRoute.Livestock) {
                 LivestockScreen(
@@ -287,6 +295,13 @@ fun AquaPTApp(
                             launchSingleTop = true
                             restoreState = true
                         }
+                    }
+                )
+            }
+            composable(AquaPTRoute.Workflows) {
+                SettingsWorkflowScreen(
+                    onBack = {
+                        navController.popBackStack()
                     }
                 )
             }
@@ -371,6 +386,7 @@ private fun topBarTitleForRoute(route: String?): String = when {
     route == AquaPTRoute.Settings -> "Settings"
     route == AquaPTRoute.Livestock -> "Livestock"
     route == AquaPTRoute.Insights -> "Global insights"
+    route == AquaPTRoute.Workflows -> "AI workflows"
     route?.startsWith(AquaPTRoute.EntityForm) == true -> "New activity"
     route?.startsWith(AquaPTRoute.EntityEdit) == true -> "Edit activity"
     route?.startsWith(AquaPTRoute.Entity) == true -> "Entity details"
@@ -389,6 +405,7 @@ private fun mapExternalRouteToNativeRoute(route: String): String? {
         "/(tabs)/settings", "/settings", "settings" -> AquaPTRoute.Settings
         "/livestock", "livestock" -> AquaPTRoute.Livestock
         "/insights", "insights" -> AquaPTRoute.Insights
+        "/settings/workflows", "/workflows", "workflows" -> AquaPTRoute.Workflows
         else -> null
     }
 }

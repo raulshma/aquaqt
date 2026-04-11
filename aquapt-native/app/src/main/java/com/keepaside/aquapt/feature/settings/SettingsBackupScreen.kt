@@ -64,6 +64,7 @@ import org.koin.java.KoinJavaComponent
 
 @Composable
 fun SettingsBackupScreen(
+    onOpenWorkflows: () -> Unit = {},
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(24.dp)
 ) {
@@ -179,6 +180,13 @@ fun SettingsBackupScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            OutlinedButton(
+                onClick = onOpenWorkflows,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("AI workflow tools")
+            }
+
             SettingsPreferencesSection(
                 uiState = settingsPreferencesUiState,
                 onOpenRouterApiKeyChanged = settingsPreferencesViewModel::onOpenRouterApiKeyChanged,
