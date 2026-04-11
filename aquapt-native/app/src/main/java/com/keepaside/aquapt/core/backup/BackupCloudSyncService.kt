@@ -79,6 +79,20 @@ data class BackupSyncOutcome(
     val deletedVersionedKeys: List<String> = emptyList()
 )
 
+data class BackupCloudObject(
+    val objectKey: String,
+    val lastModified: String? = null,
+    val isLatestObject: Boolean = false
+)
+
+data class BackupRestoreOutcome(
+    val restoredAt: String,
+    val sourceObjectKey: String,
+    val exportedAt: String,
+    val restoredSettings: AppSettings,
+    val skippedCounts: Map<String, Int> = emptyMap()
+)
+
 data class S3HistoryCleanupOutcome(
     val deletedKeys: List<String>,
     val keptKeys: List<String>
@@ -99,11 +113,39 @@ internal data class S3ListEntry(
     val lastModified: String?
 )
 
+interface BackupCloudSyncGateway {
+    suspend fun syncCurrentStateToCloud(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials
+    ): BackupSyncOutcome
+
+    suspend fun listAvailableCloudBackups(
+        settings: AppSettings,
+        credentials: BackupS3Credentials
+    ): List<BackupCloudObject>
+
+    suspend fun restoreFromCloudObject(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials,
+        objectKey: String,
+        replaceExisting: Boolean = true
+    ): BackupRestoreOutcome
+
+    suspend fun restoreLatestFromCloud(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials,
+        replaceExisting: Boolean = true
+    ): BackupRestoreOutcome
+}
+
 class BackupCloudSyncService(
     private val backupGateway: BackupCompatibilityGateway
-) {
+) : BackupCloudSyncGateway {
 
-    suspend fun syncCurrentStateToCloud(
+    override suspend fun syncCurrentStateToCloud(
         settings: AppSettings,
         masterKey: String,
         credentials: BackupS3Credentials
@@ -156,6 +198,107 @@ class BackupCloudSyncService(
             deletedVersionedKeys = deletedVersionedKeys
         )
     }
+
+    override suspend fun listAvailableCloudBackups(
+        settings: AppSettings,
+        credentials: BackupS3Credentials
+    ): List<BackupCloudObject> {
+        val config = parseS3SyncConfig(settings, credentials)
+        val latestObjectKey = normalizeKeyPrefix(config.objectKey)
+        val historyPrefix = getHistoryPrefixFromObjectKey(latestObjectKey)
+
+        val latestMatches = listS3ObjectsWithPrefix(
+            configInput = config,
+            prefix = latestObjectKey,
+            maxKeys = 50
+        ).filter { entry -> entry.key == latestObjectKey }
+
+        val historyMatches = listS3ObjectsWithPrefix(
+            configInput = config,
+            prefix = historyPrefix,
+            maxKeys = 1_000
+        ).filter { entry -> entry.key.endsWith(historyBackupSuffix) }
+
+        val merged = (latestMatches + historyMatches)
+            .distinctBy { entry -> entry.key }
+            .sortedWith(
+                compareByDescending<S3ListEntry> { entry -> entry.key == latestObjectKey }
+                    .thenByDescending { entry ->
+                        entry.lastModified
+                            ?.let(::parseInstantOrNull)
+                            ?.toEpochMilli()
+                            ?: Long.MIN_VALUE
+                    }
+                    .thenByDescending { entry -> entry.key }
+            )
+
+        return merged.map { entry ->
+            BackupCloudObject(
+                objectKey = entry.key,
+                lastModified = entry.lastModified,
+                isLatestObject = entry.key == latestObjectKey
+            )
+        }
+    }
+
+    override suspend fun restoreFromCloudObject(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials,
+        objectKey: String,
+        replaceExisting: Boolean
+    ): BackupRestoreOutcome {
+        val normalizedObjectKey = normalizeKeyPrefix(objectKey)
+        require(normalizedObjectKey.isNotEmpty()) {
+            "Cloud backup object key is required."
+        }
+
+        val config = parseS3SyncConfig(settings, credentials)
+        val encryptedPayload = downloadEncryptedBackupFromS3(
+            configInput = config.copy(objectKey = normalizedObjectKey)
+        ) ?: throw IllegalStateException(
+            "Cloud backup object not found: $normalizedObjectKey"
+        )
+
+        val envelope = decryptBackupEnvelope(
+            encryptedPayloadJson = encryptedPayload,
+            masterKey = masterKey
+        )
+
+        val appStateJson = backupJson.encodeToString(
+            JsonElement.serializer(),
+            envelope.appState
+        )
+
+        val importResult = backupGateway.importFromJson(
+            payload = appStateJson,
+            replaceExisting = replaceExisting
+        )
+
+        return BackupRestoreOutcome(
+            restoredAt = Instant.now().toString(),
+            sourceObjectKey = normalizedObjectKey,
+            exportedAt = envelope.exportedAt,
+            restoredSettings = importResult.snapshot.settings,
+            skippedCounts = importResult.skippedCounts
+        )
+    }
+
+    override suspend fun restoreLatestFromCloud(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials,
+        replaceExisting: Boolean
+    ): BackupRestoreOutcome = restoreFromCloudObject(
+        settings = settings,
+        masterKey = masterKey,
+        credentials = credentials,
+        objectKey = settings.backupS3ObjectKey
+            ?.trim()
+            ?.takeIf { value -> value.isNotEmpty() }
+            ?: backupAutoSyncDefaultObjectKey,
+        replaceExisting = replaceExisting
+    )
 }
 
 fun createBackupEnvelope(
@@ -402,6 +545,40 @@ private suspend fun uploadEncryptedBackupToS3(
         objectUrl = resolved.requestUrl,
         payloadBytes = payloadBytes.size
     )
+}
+
+private suspend fun downloadEncryptedBackupFromS3(
+    configInput: BackupS3SyncConfig
+): String? {
+    val resolved = resolveS3ObjectUrl(configInput)
+    val payload = ByteArray(0)
+
+    val signed = buildSignedRequestHeaders(
+        method = "GET",
+        endpoint = resolved.endpoint,
+        canonicalUri = resolved.canonicalUri,
+        canonicalQuery = "",
+        payload = payload,
+        config = configInput
+    )
+
+    val response = executeHttpRequest(
+        method = "GET",
+        requestUrl = resolved.requestUrl,
+        headers = signed.headers
+    )
+
+    if (response.statusCode == 404) {
+        return null
+    }
+
+    if (response.statusCode !in 200..299) {
+        throw IllegalStateException(
+            "S3 download failed (${response.statusCode} ${response.statusMessage}): ${response.body.take(220)}"
+        )
+    }
+
+    return response.body
 }
 
 private suspend fun cleanupVersionedBackups(
@@ -841,6 +1018,9 @@ private fun parseIsoMillis(value: String?): Long? {
     return runCatching { Instant.parse(value).toEpochMilli() }
         .getOrNull()
 }
+
+private fun parseInstantOrNull(value: String): Instant? =
+    runCatching { Instant.parse(value) }.getOrNull()
 
 private fun ByteArray.toHex(): String = joinToString(separator = "") { byteValue ->
     (byteValue.toInt() and 0xFF).toString(16).padStart(2, '0')

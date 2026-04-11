@@ -21,8 +21,8 @@ class BackupAutoSyncWorker(
         val appSettingsStore: AppSettingsStore = KoinJavaComponent.get(AppSettingsStore::class.java)
         val backupSecretsStore: BackupSecretsStore =
             KoinJavaComponent.get(BackupSecretsStore::class.java)
-        val backupCloudSyncService: BackupCloudSyncService =
-            KoinJavaComponent.get(BackupCloudSyncService::class.java)
+        val backupCloudSyncService: BackupCloudSyncGateway =
+            KoinJavaComponent.get(BackupCloudSyncGateway::class.java)
 
         var settings = appSettingsStore.settings.value
 

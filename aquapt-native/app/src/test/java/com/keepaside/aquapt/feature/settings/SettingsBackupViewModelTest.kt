@@ -1,11 +1,17 @@
 package com.keepaside.aquapt.feature.settings
 
 import com.keepaside.aquapt.core.backup.AppStateImportResult
+import com.keepaside.aquapt.core.backup.BackupCloudObject
+import com.keepaside.aquapt.core.backup.BackupCloudSyncGateway
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
+import com.keepaside.aquapt.core.backup.BackupRestoreOutcome
+import com.keepaside.aquapt.core.backup.BackupSyncOutcome
 import com.keepaside.aquapt.core.backup.PersistedAppStateSnapshot
 import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.repository.AppSettingsStore
+import com.keepaside.aquapt.core.repository.BackupS3Credentials
+import com.keepaside.aquapt.core.repository.BackupSecretsStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -138,6 +144,143 @@ class SettingsBackupViewModelTest {
         assertEquals(AppThemePreference.DARK, fakeStore.settings.value.themePreference)
         assertEquals("USD", fakeStore.settings.value.defaultCurrency)
     }
+
+    @Test
+    fun `cloud backup list loads and selects latest object`() = runTest {
+        val fakeGateway = FakeBackupGateway()
+        val fakeCloudGateway = FakeBackupCloudGateway(
+            cloudObjects = listOf(
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/latest.enc.json",
+                    lastModified = "2026-04-11T03:00:00Z",
+                    isLatestObject = true
+                ),
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/history/2026-04-10.enc.json",
+                    lastModified = "2026-04-10T03:00:00Z"
+                )
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(
+                backupS3Endpoint = "https://s3.example.com",
+                backupS3Bucket = "aquapt-backups",
+                backupS3ObjectKey = "aquapt/backups/latest.enc.json"
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStoreForBackupViewModel(
+            masterKey = "valid-master-key-123",
+            credentials = BackupS3Credentials("AKIA123", "secret")
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            backupCloudSyncGateway = fakeCloudGateway,
+            externalScope = this
+        )
+
+        viewModel.loadCloudBackups()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(2, state.cloudBackups.size)
+        assertEquals("aquapt/backups/latest.enc.json", state.selectedCloudObjectKey)
+        assertEquals(1, fakeCloudGateway.listCalls)
+    }
+
+    @Test
+    fun `manual cloud sync updates settings metadata and status`() = runTest {
+        val fakeGateway = FakeBackupGateway()
+        val fakeCloudGateway = FakeBackupCloudGateway(
+            cloudObjects = listOf(
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/latest.enc.json",
+                    lastModified = "2026-04-11T03:00:00Z",
+                    isLatestObject = true
+                )
+            ),
+            syncOutcome = BackupSyncOutcome(
+                uploadedAt = "2026-04-11T03:00:00Z",
+                objectUrl = "https://s3.example.com/aquapt/backups/latest.enc.json",
+                payloadBytes = 1234,
+                versionedObjectKey = "aquapt/backups/history/2026-04-11.enc.json"
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(
+                backupS3Endpoint = "https://s3.example.com",
+                backupS3Bucket = "aquapt-backups",
+                backupS3ObjectKey = "aquapt/backups/latest.enc.json"
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStoreForBackupViewModel(
+            masterKey = "valid-master-key-123",
+            credentials = BackupS3Credentials("AKIA123", "secret")
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            backupCloudSyncGateway = fakeCloudGateway,
+            externalScope = this
+        )
+
+        viewModel.syncToCloud()
+        advanceUntilIdle()
+
+        assertEquals(1, fakeCloudGateway.syncCalls)
+        assertEquals("2026-04-11T03:00:00Z", fakeStore.settings.value.backupLastSyncedAt)
+        assertTrue(fakeStore.settings.value.backupMasterKeySet)
+        assertTrue(fakeStore.settings.value.backupS3CredentialsSet)
+        assertTrue(viewModel.uiState.value.statusMessage.contains("Cloud sync completed"))
+    }
+
+    @Test
+    fun `restore selected cloud backup applies restored settings`() = runTest {
+        val fakeGateway = FakeBackupGateway()
+        val fakeCloudGateway = FakeBackupCloudGateway(
+            restoreOutcome = BackupRestoreOutcome(
+                restoredAt = "2026-04-11T04:00:00Z",
+                sourceObjectKey = "aquapt/backups/history/2026-04-10.enc.json",
+                exportedAt = "2026-04-10T03:00:00Z",
+                restoredSettings = AppSettings(
+                    themePreference = AppThemePreference.DARK,
+                    defaultCurrency = "USD"
+                ),
+                skippedCounts = mapOf("timeline" to 2)
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(
+                backupS3Endpoint = "https://s3.example.com",
+                backupS3Bucket = "aquapt-backups",
+                backupS3ObjectKey = "aquapt/backups/latest.enc.json"
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStoreForBackupViewModel(
+            masterKey = "valid-master-key-123",
+            credentials = BackupS3Credentials("AKIA123", "secret")
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            backupCloudSyncGateway = fakeCloudGateway,
+            externalScope = this
+        )
+
+        viewModel.onSelectedCloudObjectChanged("aquapt/backups/history/2026-04-10.enc.json")
+        viewModel.restoreSelectedCloudBackup()
+        advanceUntilIdle()
+
+        assertEquals(1, fakeCloudGateway.restoreObjectCalls)
+        assertEquals("aquapt/backups/history/2026-04-10.enc.json", fakeCloudGateway.lastRestoreObjectKey)
+        assertEquals(AppThemePreference.DARK, fakeStore.settings.value.themePreference)
+        assertEquals("USD", fakeStore.settings.value.defaultCurrency)
+        assertEquals("2026-04-11T04:00:00Z", fakeStore.settings.value.backupLastRestoredAt)
+        assertTrue(viewModel.uiState.value.statusMessage.contains("Cloud restore completed"))
+    }
 }
 
 private class FakeBackupGateway(
@@ -175,5 +318,95 @@ private class FakeAppSettingsStore(
 
     override suspend fun setSettings(settings: AppSettings) {
         flow.value = settings
+    }
+}
+
+private class FakeBackupSecretsStoreForBackupViewModel(
+    private var masterKey: String = "",
+    private var credentials: BackupS3Credentials? = null
+) : BackupSecretsStore {
+    override suspend fun saveBackupMasterKey(masterKey: String) {
+        this.masterKey = masterKey.trim()
+    }
+
+    override suspend fun loadBackupMasterKey(): String = masterKey
+
+    override suspend fun hasBackupMasterKey(): Boolean = masterKey.isNotEmpty()
+
+    override suspend fun clearBackupMasterKey() {
+        masterKey = ""
+    }
+
+    override suspend fun saveBackupS3Credentials(accessKeyId: String, secretAccessKey: String) {
+        credentials = BackupS3Credentials(accessKeyId.trim(), secretAccessKey.trim())
+    }
+
+    override suspend fun loadBackupS3Credentials(): BackupS3Credentials? = credentials
+
+    override suspend fun hasBackupS3Credentials(): Boolean = credentials != null
+
+    override suspend fun clearBackupS3Credentials() {
+        credentials = null
+    }
+}
+
+private class FakeBackupCloudGateway(
+    private val cloudObjects: List<BackupCloudObject> = emptyList(),
+    private val syncOutcome: BackupSyncOutcome = BackupSyncOutcome(
+        uploadedAt = "2026-04-11T03:00:00Z",
+        objectUrl = "https://s3.example.com/aquapt/backups/latest.enc.json",
+        payloadBytes = 123
+    ),
+    private val restoreOutcome: BackupRestoreOutcome = BackupRestoreOutcome(
+        restoredAt = "2026-04-11T04:00:00Z",
+        sourceObjectKey = "aquapt/backups/latest.enc.json",
+        exportedAt = "2026-04-11T03:00:00Z",
+        restoredSettings = AppSettings()
+    )
+) : BackupCloudSyncGateway {
+
+    var syncCalls: Int = 0
+    var listCalls: Int = 0
+    var restoreObjectCalls: Int = 0
+    var restoreLatestCalls: Int = 0
+    var lastRestoreObjectKey: String? = null
+
+    override suspend fun syncCurrentStateToCloud(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials
+    ): BackupSyncOutcome {
+        syncCalls += 1
+        return syncOutcome
+    }
+
+    override suspend fun listAvailableCloudBackups(
+        settings: AppSettings,
+        credentials: BackupS3Credentials
+    ): List<BackupCloudObject> {
+        listCalls += 1
+        return cloudObjects
+    }
+
+    override suspend fun restoreFromCloudObject(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials,
+        objectKey: String,
+        replaceExisting: Boolean
+    ): BackupRestoreOutcome {
+        restoreObjectCalls += 1
+        lastRestoreObjectKey = objectKey
+        return restoreOutcome
+    }
+
+    override suspend fun restoreLatestFromCloud(
+        settings: AppSettings,
+        masterKey: String,
+        credentials: BackupS3Credentials,
+        replaceExisting: Boolean
+    ): BackupRestoreOutcome {
+        restoreLatestCalls += 1
+        return restoreOutcome
     }
 }

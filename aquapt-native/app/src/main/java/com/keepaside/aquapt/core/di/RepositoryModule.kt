@@ -3,6 +3,7 @@ package com.keepaside.aquapt.core.di
 import com.keepaside.aquapt.core.backup.AppStateBackupCompatibilityService
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.backup.BackupCloudSyncService
+import com.keepaside.aquapt.core.backup.BackupCloudSyncGateway
 import com.keepaside.aquapt.core.backup.BackupAutoSyncScheduler
 import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
 import com.keepaside.aquapt.core.assistant.AssistantActionReviewServiceImpl
@@ -87,7 +88,7 @@ val repositoryModule = module {
         )
     }
     single<BackupCompatibilityGateway> { get<AppStateBackupCompatibilityService>() }
-    single {
+    single<BackupCloudSyncGateway> {
         BackupCloudSyncService(
             backupGateway = get()
         )

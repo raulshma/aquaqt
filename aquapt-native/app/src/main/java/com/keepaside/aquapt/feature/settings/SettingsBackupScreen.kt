@@ -45,6 +45,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
+import com.keepaside.aquapt.core.backup.BackupCloudSyncGateway
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.model.RegionalPreferencesMode
 import com.keepaside.aquapt.core.repository.AppSettingsStore
@@ -68,11 +69,16 @@ fun SettingsBackupScreen(
     val backupSecretsStore: BackupSecretsStore = remember {
         KoinJavaComponent.get(BackupSecretsStore::class.java)
     }
+    val backupCloudSyncGateway: BackupCloudSyncGateway = remember {
+        KoinJavaComponent.get(BackupCloudSyncGateway::class.java)
+    }
     val viewModel: SettingsBackupViewModel = viewModel(
-        factory = remember(backupGateway, appSettingsStore) {
+        factory = remember(backupGateway, appSettingsStore, backupSecretsStore, backupCloudSyncGateway) {
             SettingsBackupViewModel.factory(
                 backupGateway = backupGateway,
-                appSettingsStore = appSettingsStore
+                appSettingsStore = appSettingsStore,
+                backupSecretsStore = backupSecretsStore,
+                backupCloudSyncGateway = backupCloudSyncGateway
             )
         }
     )
@@ -229,6 +235,132 @@ fun SettingsBackupScreen(
                     enabled = !uiState.isBusy
                 ) {
                     Text("Import JSON")
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            Text(
+                text = "Cloud backup",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Text(
+                text = "Uses configured S3 destination and secure credentials from App preferences.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = viewModel::syncToCloud,
+                    enabled = !uiState.isBusy
+                ) {
+                    Text("Sync to cloud")
+                }
+
+                OutlinedButton(
+                    onClick = viewModel::loadCloudBackups,
+                    enabled = !uiState.isBusy
+                ) {
+                    Text("Load cloud list")
+                }
+            }
+
+            if (uiState.cloudBackups.isEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        text = "No cloud objects loaded. Use \"Load cloud list\" or \"Sync to cloud\".",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Text(
+                    text = "Restore source object",
+                    style = MaterialTheme.typography.titleSmall
+                )
+
+                uiState.cloudBackups.forEach { cloudObject ->
+                    val metadata = buildString {
+                        if (cloudObject.isLatestObject) {
+                            append("latest")
+                        }
+                        if (!cloudObject.lastModified.isNullOrBlank()) {
+                            if (isNotEmpty()) append(" • ")
+                            append(cloudObject.lastModified)
+                        }
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (uiState.selectedCloudObjectKey == cloudObject.objectKey) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Checkbox(
+                                checked = uiState.selectedCloudObjectKey == cloudObject.objectKey,
+                                onCheckedChange = {
+                                    viewModel.onSelectedCloudObjectChanged(cloudObject.objectKey)
+                                },
+                                enabled = !uiState.isBusy
+                            )
+
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = cloudObject.objectKey,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (metadata.isNotBlank()) {
+                                    Text(
+                                        text = metadata,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = viewModel::restoreSelectedCloudBackup,
+                    enabled = !uiState.isBusy
+                ) {
+                    Text("Restore selected")
+                }
+
+                OutlinedButton(
+                    onClick = viewModel::restoreLatestCloudBackup,
+                    enabled = !uiState.isBusy
+                ) {
+                    Text("Restore latest")
                 }
             }
 

@@ -3,9 +3,13 @@ package com.keepaside.aquapt.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.keepaside.aquapt.core.backup.BackupCloudObject
+import com.keepaside.aquapt.core.backup.BackupCloudSyncGateway
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.repository.AppSettingsStore
+import com.keepaside.aquapt.core.repository.BackupS3Credentials
+import com.keepaside.aquapt.core.repository.BackupSecretsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,16 +20,23 @@ import kotlinx.coroutines.launch
 private const val DEFAULT_STATUS =
     "Export your current Room state to RN-compatible JSON, or import a previous backup payload."
 
+private const val cloudPrerequisiteMessage =
+    "Cloud backup requires configured S3 destination and secure credentials in App preferences."
+
 data class SettingsBackupUiState(
     val payload: String = "",
     val replaceExisting: Boolean = true,
     val isBusy: Boolean = false,
+    val cloudBackups: List<BackupCloudObject> = emptyList(),
+    val selectedCloudObjectKey: String = "",
     val statusMessage: String = DEFAULT_STATUS
 )
 
 class SettingsBackupViewModel(
     private val backupGateway: BackupCompatibilityGateway,
     private val appSettingsStore: AppSettingsStore? = null,
+    private val backupSecretsStore: BackupSecretsStore? = null,
+    private val backupCloudSyncGateway: BackupCloudSyncGateway? = null,
     private val externalScope: CoroutineScope? = null
 ) : ViewModel() {
 
@@ -38,6 +49,10 @@ class SettingsBackupViewModel(
 
     fun onReplaceExistingChanged(value: Boolean) {
         _uiState.update { it.copy(replaceExisting = value) }
+    }
+
+    fun onSelectedCloudObjectChanged(objectKey: String) {
+        _uiState.update { it.copy(selectedCloudObjectKey = objectKey.trim()) }
     }
 
     fun exportJson() {
@@ -112,6 +127,311 @@ class SettingsBackupViewModel(
         }
     }
 
+    fun syncToCloud() {
+        val current = _uiState.value
+        if (current.isBusy) return
+
+        launchWork {
+            _uiState.update { it.copy(isBusy = true) }
+
+            runCatching {
+                val prereq = resolveCloudRestorePrerequisites()
+                val syncOutcome = prereq.cloudGateway.syncCurrentStateToCloud(
+                    settings = prereq.settings,
+                    masterKey = prereq.masterKey,
+                    credentials = prereq.credentials
+                )
+
+                prereq.settingsStore.setSettings(
+                    prereq.settingsStore.settings.value.copy(
+                        backupLastSyncedAt = syncOutcome.uploadedAt,
+                        backupLastError = null,
+                        backupMasterKeySet = true,
+                        backupS3CredentialsSet = true
+                    )
+                )
+
+                val refreshedSettings = prereq.settingsStore.settings.value
+                val cloudObjects = prereq.cloudGateway.listAvailableCloudBackups(
+                    settings = refreshedSettings,
+                    credentials = prereq.credentials
+                )
+
+                val selected = resolveSelectedCloudObjectKey(
+                    objects = cloudObjects,
+                    preferredObjectKey = refreshedSettings.backupS3ObjectKey,
+                    currentSelectedObjectKey = _uiState.value.selectedCloudObjectKey
+                )
+
+                Triple(syncOutcome, cloudObjects, selected)
+            }.onSuccess { (syncOutcome, cloudObjects, selectedObjectKey) ->
+                val historySummary = buildString {
+                    append("Cloud sync completed")
+                    if (syncOutcome.versionedObjectKey != null) {
+                        append(". Versioned backup: ${syncOutcome.versionedObjectKey}")
+                    }
+                    if (syncOutcome.deletedVersionedKeys.isNotEmpty()) {
+                        append(". Cleaned ${syncOutcome.deletedVersionedKeys.size} old versioned backups")
+                    }
+                    append('.')
+                }
+
+                _uiState.update {
+                    it.copy(
+                        cloudBackups = cloudObjects,
+                        selectedCloudObjectKey = selectedObjectKey,
+                        statusMessage = historySummary
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(statusMessage = error.message ?: "Cloud sync failed.")
+                }
+            }
+
+            _uiState.update { it.copy(isBusy = false) }
+        }
+    }
+
+    fun loadCloudBackups() {
+        val current = _uiState.value
+        if (current.isBusy) return
+
+        launchWork {
+            _uiState.update { it.copy(isBusy = true) }
+
+            runCatching {
+                val prereq = resolveCloudListPrerequisites()
+                val cloudObjects = prereq.cloudGateway.listAvailableCloudBackups(
+                    settings = prereq.settings,
+                    credentials = prereq.credentials
+                )
+
+                val selected = resolveSelectedCloudObjectKey(
+                    objects = cloudObjects,
+                    preferredObjectKey = prereq.settings.backupS3ObjectKey,
+                    currentSelectedObjectKey = _uiState.value.selectedCloudObjectKey
+                )
+
+                cloudObjects to selected
+            }.onSuccess { (cloudObjects, selectedObjectKey) ->
+                val status = if (cloudObjects.isEmpty()) {
+                    "No cloud backups found for the configured destination."
+                } else {
+                    "Loaded ${cloudObjects.size} cloud backup object(s)."
+                }
+
+                _uiState.update {
+                    it.copy(
+                        cloudBackups = cloudObjects,
+                        selectedCloudObjectKey = selectedObjectKey,
+                        statusMessage = status
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(statusMessage = error.message ?: "Unable to load cloud backups.")
+                }
+            }
+
+            _uiState.update { it.copy(isBusy = false) }
+        }
+    }
+
+    fun restoreSelectedCloudBackup() {
+        val current = _uiState.value
+        if (current.isBusy) return
+
+        val selectedObjectKey = current.selectedCloudObjectKey.trim()
+        if (selectedObjectKey.isEmpty()) {
+            _uiState.update {
+                it.copy(statusMessage = "Select a cloud backup object first, then restore.")
+            }
+            return
+        }
+
+        launchWork {
+            _uiState.update { it.copy(isBusy = true) }
+
+            runCatching {
+                val prereq = resolveCloudRestorePrerequisites()
+                val restoreOutcome = prereq.cloudGateway.restoreFromCloudObject(
+                    settings = prereq.settings,
+                    masterKey = prereq.masterKey,
+                    credentials = prereq.credentials,
+                    objectKey = selectedObjectKey,
+                    replaceExisting = _uiState.value.replaceExisting
+                )
+
+                prereq.settingsStore.setSettings(
+                    restoreOutcome.restoredSettings.copy(
+                        backupLastRestoredAt = restoreOutcome.restoredAt,
+                        backupLastError = null,
+                        backupMasterKeySet = true,
+                        backupS3CredentialsSet = true
+                    )
+                )
+
+                restoreOutcome
+            }.onSuccess { restoreOutcome ->
+                val skippedSummary = if (restoreOutcome.skippedCounts.isEmpty()) {
+                    "No skipped records."
+                } else {
+                    restoreOutcome.skippedCounts.entries.joinToString(
+                        prefix = "Skipped -> ",
+                        separator = ", "
+                    ) { (kind, count) -> "$kind: $count" }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        statusMessage =
+                            "Cloud restore completed from ${restoreOutcome.sourceObjectKey}. $skippedSummary"
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(statusMessage = error.message ?: "Cloud restore failed.")
+                }
+            }
+
+            _uiState.update { it.copy(isBusy = false) }
+        }
+    }
+
+    fun restoreLatestCloudBackup() {
+        val current = _uiState.value
+        if (current.isBusy) return
+
+        launchWork {
+            _uiState.update { it.copy(isBusy = true) }
+
+            runCatching {
+                val prereq = resolveCloudRestorePrerequisites()
+                val restoreOutcome = prereq.cloudGateway.restoreLatestFromCloud(
+                    settings = prereq.settings,
+                    masterKey = prereq.masterKey,
+                    credentials = prereq.credentials,
+                    replaceExisting = _uiState.value.replaceExisting
+                )
+
+                prereq.settingsStore.setSettings(
+                    restoreOutcome.restoredSettings.copy(
+                        backupLastRestoredAt = restoreOutcome.restoredAt,
+                        backupLastError = null,
+                        backupMasterKeySet = true,
+                        backupS3CredentialsSet = true
+                    )
+                )
+
+                val refreshedSettings = prereq.settingsStore.settings.value
+                val cloudObjects = prereq.cloudGateway.listAvailableCloudBackups(
+                    settings = refreshedSettings,
+                    credentials = prereq.credentials
+                )
+
+                val selected = resolveSelectedCloudObjectKey(
+                    objects = cloudObjects,
+                    preferredObjectKey = restoreOutcome.sourceObjectKey,
+                    currentSelectedObjectKey = _uiState.value.selectedCloudObjectKey
+                )
+
+                Triple(restoreOutcome, cloudObjects, selected)
+            }.onSuccess { (restoreOutcome, cloudObjects, selectedObjectKey) ->
+                val skippedSummary = if (restoreOutcome.skippedCounts.isEmpty()) {
+                    "No skipped records."
+                } else {
+                    restoreOutcome.skippedCounts.entries.joinToString(
+                        prefix = "Skipped -> ",
+                        separator = ", "
+                    ) { (kind, count) -> "$kind: $count" }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        cloudBackups = cloudObjects,
+                        selectedCloudObjectKey = selectedObjectKey,
+                        statusMessage =
+                            "Latest cloud restore completed from ${restoreOutcome.sourceObjectKey}. $skippedSummary"
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(statusMessage = error.message ?: "Latest cloud restore failed.")
+                }
+            }
+
+            _uiState.update { it.copy(isBusy = false) }
+        }
+    }
+
+    private fun resolveSelectedCloudObjectKey(
+        objects: List<BackupCloudObject>,
+        preferredObjectKey: String?,
+        currentSelectedObjectKey: String
+    ): String {
+        if (objects.isEmpty()) return ""
+
+        val normalizedCurrent = currentSelectedObjectKey.trim()
+        if (objects.any { it.objectKey == normalizedCurrent }) {
+            return normalizedCurrent
+        }
+
+        val normalizedPreferred = preferredObjectKey
+            ?.trim()
+            .orEmpty()
+        if (objects.any { it.objectKey == normalizedPreferred }) {
+            return normalizedPreferred
+        }
+
+        return objects.firstOrNull { it.isLatestObject }?.objectKey
+            ?: objects.first().objectKey
+    }
+
+    private suspend fun resolveCloudListPrerequisites(): CloudListPrerequisites {
+        val settingsStore = appSettingsStore
+            ?: throw IllegalStateException(cloudPrerequisiteMessage)
+        val secretsStore = backupSecretsStore
+            ?: throw IllegalStateException(cloudPrerequisiteMessage)
+        val cloudGateway = backupCloudSyncGateway
+            ?: throw IllegalStateException(cloudPrerequisiteMessage)
+
+        val settings = settingsStore.settings.value
+        val credentials = secretsStore.loadBackupS3Credentials()
+            ?: throw IllegalStateException(
+                "Cloud backup requires stored S3 credentials. Configure them in App preferences."
+            )
+
+        return CloudListPrerequisites(
+            settingsStore = settingsStore,
+            settings = settings,
+            credentials = credentials,
+            cloudGateway = cloudGateway
+        )
+    }
+
+    private suspend fun resolveCloudRestorePrerequisites(): CloudRestorePrerequisites {
+        val listPrereq = resolveCloudListPrerequisites()
+        val masterKey = backupSecretsStore
+            ?.loadBackupMasterKey()
+            .orEmpty()
+            .trim()
+
+        if (masterKey.isEmpty()) {
+            throw IllegalStateException(
+                "Cloud restore/sync requires a stored backup master key. Configure it in App preferences."
+            )
+        }
+
+        return CloudRestorePrerequisites(
+            settingsStore = listPrereq.settingsStore,
+            settings = listPrereq.settings,
+            credentials = listPrereq.credentials,
+            cloudGateway = listPrereq.cloudGateway,
+            masterKey = masterKey
+        )
+    }
+
     private fun launchWork(block: suspend () -> Unit) {
         (externalScope ?: viewModelScope).launch {
             block()
@@ -121,7 +441,9 @@ class SettingsBackupViewModel(
     companion object {
         fun factory(
             backupGateway: BackupCompatibilityGateway,
-            appSettingsStore: AppSettingsStore? = null
+            appSettingsStore: AppSettingsStore? = null,
+            backupSecretsStore: BackupSecretsStore? = null,
+            backupCloudSyncGateway: BackupCloudSyncGateway? = null
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -129,11 +451,28 @@ class SettingsBackupViewModel(
                     if (modelClass.isAssignableFrom(SettingsBackupViewModel::class.java)) {
                         return SettingsBackupViewModel(
                             backupGateway = backupGateway,
-                            appSettingsStore = appSettingsStore
+                            appSettingsStore = appSettingsStore,
+                            backupSecretsStore = backupSecretsStore,
+                            backupCloudSyncGateway = backupCloudSyncGateway
                         ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
                 }
             }
     }
+
+    private data class CloudListPrerequisites(
+        val settingsStore: AppSettingsStore,
+        val settings: AppSettings,
+        val credentials: BackupS3Credentials,
+        val cloudGateway: BackupCloudSyncGateway
+    )
+
+    private data class CloudRestorePrerequisites(
+        val settingsStore: AppSettingsStore,
+        val settings: AppSettings,
+        val credentials: BackupS3Credentials,
+        val cloudGateway: BackupCloudSyncGateway,
+        val masterKey: String
+    )
 }
