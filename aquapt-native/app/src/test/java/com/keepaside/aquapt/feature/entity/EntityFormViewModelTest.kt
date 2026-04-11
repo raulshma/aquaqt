@@ -1,6 +1,8 @@
 package com.keepaside.aquapt.feature.entity
 
 import com.keepaside.aquapt.core.model.Aquarium
+import com.keepaside.aquapt.core.model.Consumable
+import com.keepaside.aquapt.core.model.ConsumableUnit
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.model.WaterType
 import org.junit.Assert.assertEquals
@@ -188,6 +190,145 @@ class EntityFormViewModelTest {
     fun `entity form supports dosing and parameter kinds`() {
         assertTrue(isEntityFormSupported(EntityKind.DOSING))
         assertTrue(isEntityFormSupported(EntityKind.PARAMETER_LOG))
+        assertTrue(isEntityFormSupported(EntityKind.CONSUMABLE))
+    }
+
+    @Test
+    fun `consumable create validation enforces required and non-negative values`() {
+        val missingNameError = validateEntityFormDraft(
+            kind = EntityKind.CONSUMABLE,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                consumableName = "   ",
+                consumableUnit = ConsumableUnit.ML.name,
+                consumableRemaining = "5"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC
+        )
+
+        val invalidRemainingError = validateEntityFormDraft(
+            kind = EntityKind.CONSUMABLE,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                consumableName = "Buffer",
+                consumableUnit = ConsumableUnit.ML.name,
+                consumableRemaining = "-1"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC
+        )
+
+        val invalidReorderError = validateEntityFormDraft(
+            kind = EntityKind.CONSUMABLE,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                consumableName = "Buffer",
+                consumableUnit = ConsumableUnit.ML.name,
+                consumableRemaining = "10",
+                consumableReorderAt = "oops"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC
+        )
+
+        val validError = validateEntityFormDraft(
+            kind = EntityKind.CONSUMABLE,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                consumableName = "Buffer",
+                consumableUnit = ConsumableUnit.ML.name,
+                consumableRemaining = "10",
+                consumableReorderAt = "2"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertEquals(entityFormConsumableNameErrorMessage, missingNameError)
+        assertEquals(entityFormConsumableRemainingErrorMessage, invalidRemainingError)
+        assertEquals(entityFormConsumableReorderErrorMessage, invalidReorderError)
+        assertEquals(null, validError)
+    }
+
+    @Test
+    fun `consumable use validation requires positive amount used`() {
+        val invalidAmountError = validateEntityFormDraft(
+            kind = EntityKind.CONSUMABLE,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                consumableAmountUsed = "0"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC,
+            isConsumableConsumeMode = true
+        )
+
+        val validError = validateEntityFormDraft(
+            kind = EntityKind.CONSUMABLE,
+            draft = EntityFormDraft(
+                aquariumId = "a-1",
+                createdAtInput = "2026-04-11 18:30",
+                consumableAmountUsed = "1.5"
+            ),
+            aquariumId = "a-1",
+            zoneId = ZoneOffset.UTC,
+            isConsumableConsumeMode = true
+        )
+
+        assertEquals(entityFormConsumableAmountUsedErrorMessage, invalidAmountError)
+        assertEquals(null, validError)
+    }
+
+    @Test
+    fun `consumable target entity switches form into use mode`() {
+        val state = assembleEntityFormUiState(
+            kind = EntityKind.CONSUMABLE,
+            draft = EntityFormDraft(
+                aquariumId = "a-2",
+                createdAtInput = "2026-04-11 18:30",
+                consumableAmountUsed = "1"
+            ),
+            aquariums = listOf(
+                Aquarium(
+                    id = "a-1",
+                    name = "Display",
+                    volumeLiters = 120.0,
+                    waterType = WaterType.FRESHWATER
+                ),
+                Aquarium(
+                    id = "a-2",
+                    name = "Quarantine",
+                    volumeLiters = 40.0,
+                    waterType = WaterType.FRESHWATER
+                )
+            ),
+            consumables = listOf(
+                Consumable(
+                    id = "c-1",
+                    aquariumId = "a-1",
+                    name = "Bacteria",
+                    unit = ConsumableUnit.ML,
+                    remaining = 32.0,
+                    updatedAt = "2026-04-11T12:00:00Z"
+                )
+            ),
+            targetEntityId = "c-1",
+            isSaving = false,
+            statusMessage = null,
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertEquals("Save usage", state.saveButtonLabel)
+        assertEquals("a-1", state.aquariumId)
+        assertEquals("c-1", state.targetConsumable?.id)
+        assertTrue(state.aquariumOptions.isEmpty())
+        assertTrue(state.canSave)
     }
 
     @Test

@@ -58,7 +58,7 @@ fun EntityDetailScreen(
     kind: EntityKind?,
     entityId: String,
     aquariumId: String?,
-    onOpenEntityForm: (EntityKind, String?) -> Unit = { _, _ -> },
+    onOpenEntityForm: (EntityKind, String?, String?) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp)
 ) {
@@ -272,16 +272,34 @@ fun EntityDetailScreen(
                     EntityCreateActionsCard(
                         isBusy = uiState.isActionInProgress,
                         onCreateIssue = {
-                            onOpenEntityForm(EntityKind.ISSUE, uiState.aquariumId)
+                            onOpenEntityForm(EntityKind.ISSUE, uiState.aquariumId, null)
                         },
                         onCreateMemo = {
-                            onOpenEntityForm(EntityKind.MEMO, uiState.aquariumId)
+                            onOpenEntityForm(EntityKind.MEMO, uiState.aquariumId, null)
                         },
                         onCreateDosing = {
-                            onOpenEntityForm(EntityKind.DOSING, uiState.aquariumId)
+                            onOpenEntityForm(EntityKind.DOSING, uiState.aquariumId, null)
                         },
                         onCreateParameters = {
-                            onOpenEntityForm(EntityKind.PARAMETER_LOG, uiState.aquariumId)
+                            onOpenEntityForm(EntityKind.PARAMETER_LOG, uiState.aquariumId, null)
+                        },
+                        onCreateConsumable = {
+                            onOpenEntityForm(EntityKind.CONSUMABLE, uiState.aquariumId, null)
+                        }
+                    )
+                }
+            }
+
+            if (!uiState.isNotFound && kind == EntityKind.CONSUMABLE && uiState.aquariumId != null) {
+                item {
+                    ConsumableActionsCard(
+                        isBusy = uiState.isActionInProgress,
+                        onUseConsumable = {
+                            onOpenEntityForm(
+                                EntityKind.CONSUMABLE,
+                                uiState.aquariumId,
+                                uiState.entityId
+                            )
                         }
                     )
                 }
@@ -540,7 +558,8 @@ private fun EntityCreateActionsCard(
     onCreateIssue: () -> Unit,
     onCreateMemo: () -> Unit,
     onCreateDosing: () -> Unit,
-    onCreateParameters: () -> Unit
+    onCreateParameters: () -> Unit,
+    onCreateConsumable: () -> Unit
 ) {
     Card {
         Column(
@@ -556,7 +575,7 @@ private fun EntityCreateActionsCard(
             )
 
             Text(
-                text = "Open native forms to add an issue, memo, dosing log, or parameter log for this tank.",
+                text = "Open native forms to add issue, memo, dosing, parameter, or consumable activity for this tank.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -590,6 +609,51 @@ private fun EntityCreateActionsCard(
                     enabled = !isBusy
                 ) {
                     Text("New parameters")
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onCreateConsumable,
+                    enabled = !isBusy
+                ) {
+                    Text("New consumable")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConsumableActionsCard(
+    isBusy: Boolean,
+    onUseConsumable: () -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Consumable actions",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = "Log usage and update remaining stock for this consumable.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onUseConsumable,
+                    enabled = !isBusy
+                ) {
+                    Text("Use consumable")
                 }
             }
         }

@@ -40,8 +40,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.keepaside.aquapt.core.model.ConsumableUnit
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.repository.AquariumRepository
+import com.keepaside.aquapt.core.repository.ConsumableRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
 import com.keepaside.aquapt.core.repository.MemoRepository
@@ -55,6 +57,7 @@ import java.time.ZoneId
 fun EntityFormScreen(
     kind: EntityKind?,
     aquariumId: String?,
+    targetEntityId: String?,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp)
@@ -68,6 +71,9 @@ fun EntityFormScreen(
     }
     val memoRepository: MemoRepository = remember {
         KoinJavaComponent.get(MemoRepository::class.java)
+    }
+    val consumableRepository: ConsumableRepository = remember {
+        KoinJavaComponent.get(ConsumableRepository::class.java)
     }
     val dosingLogRepository: DosingLogRepository = remember {
         KoinJavaComponent.get(DosingLogRepository::class.java)
@@ -83,7 +89,9 @@ fun EntityFormScreen(
         factory = remember(
             kind,
             aquariumId,
+            targetEntityId,
             aquariumRepository,
+            consumableRepository,
             issueRepository,
             memoRepository,
             dosingLogRepository,
@@ -93,7 +101,9 @@ fun EntityFormScreen(
             EntityFormViewModel.factory(
                 kind = kind,
                 aquariumId = aquariumId,
+                targetEntityId = targetEntityId,
                 aquariumRepository = aquariumRepository,
+                consumableRepository = consumableRepository,
                 issueRepository = issueRepository,
                 memoRepository = memoRepository,
                 dosingLogRepository = dosingLogRepository,
@@ -107,7 +117,11 @@ fun EntityFormScreen(
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        formViewModel.onMemoPhotoUriChanged(uri?.toString().orEmpty())
+        when (uiState.kind) {
+            EntityKind.MEMO -> formViewModel.onMemoPhotoUriChanged(uri?.toString().orEmpty())
+            EntityKind.CONSUMABLE -> formViewModel.onConsumablePhotoUriChanged(uri?.toString().orEmpty())
+            else -> Unit
+        }
     }
 
     Box(
@@ -272,6 +286,125 @@ fun EntityFormScreen(
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                }
+                            }
+
+                            EntityKind.CONSUMABLE -> {
+                                val targetConsumable = uiState.targetConsumable
+
+                                if (targetConsumable != null) {
+                                    Text(
+                                        text = "Consumable: ${targetConsumable.name}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Current stock: ${targetConsumable.remainingLabel}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    OutlinedTextField(
+                                        value = uiState.draft.consumableAmountUsed,
+                                        onValueChange = formViewModel::onConsumableAmountUsedChanged,
+                                        label = { Text("Amount used") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = !uiState.isSaving,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                    )
+
+                                    OutlinedTextField(
+                                        value = uiState.draft.consumableUseNote,
+                                        onValueChange = formViewModel::onConsumableUseNoteChanged,
+                                        label = { Text("Note (optional)") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = !uiState.isSaving,
+                                        minLines = 2
+                                    )
+                                } else {
+                                    OutlinedTextField(
+                                        value = uiState.draft.consumableName,
+                                        onValueChange = formViewModel::onConsumableNameChanged,
+                                        label = { Text("Name") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = !uiState.isSaving
+                                    )
+
+                                    Text(
+                                        text = "Unit",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        items(ConsumableUnit.entries, key = { it.name }) { unit ->
+                                            FilterChip(
+                                                selected = uiState.draft.consumableUnit == unit.name,
+                                                onClick = { formViewModel.onConsumableUnitChanged(unit) },
+                                                enabled = !uiState.isSaving,
+                                                label = {
+                                                    Text(unit.name.lowercase())
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    OutlinedTextField(
+                                        value = uiState.draft.consumableRemaining,
+                                        onValueChange = formViewModel::onConsumableRemainingChanged,
+                                        label = { Text("Remaining") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = !uiState.isSaving,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                    )
+
+                                    OutlinedTextField(
+                                        value = uiState.draft.consumableReorderAt,
+                                        onValueChange = formViewModel::onConsumableReorderAtChanged,
+                                        label = { Text("Reorder threshold (optional)") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = !uiState.isSaving,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                    )
+
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                photoPickerLauncher.launch(
+                                                    PickVisualMediaRequest.Builder()
+                                                        .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                        .build()
+                                                )
+                                            },
+                                            enabled = !uiState.isSaving
+                                        ) {
+                                            Text(
+                                                if (uiState.draft.consumablePhotoUri.isBlank()) {
+                                                    "Attach photo"
+                                                } else {
+                                                    "Change photo"
+                                                }
+                                            )
+                                        }
+
+                                        if (uiState.draft.consumablePhotoUri.isNotBlank()) {
+                                            TextButton(
+                                                onClick = { formViewModel.onConsumablePhotoUriChanged("") },
+                                                enabled = !uiState.isSaving
+                                            ) {
+                                                Text("Remove")
+                                            }
+                                        }
+                                    }
+
+                                    if (uiState.draft.consumablePhotoUri.isNotBlank()) {
+                                        Text(
+                                            text = "Photo selected",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
 

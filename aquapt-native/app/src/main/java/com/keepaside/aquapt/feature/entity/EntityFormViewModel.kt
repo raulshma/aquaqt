@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.keepaside.aquapt.core.model.Aquarium
+import com.keepaside.aquapt.core.model.Consumable
+import com.keepaside.aquapt.core.model.ConsumableUnit
 import com.keepaside.aquapt.core.model.DosingLog
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.model.EntityRef
@@ -14,6 +16,7 @@ import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.model.WaterParameterLog
 import com.keepaside.aquapt.core.model.WaterParameters
 import com.keepaside.aquapt.core.repository.AquariumRepository
+import com.keepaside.aquapt.core.repository.ConsumableRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
 import com.keepaside.aquapt.core.repository.MemoRepository
@@ -45,6 +48,13 @@ data class EntityFormDraft(
     val issueTitle: String = "",
     val memoContent: String = "",
     val memoPhotoUri: String = "",
+    val consumableName: String = "",
+    val consumableUnit: String = ConsumableUnit.ML.name,
+    val consumableRemaining: String = "",
+    val consumableReorderAt: String = "",
+    val consumablePhotoUri: String = "",
+    val consumableAmountUsed: String = "",
+    val consumableUseNote: String = "",
     val dosingProduct: String = "",
     val dosingAmountMl: String = "",
     val dosingNote: String = "",
@@ -73,6 +83,14 @@ enum class EntityFormParameterField(val label: String) {
     ALKALINITY("Alkalinity")
 }
 
+data class EntityFormTargetConsumable(
+    val id: String,
+    val aquariumId: String,
+    val name: String,
+    val remainingLabel: String,
+    val photoUri: String?
+)
+
 data class EntityFormUiState(
     val isLoading: Boolean = true,
     val kind: EntityKind? = null,
@@ -83,6 +101,7 @@ data class EntityFormUiState(
     val aquariumId: String? = null,
     val aquariumName: String? = null,
     val aquariumOptions: List<EntityFormAquariumOption> = emptyList(),
+    val targetConsumable: EntityFormTargetConsumable? = null,
     val draft: EntityFormDraft = EntityFormDraft(),
     val isUnsupportedKind: Boolean = false,
     val isSaving: Boolean = false,
@@ -93,7 +112,9 @@ data class EntityFormUiState(
 class EntityFormViewModel(
     private val kind: EntityKind?,
     aquariumId: String?,
+    private val targetEntityId: String?,
     private val aquariumRepository: AquariumRepository,
+    private val consumableRepository: ConsumableRepository,
     private val issueRepository: IssueRepository,
     private val memoRepository: MemoRepository,
     private val dosingLogRepository: DosingLogRepository,
@@ -140,6 +161,34 @@ class EntityFormViewModel(
         draftState.update { draft -> draft.copy(memoPhotoUri = input) }
     }
 
+    fun onConsumableNameChanged(input: String) {
+        draftState.update { draft -> draft.copy(consumableName = input) }
+    }
+
+    fun onConsumableUnitChanged(unit: ConsumableUnit) {
+        draftState.update { draft -> draft.copy(consumableUnit = unit.name) }
+    }
+
+    fun onConsumableRemainingChanged(input: String) {
+        draftState.update { draft -> draft.copy(consumableRemaining = input) }
+    }
+
+    fun onConsumableReorderAtChanged(input: String) {
+        draftState.update { draft -> draft.copy(consumableReorderAt = input) }
+    }
+
+    fun onConsumablePhotoUriChanged(input: String) {
+        draftState.update { draft -> draft.copy(consumablePhotoUri = input) }
+    }
+
+    fun onConsumableAmountUsedChanged(input: String) {
+        draftState.update { draft -> draft.copy(consumableAmountUsed = input) }
+    }
+
+    fun onConsumableUseNoteChanged(input: String) {
+        draftState.update { draft -> draft.copy(consumableUseNote = input) }
+    }
+
     fun onDosingProductChanged(input: String) {
         draftState.update { draft -> draft.copy(dosingProduct = input) }
     }
@@ -172,12 +221,14 @@ class EntityFormViewModel(
     fun save() {
         val state = _uiState.value
         val aquariumId = state.aquariumId
+        val targetConsumableState = state.targetConsumable
 
         val validationError = validateEntityFormDraft(
             kind = kind,
             draft = state.draft,
             aquariumId = aquariumId,
-            zoneId = zoneId
+            zoneId = zoneId,
+            isConsumableConsumeMode = targetConsumableState != null
         )
 
         if (validationError != null) {
@@ -242,6 +293,54 @@ class EntityFormViewModel(
                             createdAtIso = createdAt.toString()
                         )
                         "Parameter log added"
+                    }
+
+                    EntityKind.CONSUMABLE -> {
+                        val consumeTargetId = state.targetConsumable?.id
+
+                        if (consumeTargetId != null) {
+                            val amountUsed = parseEntityFormPositiveAmountMl(state.draft.consumableAmountUsed)
+                                ?: error(entityFormConsumableAmountUsedErrorMessage)
+                            val note = state.draft.consumableUseNote.trim().takeIf { it.isNotEmpty() }
+
+                            consumeExistingConsumable(
+                                consumableId = consumeTargetId,
+                                amountUsed = amountUsed,
+                                note = note,
+                                createdAtIso = createdAt.toString()
+                            )
+                            "Consumable usage logged"
+                        } else {
+                            val name = state.draft.consumableName.trim()
+                            if (name.isBlank()) {
+                                error(entityFormConsumableNameErrorMessage)
+                            }
+
+                            val unit = parseEntityFormConsumableUnit(state.draft.consumableUnit)
+                                ?: error(entityFormConsumableUnitErrorMessage)
+
+                            val remaining = parseEntityFormNonNegativeAmount(state.draft.consumableRemaining)
+                                ?: error(entityFormConsumableRemainingErrorMessage)
+
+                            val reorderAt = when {
+                                state.draft.consumableReorderAt.isBlank() -> null
+                                else -> parseEntityFormNonNegativeAmount(state.draft.consumableReorderAt)
+                                    ?: error(entityFormConsumableReorderErrorMessage)
+                            }
+
+                            val photoUri = normalizeEntityFormPhotoUri(state.draft.consumablePhotoUri)
+
+                            saveConsumable(
+                                aquariumId = aquariumId ?: error("Choose a tank before saving."),
+                                name = name,
+                                unit = unit,
+                                remaining = remaining,
+                                reorderAt = reorderAt,
+                                photoUri = photoUri,
+                                createdAtIso = createdAt.toString()
+                            )
+                            "Consumable added"
+                        }
                     }
 
                     else -> error("This form is not available for this entity type yet.")
@@ -385,18 +484,96 @@ class EntityFormViewModel(
         )
     }
 
+    private suspend fun saveConsumable(
+        aquariumId: String,
+        name: String,
+        unit: ConsumableUnit,
+        remaining: Double,
+        reorderAt: Double?,
+        photoUri: String?,
+        createdAtIso: String
+    ) {
+        val consumableId = idProvider()
+        consumableRepository.upsert(
+            Consumable(
+                id = consumableId,
+                aquariumId = aquariumId,
+                name = name,
+                unit = unit,
+                remaining = remaining,
+                reorderAt = reorderAt,
+                updatedAt = createdAtIso,
+                photoUri = photoUri
+            )
+        )
+
+        timelineEventRepository.upsert(
+            TimelineEvent(
+                id = idProvider(),
+                aquariumId = aquariumId,
+                type = TimelineEventType.CONSUMABLE,
+                createdAt = createdAtIso,
+                title = "Consumable tracked",
+                description = "$name (${formatEntityAmount(remaining)}${unit.name.lowercase()})",
+                photoUri = photoUri,
+                source = EntityRef(EntityKind.CONSUMABLE, consumableId, aquariumId),
+                related = aquariumRelatedRefs(aquariumId)
+            )
+        )
+    }
+
+    private suspend fun consumeExistingConsumable(
+        consumableId: String,
+        amountUsed: Double,
+        note: String?,
+        createdAtIso: String
+    ) {
+        val consumable = consumableRepository.getById(consumableId)
+            ?: error(entityFormConsumableTargetNotFoundMessage)
+
+        val updated = consumable.copy(
+            remaining = (consumable.remaining - amountUsed).coerceAtLeast(0.0),
+            updatedAt = createdAtIso
+        )
+
+        consumableRepository.upsert(updated)
+
+        timelineEventRepository.upsert(
+            TimelineEvent(
+                id = idProvider(),
+                aquariumId = updated.aquariumId,
+                type = TimelineEventType.CONSUMABLE,
+                createdAt = createdAtIso,
+                title = "Used ${updated.name}",
+                description = buildString {
+                    append("${formatEntityAmount(amountUsed)}${updated.unit.name.lowercase()}")
+                    if (!note.isNullOrBlank()) {
+                        append(" • ")
+                        append(note)
+                    }
+                },
+                photoUri = updated.photoUri,
+                source = EntityRef(EntityKind.CONSUMABLE, updated.id, updated.aquariumId),
+                related = aquariumRelatedRefs(updated.aquariumId)
+            )
+        )
+    }
+
     private fun observeFormState() {
         viewModelScope.launch {
             combine(
                 aquariumRepository.getAll(),
+                consumableRepository.getAll(),
                 draftState,
                 statusMessage,
                 isSaving
-            ) { aquariums, draft, status, saving ->
+            ) { aquariums, consumables, draft, status, saving ->
                 assembleEntityFormUiState(
                     kind = kind,
                     draft = draft,
                     aquariums = aquariums,
+                    consumables = consumables,
+                    targetEntityId = targetEntityId,
                     isSaving = saving,
                     statusMessage = status,
                     zoneId = zoneId
@@ -411,7 +588,9 @@ class EntityFormViewModel(
         fun factory(
             kind: EntityKind?,
             aquariumId: String?,
+            targetEntityId: String?,
             aquariumRepository: AquariumRepository,
+            consumableRepository: ConsumableRepository,
             issueRepository: IssueRepository,
             memoRepository: MemoRepository,
             dosingLogRepository: DosingLogRepository,
@@ -425,7 +604,9 @@ class EntityFormViewModel(
                         return EntityFormViewModel(
                             kind = kind,
                             aquariumId = aquariumId,
+                            targetEntityId = targetEntityId,
                             aquariumRepository = aquariumRepository,
+                            consumableRepository = consumableRepository,
                             issueRepository = issueRepository,
                             memoRepository = memoRepository,
                             dosingLogRepository = dosingLogRepository,
@@ -448,21 +629,55 @@ internal const val entityFormParameterErrorMessage =
 internal const val entityFormDosingAmountErrorMessage =
     "Enter a dosing amount greater than 0 ml."
 
+internal const val entityFormConsumableNameErrorMessage =
+    "Name the consumable before saving."
+
+internal const val entityFormConsumableUnitErrorMessage =
+    "Choose a valid consumable unit before saving."
+
+internal const val entityFormConsumableRemainingErrorMessage =
+    "Enter a remaining amount of 0 or more."
+
+internal const val entityFormConsumableReorderErrorMessage =
+    "Enter a reorder threshold of 0 or more."
+
+internal const val entityFormConsumableAmountUsedErrorMessage =
+    "Enter an amount used greater than 0."
+
+internal const val entityFormConsumableTargetNotFoundMessage =
+    "Selected consumable is no longer available."
+
 internal fun assembleEntityFormUiState(
     kind: EntityKind?,
     draft: EntityFormDraft,
     aquariums: List<Aquarium>,
+    consumables: List<Consumable> = emptyList(),
+    targetEntityId: String? = null,
     isSaving: Boolean,
     statusMessage: String?,
     zoneId: ZoneId
 ): EntityFormUiState {
+    val targetConsumable = if (kind == EntityKind.CONSUMABLE) {
+        val targetId = targetEntityId?.trim().takeIf { !it.isNullOrEmpty() }
+        if (targetId == null) null else consumables.firstOrNull { it.id == targetId }
+    } else {
+        null
+    }
+
+    val isConsumableConsumeMode = targetConsumable != null
     val sortedAquariums = aquariums.sortedBy { it.name.lowercase() }
     val requestedAquariumId = draft.aquariumId?.takeIf { id -> sortedAquariums.any { it.id == id } }
-    val aquariumId = requestedAquariumId ?: sortedAquariums.firstOrNull()?.id
+    val aquariumId = targetConsumable?.aquariumId ?: requestedAquariumId ?: sortedAquariums.firstOrNull()?.id
     val aquariumName = sortedAquariums.firstOrNull { it.id == aquariumId }?.name
 
     val supported = isEntityFormSupported(kind)
-    val validationError = validateEntityFormDraft(kind, draft, aquariumId, zoneId)
+    val validationError = validateEntityFormDraft(
+        kind = kind,
+        draft = draft,
+        aquariumId = aquariumId,
+        zoneId = zoneId,
+        isConsumableConsumeMode = targetConsumable != null
+    )
 
     val (headline, supportingText, saveLabel) = when (kind) {
         EntityKind.ISSUE -> Triple(
@@ -489,9 +704,23 @@ internal fun assembleEntityFormUiState(
             "Save parameters"
         )
 
+        EntityKind.CONSUMABLE -> if (isConsumableConsumeMode) {
+            Triple(
+                "Use consumable",
+                "Log usage and keep inventory levels up to date.",
+                "Save usage"
+            )
+        } else {
+            Triple(
+                "New consumable",
+                "Track inventory with remaining amount and an optional reorder threshold.",
+                "Save consumable"
+            )
+        }
+
         else -> Triple(
             "New activity",
-            "This route currently supports issue, memo, dosing, and parameter forms.",
+            "This route currently supports issue, memo, dosing, parameter, and consumable forms.",
             "Save"
         )
     }
@@ -510,13 +739,18 @@ internal fun assembleEntityFormUiState(
         saveButtonLabel = saveLabel,
         aquariumId = aquariumId,
         aquariumName = aquariumName,
-        aquariumOptions = sortedAquariums.map { aquarium ->
-            EntityFormAquariumOption(
-                id = aquarium.id,
-                name = aquarium.name,
-                isSelected = aquarium.id == aquariumId
-            )
+        aquariumOptions = if (isConsumableConsumeMode) {
+            emptyList()
+        } else {
+            sortedAquariums.map { aquarium ->
+                EntityFormAquariumOption(
+                    id = aquarium.id,
+                    name = aquarium.name,
+                    isSelected = aquarium.id == aquariumId
+                )
+            }
         },
+        targetConsumable = targetConsumable?.toTargetConsumableState(),
         draft = draft,
         isUnsupportedKind = !supported,
         isSaving = isSaving,
@@ -529,7 +763,8 @@ internal fun validateEntityFormDraft(
     kind: EntityKind?,
     draft: EntityFormDraft,
     aquariumId: String?,
-    zoneId: ZoneId
+    zoneId: ZoneId,
+    isConsumableConsumeMode: Boolean = false
 ): String? {
     if (!isEntityFormSupported(kind)) {
         return "This form is not available for this entity type yet."
@@ -552,6 +787,24 @@ internal fun validateEntityFormDraft(
             else -> null
         }
         EntityKind.PARAMETER_LOG -> if (draft.toWaterParameters() == null) entityFormParameterErrorMessage else null
+        EntityKind.CONSUMABLE -> {
+            if (isConsumableConsumeMode) {
+                if (parseEntityFormPositiveAmountMl(draft.consumableAmountUsed) == null) {
+                    entityFormConsumableAmountUsedErrorMessage
+                } else {
+                    null
+                }
+            } else {
+                when {
+                    draft.consumableName.trim().isBlank() -> entityFormConsumableNameErrorMessage
+                    parseEntityFormConsumableUnit(draft.consumableUnit) == null -> entityFormConsumableUnitErrorMessage
+                    parseEntityFormNonNegativeAmount(draft.consumableRemaining) == null -> entityFormConsumableRemainingErrorMessage
+                    draft.consumableReorderAt.isNotBlank() &&
+                        parseEntityFormNonNegativeAmount(draft.consumableReorderAt) == null -> entityFormConsumableReorderErrorMessage
+                    else -> null
+                }
+            }
+        }
         else -> "This form is not available for this entity type yet."
     }
 }
@@ -560,7 +813,8 @@ internal fun isEntityFormSupported(kind: EntityKind?): Boolean =
     kind == EntityKind.ISSUE ||
         kind == EntityKind.MEMO ||
         kind == EntityKind.DOSING ||
-        kind == EntityKind.PARAMETER_LOG
+        kind == EntityKind.PARAMETER_LOG ||
+        kind == EntityKind.CONSUMABLE
 
 internal fun normalizeEntityFormPhotoUri(raw: String?): String? =
     raw?.trim()?.takeIf { it.isNotEmpty() }
@@ -635,6 +889,12 @@ internal fun EntityFormDraft.toWaterParameters(): WaterParameters? {
 internal fun parseEntityFormPositiveAmountMl(raw: String): Double? =
     parseFiniteEntityFormDouble(raw)?.takeIf { it > 0.0 }
 
+internal fun parseEntityFormNonNegativeAmount(raw: String): Double? =
+    parseFiniteEntityFormDouble(raw)?.takeIf { it >= 0.0 }
+
+internal fun parseEntityFormConsumableUnit(raw: String): ConsumableUnit? =
+    runCatching { ConsumableUnit.valueOf(raw.trim().uppercase()) }.getOrNull()
+
 private fun parseFiniteEntityFormDouble(raw: String): Double? {
     val number = raw.trim().toDoubleOrNull() ?: return null
     return number.takeIf { !it.isNaN() && !it.isInfinite() }
@@ -664,6 +924,13 @@ private fun EntityFormDraft.clearedAfterSave(
         issueTitle = "",
         memoContent = "",
         memoPhotoUri = "",
+        consumableName = "",
+        consumableUnit = ConsumableUnit.ML.name,
+        consumableRemaining = "",
+        consumableReorderAt = "",
+        consumablePhotoUri = "",
+        consumableAmountUsed = "",
+        consumableUseNote = "",
         dosingProduct = "",
         dosingAmountMl = "",
         dosingNote = "",
@@ -681,6 +948,15 @@ private fun EntityFormDraft.clearedAfterSave(
 
 private fun formatEntityAmount(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
+private fun Consumable.toTargetConsumableState(): EntityFormTargetConsumable =
+    EntityFormTargetConsumable(
+        id = id,
+        aquariumId = aquariumId,
+        name = name,
+        remainingLabel = "${formatEntityAmount(remaining)}${unit.name.lowercase()} remaining",
+        photoUri = photoUri
+    )
 
 private fun EntityKind?.label(): String =
     this?.name

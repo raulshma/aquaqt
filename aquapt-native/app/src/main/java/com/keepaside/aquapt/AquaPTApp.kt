@@ -68,10 +68,12 @@ private object AquaPTRoute {
     private const val EntityKindArg = "kind"
     private const val EntityIdArg = "id"
     private const val EntityAquariumIdArg = "aquariumId"
+    private const val EntityTargetIdArg = "targetId"
     private const val MissingAquariumIdToken = "_"
 
     const val EntityDetailPattern = "$Entity/{$EntityKindArg}/{$EntityIdArg}/{$EntityAquariumIdArg}"
-    const val EntityFormPattern = "$EntityForm/{$EntityKindArg}/{$EntityAquariumIdArg}"
+    const val EntityFormPattern =
+        "$EntityForm/{$EntityKindArg}/{$EntityAquariumIdArg}?$EntityTargetIdArg={$EntityTargetIdArg}"
 
     fun entityDetailRoute(kind: EntityKind, id: String, aquariumId: String?): String {
         val encodedKind = Uri.encode(kind.name)
@@ -80,10 +82,20 @@ private object AquaPTRoute {
         return "$Entity/$encodedKind/$encodedId/$encodedAquariumId"
     }
 
-    fun entityFormRoute(kind: EntityKind, aquariumId: String?): String {
+    fun entityFormRoute(
+        kind: EntityKind,
+        aquariumId: String?,
+        targetEntityId: String? = null
+    ): String {
         val encodedKind = Uri.encode(kind.name)
         val encodedAquariumId = Uri.encode(aquariumId ?: MissingAquariumIdToken)
-        return "$EntityForm/$encodedKind/$encodedAquariumId"
+        val baseRoute = "$EntityForm/$encodedKind/$encodedAquariumId"
+        val encodedTargetId = targetEntityId?.trim()?.takeIf { it.isNotEmpty() }?.let(Uri::encode)
+        return if (encodedTargetId == null) {
+            baseRoute
+        } else {
+            "$baseRoute?$EntityTargetIdArg=$encodedTargetId"
+        }
     }
 
     fun parseEntityKind(value: String?): EntityKind? =
@@ -95,6 +107,9 @@ private object AquaPTRoute {
         val decoded = value?.let(Uri::decode)
         return decoded?.takeUnless { it == MissingAquariumIdToken }
     }
+
+    fun parseEntityTargetId(value: String?): String? =
+        value?.let(Uri::decode)?.takeIf { it.isNotBlank() }
 }
 
 private val topLevelDestinations = listOf(
@@ -244,11 +259,12 @@ fun AquaPTApp() {
                     kind = kind,
                     entityId = entityId,
                     aquariumId = aquariumId,
-                    onOpenEntityForm = { formKind, formAquariumId ->
+                    onOpenEntityForm = { formKind, formAquariumId, targetEntityId ->
                         navController.navigate(
                             AquaPTRoute.entityFormRoute(
                                 kind = formKind,
-                                aquariumId = formAquariumId
+                                aquariumId = formAquariumId,
+                                targetEntityId = targetEntityId
                             )
                         ) {
                             launchSingleTop = true
@@ -259,10 +275,12 @@ fun AquaPTApp() {
             composable(AquaPTRoute.EntityFormPattern) { backStackEntry ->
                 val kind = AquaPTRoute.parseEntityKind(backStackEntry.arguments?.getString("kind"))
                 val aquariumId = AquaPTRoute.parseEntityAquariumId(backStackEntry.arguments?.getString("aquariumId"))
+                val targetEntityId = AquaPTRoute.parseEntityTargetId(backStackEntry.arguments?.getString("targetId"))
 
                 EntityFormScreen(
                     kind = kind,
                     aquariumId = aquariumId,
+                    targetEntityId = targetEntityId,
                     onDone = {
                         navController.popBackStack()
                     }
