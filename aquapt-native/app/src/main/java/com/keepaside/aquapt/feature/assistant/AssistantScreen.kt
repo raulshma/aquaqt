@@ -5,19 +5,22 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -26,9 +29,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,6 +46,7 @@ import com.keepaside.aquapt.core.model.AssistantMessageRole
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
 import com.keepaside.aquapt.core.repository.AssistantMemoryStore
 import com.keepaside.aquapt.core.repository.AppSettingsStore
+import kotlinx.coroutines.launch
 import org.koin.java.KoinJavaComponent
 
 @Composable
@@ -83,25 +91,124 @@ fun AssistantScreen(
     val assistantError = uiState.assistantError
     val controlsEnabled =
         !uiState.isSending && !uiState.isExecutingActions && !uiState.isApplyingMemoryCompaction
+    val clipboardManager = LocalClipboardManager.current
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val drawerScope = rememberCoroutineScope()
 
     var renameInput by remember(uiState.activeConversationId, uiState.activeConversationTitle) {
         mutableStateOf(uiState.activeConversationTitle)
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(contentPadding)
-    ) {
-        if (uiState.isLoading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            return@Box
-        }
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Column(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Conversations",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
 
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                    OutlinedTextField(
+                        value = uiState.conversationSearchQuery,
+                        onValueChange = viewModel::onConversationSearchQueryChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Search conversations") },
+                        singleLine = true,
+                        enabled = controlsEnabled
+                    )
+
+                    if (uiState.conversationSearchQuery.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = viewModel::clearConversationSearchQuery,
+                            enabled = controlsEnabled
+                        ) {
+                            Text("Clear search")
+                        }
+                    }
+
+                    Text(
+                        text = "${uiState.visibleConversationCount} of ${uiState.totalConversationCount} shown",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (uiState.conversationItems.isEmpty()) {
+                        Text(
+                            text = "No conversations match your search.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(uiState.conversationItems, key = { it.id }) { conversation ->
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    FilterChip(
+                                        selected = uiState.activeConversationId == conversation.id,
+                                        onClick = {
+                                            viewModel.selectConversation(conversation.id)
+                                            drawerScope.launch { drawerState.close() }
+                                        },
+                                        enabled = controlsEnabled,
+                                        label = {
+                                            Text(
+                                                text = buildString {
+                                                    if (conversation.isPinned) {
+                                                        append("📌 ")
+                                                    }
+                                                    append(conversation.title)
+                                                    append(" • ")
+                                                    append(conversation.messageCount)
+                                                    append(" msg")
+                                                },
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    )
+
+                                    conversation.lastMessagePreview
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let { preview ->
+                                            Text(
+                                                text = preview,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(contentPadding)
         ) {
+            if (uiState.isLoading) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                return@Box
+            }
+
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
             Text(
                 text = "Assistant",
                 style = MaterialTheme.typography.headlineSmall,
@@ -123,6 +230,13 @@ fun AssistantScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { drawerScope.launch { drawerState.open() } },
+                    enabled = controlsEnabled
+                ) {
+                    Text("Browse")
+                }
+
                 Button(
                     onClick = viewModel::createConversation,
                     enabled = controlsEnabled
@@ -178,23 +292,6 @@ fun AssistantScreen(
                     enabled = uiState.activeConversationId != null && controlsEnabled
                 ) {
                     Text("Reset")
-                }
-            }
-
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(uiState.conversationItems, key = { it.id }) { conversation ->
-                    FilterChip(
-                        selected = uiState.activeConversationId == conversation.id,
-                        onClick = { viewModel.selectConversation(conversation.id) },
-                        enabled = controlsEnabled,
-                        label = {
-                            Text(
-                                text = if (conversation.isPinned) "📌 ${conversation.title}" else conversation.title,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    )
                 }
             }
 
@@ -567,6 +664,25 @@ fun AssistantScreen(
                                 )
 
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (message.content.isNotBlank()) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                clipboardManager.setText(AnnotatedString(message.content))
+                                                viewModel.onMessageCopied(message.role)
+                                            },
+                                            enabled = controlsEnabled
+                                        ) {
+                                            Text("Copy")
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = { viewModel.reuseMessageAsPrompt(message.id) },
+                                            enabled = controlsEnabled
+                                        ) {
+                                            Text("Reuse")
+                                        }
+                                    }
+
                                     if (message.role == AssistantMessageRole.USER && message.requestFailed) {
                                         OutlinedButton(
                                             onClick = { viewModel.retryFailedMessage(message.id) },
@@ -615,31 +731,32 @@ fun AssistantScreen(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.Bottom
-            ) {
-                OutlinedTextField(
-                    value = uiState.composerText,
-                    onValueChange = viewModel::onComposerTextChanged,
-                    modifier = Modifier.weight(1f),
-                    label = { Text("Message AquaPT assistant") },
-                    minLines = 2,
-                    maxLines = 5,
-                    enabled = controlsEnabled
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    OutlinedTextField(
+                        value = uiState.composerText,
+                        onValueChange = viewModel::onComposerTextChanged,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Message AquaPT assistant") },
+                        minLines = 2,
+                        maxLines = 5,
+                        enabled = controlsEnabled
+                    )
 
-                if (uiState.canStopGeneration) {
-                    OutlinedButton(onClick = viewModel::stopGeneration) {
-                        Text("Stop")
-                    }
-                } else {
-                    Button(
-                        onClick = viewModel::sendMessage,
-                        enabled = uiState.canSend && controlsEnabled
-                    ) {
-                        Text("Send")
+                    if (uiState.canStopGeneration) {
+                        OutlinedButton(onClick = viewModel::stopGeneration) {
+                            Text("Stop")
+                        }
+                    } else {
+                        Button(
+                            onClick = viewModel::sendMessage,
+                            enabled = uiState.canSend && controlsEnabled
+                        ) {
+                            Text("Send")
+                        }
                     }
                 }
             }

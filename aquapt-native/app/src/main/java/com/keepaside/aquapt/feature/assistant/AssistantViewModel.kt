@@ -86,6 +86,7 @@ private object NoOpAssistantMemoryStore : AssistantMemoryStore {
 
 private data class AssistantTransientState(
     val activeId: String?,
+    val conversationSearch: String,
     val composer: String,
     val status: String,
     val error: String?,
@@ -122,6 +123,9 @@ data class AssistantUiState(
     val statusMessage: String = assistantDefaultStatusMessage,
     val assistantError: String? = null,
     val conversationItems: List<AssistantConversationItem> = emptyList(),
+    val conversationSearchQuery: String = "",
+    val totalConversationCount: Int = 0,
+    val visibleConversationCount: Int = 0,
     val activeConversationId: String? = null,
     val activeConversationTitle: String = assistantDefaultConversationTitle,
     val activeConversationPinned: Boolean = false,
@@ -163,6 +167,7 @@ class AssistantViewModel(
 ) : ViewModel() {
 
     private val activeConversationId = MutableStateFlow<String?>(null)
+    private val conversationSearchQuery = MutableStateFlow("")
     private val composerText = MutableStateFlow("")
     private val statusMessage = MutableStateFlow(assistantDefaultStatusMessage)
     private val assistantError = MutableStateFlow<String?>(null)
@@ -191,6 +196,14 @@ class AssistantViewModel(
     fun onComposerTextChanged(value: String) {
         if (isBusy()) return
         composerText.update { value }
+    }
+
+    fun onConversationSearchQueryChanged(value: String) {
+        conversationSearchQuery.update { value }
+    }
+
+    fun clearConversationSearchQuery() {
+        conversationSearchQuery.update { "" }
     }
 
     fun createConversation() {
@@ -312,6 +325,52 @@ class AssistantViewModel(
             retryUserMessageId = null,
             replaceAssistantMessageId = null
         )
+    }
+
+    fun reuseMessageAsPrompt(messageId: String) {
+        if (isBusy()) return
+
+        val activeConversation = resolveActiveConversation(assistantConversationsStore.conversations.value)
+        if (activeConversation == null) {
+            statusMessage.update { "No conversation available." }
+            return
+        }
+
+        val message = activeConversation.messages.firstOrNull { candidate ->
+            candidate.id == messageId
+        }
+
+        if (message == null) {
+            statusMessage.update { "Message is no longer available." }
+            return
+        }
+
+        val content = message.content.trim()
+        if (content.isEmpty()) {
+            statusMessage.update { "Cannot reuse an empty message." }
+            return
+        }
+
+        composerText.update { content }
+        statusMessage.update {
+            when (message.role) {
+                AssistantMessageRole.USER -> "Loaded your previous prompt into the composer."
+                AssistantMessageRole.ASSISTANT -> "Loaded assistant reply into the composer."
+                AssistantMessageRole.SYSTEM -> "Loaded system message into the composer."
+            }
+        }
+    }
+
+    fun onMessageCopied(messageRole: AssistantMessageRole) {
+        if (isBusy()) return
+
+        statusMessage.update {
+            when (messageRole) {
+                AssistantMessageRole.USER -> "Copied your message to clipboard."
+                AssistantMessageRole.ASSISTANT -> "Copied assistant reply to clipboard."
+                AssistantMessageRole.SYSTEM -> "Copied system message to clipboard."
+            }
+        }
     }
 
     fun retryFailedMessage(userMessageId: String) {
@@ -1071,6 +1130,7 @@ class AssistantViewModel(
         launchWork {
             val transientState = combine(
                 activeConversationId,
+                conversationSearchQuery,
                 composerText,
                 statusMessage,
                 assistantError,
@@ -1085,16 +1145,17 @@ class AssistantViewModel(
                 @Suppress("UNCHECKED_CAST")
                 AssistantTransientState(
                     activeId = values[0] as String?,
-                    composer = values[1] as String,
-                    status = values[2] as String,
-                    error = values[3] as String?,
-                    sending = values[4] as Boolean,
-                    streamingId = values[5] as String?,
-                    executingActions = values[6] as Boolean,
-                    memoryBusyMessageIds = values[7] as Set<String>,
-                    memoryPreviewing = values[8] as Boolean,
-                    memoryApplying = values[9] as Boolean,
-                    memoryPreview = values[10] as AssistantMemoryCompactionPreview?
+                    conversationSearch = values[1] as String,
+                    composer = values[2] as String,
+                    status = values[3] as String,
+                    error = values[4] as String?,
+                    sending = values[5] as Boolean,
+                    streamingId = values[6] as String?,
+                    executingActions = values[7] as Boolean,
+                    memoryBusyMessageIds = values[8] as Set<String>,
+                    memoryPreviewing = values[9] as Boolean,
+                    memoryApplying = values[10] as Boolean,
+                    memoryPreview = values[11] as AssistantMemoryCompactionPreview?
                 )
             }
 
@@ -1108,6 +1169,20 @@ class AssistantViewModel(
                     compareByDescending<AssistantConversation> { it.pinned }
                         .thenByDescending { it.updatedAt }
                 )
+
+                val normalizedSearch = transient.conversationSearch.trim()
+                val visibleConversations = if (normalizedSearch.isEmpty()) {
+                    sorted
+                } else {
+                    sorted.filter { conversation ->
+                        conversation.title.contains(normalizedSearch, ignoreCase = true) ||
+                            conversation.messages.lastOrNull()
+                                ?.content
+                                ?.contains(normalizedSearch, ignoreCase = true)
+                                ?: false
+                    }
+                }
+
                 val activeConversation =
                     sorted.firstOrNull { it.id == transient.activeId } ?: sorted.firstOrNull()
 
@@ -1120,7 +1195,7 @@ class AssistantViewModel(
                     .mapNotNull { snippet -> snippet.sourceMessageId }
                     .toSet()
 
-                val items = sorted.map { conversation ->
+                val items = visibleConversations.map { conversation ->
                     AssistantConversationItem(
                         id = conversation.id,
                         title = conversation.title,
@@ -1160,6 +1235,9 @@ class AssistantViewModel(
                     statusMessage = transient.status,
                     assistantError = transient.error,
                     conversationItems = items,
+                    conversationSearchQuery = transient.conversationSearch,
+                    totalConversationCount = sorted.size,
+                    visibleConversationCount = items.size,
                     activeConversationId = activeConversation?.id,
                     activeConversationTitle = activeConversation?.title ?: assistantDefaultConversationTitle,
                     activeConversationPinned = activeConversation?.pinned ?: false,

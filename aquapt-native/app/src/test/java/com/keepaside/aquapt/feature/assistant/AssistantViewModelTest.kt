@@ -111,6 +111,217 @@ class AssistantViewModelTest {
     }
 
     @Test
+    fun `reuse message loads content into composer`() = runTest {
+        val existing = listOf(
+            AssistantConversation(
+                id = "conv-reuse",
+                title = "Reuse",
+                messages = listOf(
+                    AssistantChatMessage(
+                        id = "msg-user",
+                        role = AssistantMessageRole.USER,
+                        content = "Original prompt",
+                        createdAt = "2026-04-11T10:59:00Z"
+                    ),
+                    AssistantChatMessage(
+                        id = "msg-assistant",
+                        role = AssistantMessageRole.ASSISTANT,
+                        content = "Reuse this answer",
+                        createdAt = "2026-04-11T11:00:00Z"
+                    )
+                ),
+                createdAt = "2026-04-11T10:59:00Z",
+                updatedAt = "2026-04-11T11:00:00Z"
+            )
+        )
+
+        val store = FakeAssistantConversationsStore(existing)
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = FakeAppSettingsStore(),
+            assistantGateway = FakeAssistantGateway(),
+            assistantActionReviewService = FakeAssistantActionReviewService(),
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T11:01:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+            viewModel.selectConversation("conv-reuse")
+
+            viewModel.reuseMessageAsPrompt("msg-assistant")
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertEquals("Reuse this answer", state.composerText)
+            assertTrue(state.canSend)
+            assertEquals("Loaded assistant reply into the composer.", state.statusMessage)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `reuse message rejects empty content`() = runTest {
+        val existing = listOf(
+            AssistantConversation(
+                id = "conv-empty-reuse",
+                title = "Reuse empty",
+                messages = listOf(
+                    AssistantChatMessage(
+                        id = "msg-empty",
+                        role = AssistantMessageRole.ASSISTANT,
+                        content = "   ",
+                        createdAt = "2026-04-11T11:00:00Z"
+                    )
+                ),
+                createdAt = "2026-04-11T11:00:00Z",
+                updatedAt = "2026-04-11T11:00:00Z"
+            )
+        )
+
+        val store = FakeAssistantConversationsStore(existing)
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = FakeAppSettingsStore(),
+            assistantGateway = FakeAssistantGateway(),
+            assistantActionReviewService = FakeAssistantActionReviewService(),
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T11:02:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+            viewModel.selectConversation("conv-empty-reuse")
+
+            viewModel.reuseMessageAsPrompt("msg-empty")
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertEquals("", state.composerText)
+            assertEquals("Cannot reuse an empty message.", state.statusMessage)
+            assertFalse(state.canSend)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `conversation search filters by title and latest preview`() = runTest {
+        val existing = listOf(
+            AssistantConversation(
+                id = "conv-water",
+                title = "Water planning",
+                messages = listOf(
+                    AssistantChatMessage(
+                        id = "msg-water-1",
+                        role = AssistantMessageRole.USER,
+                        content = "How often should I change water?",
+                        createdAt = "2026-04-11T09:00:00Z"
+                    )
+                ),
+                createdAt = "2026-04-11T09:00:00Z",
+                updatedAt = "2026-04-11T09:00:00Z"
+            ),
+            AssistantConversation(
+                id = "conv-feeding",
+                title = "Feeding notes",
+                messages = listOf(
+                    AssistantChatMessage(
+                        id = "msg-feed-1",
+                        role = AssistantMessageRole.ASSISTANT,
+                        content = "Nitrate alert trend looks stable.",
+                        createdAt = "2026-04-11T10:00:00Z"
+                    )
+                ),
+                createdAt = "2026-04-11T10:00:00Z",
+                updatedAt = "2026-04-11T10:00:00Z"
+            )
+        )
+
+        val store = FakeAssistantConversationsStore(existing)
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = FakeAppSettingsStore(),
+            assistantGateway = FakeAssistantGateway(),
+            assistantActionReviewService = FakeAssistantActionReviewService(),
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T11:03:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onConversationSearchQueryChanged("feeding")
+            advanceUntilIdle()
+
+            val byTitle = viewModel.uiState.value
+            assertEquals(2, byTitle.totalConversationCount)
+            assertEquals(1, byTitle.visibleConversationCount)
+            assertEquals("conv-feeding", byTitle.conversationItems.first().id)
+
+            viewModel.onConversationSearchQueryChanged("nitrate")
+            advanceUntilIdle()
+
+            val byPreview = viewModel.uiState.value
+            assertEquals(1, byPreview.visibleConversationCount)
+            assertEquals("conv-feeding", byPreview.conversationItems.first().id)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `clear conversation search restores full conversation list`() = runTest {
+        val existing = listOf(
+            AssistantConversation(
+                id = "conv-a",
+                title = "Alpha",
+                createdAt = "2026-04-11T09:00:00Z",
+                updatedAt = "2026-04-11T09:00:00Z"
+            ),
+            AssistantConversation(
+                id = "conv-b",
+                title = "Beta",
+                createdAt = "2026-04-11T10:00:00Z",
+                updatedAt = "2026-04-11T10:00:00Z"
+            )
+        )
+
+        val store = FakeAssistantConversationsStore(existing)
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = FakeAppSettingsStore(),
+            assistantGateway = FakeAssistantGateway(),
+            assistantActionReviewService = FakeAssistantActionReviewService(),
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T11:04:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onConversationSearchQueryChanged("alpha")
+            advanceUntilIdle()
+            assertEquals(1, viewModel.uiState.value.visibleConversationCount)
+
+            viewModel.clearConversationSearchQuery()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertEquals("", state.conversationSearchQuery)
+            assertEquals(2, state.visibleConversationCount)
+            assertEquals(2, state.conversationItems.size)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
     fun `send message attaches assistant telemetry metadata`() = runTest {
         val store = FakeAssistantConversationsStore()
         val settingsStore = FakeAppSettingsStore(
