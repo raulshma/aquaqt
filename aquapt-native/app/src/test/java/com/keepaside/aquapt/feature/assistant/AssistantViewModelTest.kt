@@ -30,6 +30,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -627,6 +628,143 @@ class AssistantViewModelTest {
             assertEquals(2, state.memoryCompactionBeforeCount)
             assertEquals(1, state.memoryCompactionAfterCount)
             assertEquals(1, state.memoryCompactionFacts.size)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `memory compaction preview prefers AI facts when memory model is configured`() = runTest {
+        val store = FakeAssistantConversationsStore()
+        val settingsStore = FakeAppSettingsStore(
+            AppSettings(
+                openRouterApiKey = "test-key",
+                aiModel = "openai/gpt-4o-mini",
+                assistantMemoryModel = "openai/gpt-4o-mini",
+                assistantMemoryEnabled = true
+            )
+        )
+        val memoryStore = FakeAssistantMemoryStore(
+            initialSnippets = listOf(
+                AssistantMemorySnippet(
+                    id = "snippet-1",
+                    content = "User prefers evening reminders and Sunday check-ins.",
+                    category = "manual",
+                    createdAt = "2026-04-11T10:00:00Z"
+                ),
+                AssistantMemorySnippet(
+                    id = "snippet-2",
+                    content = "Weekly nitrate checks are preferred.",
+                    category = "conversation_turn",
+                    createdAt = "2026-04-11T10:10:00Z"
+                )
+            )
+        ).apply {
+            preview = AssistantMemoryCompactionPreview(
+                beforeCount = 2,
+                afterCount = 2,
+                facts = listOf("Fallback fact A", "Fallback fact B")
+            )
+        }
+
+        val aiReply = "- User prefers evening reminders.\n- Weekly nitrate checks on Sundays."
+        val gateway = FakeAssistantGateway(
+            snapshots = listOf(aiReply),
+            finalReply = aiReply
+        )
+
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = settingsStore,
+            assistantMemoryStore = memoryStore,
+            assistantGateway = gateway,
+            assistantActionReviewService = FakeAssistantActionReviewService(),
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T11:05:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.previewMemoryCompaction()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertEquals(1, gateway.requests.size)
+            assertEquals("openai/gpt-4o-mini", gateway.requests.first().model)
+            assertTrue(
+                gateway.requests.first().messages.any { message ->
+                    message.role == AssistantMessageRole.SYSTEM &&
+                        message.content.contains("Return ONLY bullet points")
+                }
+            )
+            assertEquals(2, state.memoryCompactionAfterCount)
+            assertEquals(
+                listOf(
+                    "User prefers evening reminders.",
+                    "Weekly nitrate checks on Sundays."
+                ),
+                state.memoryCompactionFacts
+            )
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `memory compaction preview falls back to heuristic facts when AI call fails`() = runTest {
+        val store = FakeAssistantConversationsStore()
+        val settingsStore = FakeAppSettingsStore(
+            AppSettings(
+                openRouterApiKey = "test-key",
+                assistantMemoryModel = "openai/gpt-4o-mini",
+                assistantMemoryEnabled = true
+            )
+        )
+        val memoryStore = FakeAssistantMemoryStore(
+            initialSnippets = listOf(
+                AssistantMemorySnippet(
+                    id = "snippet-1",
+                    content = "User prefers evening reminders.",
+                    category = "manual",
+                    createdAt = "2026-04-11T10:00:00Z"
+                )
+            )
+        ).apply {
+            preview = AssistantMemoryCompactionPreview(
+                beforeCount = 1,
+                afterCount = 1,
+                facts = listOf("User prefers evening reminders.")
+            )
+        }
+
+        val gateway = FakeAssistantGateway(
+            error = IllegalStateException("network down")
+        )
+
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = settingsStore,
+            assistantMemoryStore = memoryStore,
+            assistantGateway = gateway,
+            assistantActionReviewService = FakeAssistantActionReviewService(),
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T11:05:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.previewMemoryCompaction()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertEquals(1, gateway.requests.size)
+            assertEquals(listOf("User prefers evening reminders."), state.memoryCompactionFacts)
+            assertTrue(state.statusMessage.contains("Compaction preview"))
+            assertNull(state.assistantError)
         } finally {
             viewModel.disposeForTests()
         }

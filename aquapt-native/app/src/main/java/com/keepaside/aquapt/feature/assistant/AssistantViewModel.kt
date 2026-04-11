@@ -17,6 +17,7 @@ import com.keepaside.aquapt.core.model.AssistantMemoryCompactionPreview
 import com.keepaside.aquapt.core.model.AssistantMemorySnippet
 import com.keepaside.aquapt.core.model.AssistantMessageRole
 import com.keepaside.aquapt.core.model.AssistantResponseTelemetry
+import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
 import com.keepaside.aquapt.core.repository.AssistantMemoryStore
 import com.keepaside.aquapt.core.repository.AppSettingsStore
@@ -37,6 +38,9 @@ import java.util.UUID
 private const val assistantDefaultConversationTitle = "New Chat"
 private const val assistantDefaultStatusMessage =
     "Ask about tanks, tasks, issues, and quick next steps."
+private const val assistantMemoryCompactionSnippetLimit = 24
+private const val assistantMemoryCompactionSnippetCharLimit = 320
+private const val assistantMemoryCompactionFactCharLimit = 220
 
 private object NoOpAssistantMemoryStore : AssistantMemoryStore {
     private val empty = MutableStateFlow<List<AssistantMemorySnippet>>(emptyList())
@@ -728,7 +732,10 @@ class AssistantViewModel(
             isPreviewingMemoryCompaction.update { true }
 
             try {
-                val preview = assistantMemoryStore.previewCompaction(maxFacts = maxFacts)
+                val preview = buildMemoryCompactionPreview(
+                    settings = settings,
+                    maxFacts = maxFacts
+                )
                 memoryCompactionPreview.update { preview }
 
                 statusMessage.update {
@@ -1182,6 +1189,152 @@ class AssistantViewModel(
             *lines.toTypedArray()
         ).joinToString(separator = "\n")
     }
+
+    private suspend fun buildMemoryCompactionPreview(
+        settings: AppSettings,
+        maxFacts: Int
+    ): AssistantMemoryCompactionPreview {
+        val fallbackPreview = assistantMemoryStore.previewCompaction(maxFacts = maxFacts)
+        if (fallbackPreview.beforeCount <= 0) {
+            return fallbackPreview
+        }
+
+        val aiFacts = runCatching {
+            generateAiCompactionFacts(
+                settings = settings,
+                maxFacts = maxFacts
+            )
+        }.getOrDefault(emptyList())
+
+        return if (aiFacts.isNotEmpty()) {
+            fallbackPreview.copy(
+                afterCount = aiFacts.size,
+                facts = aiFacts
+            )
+        } else {
+            fallbackPreview
+        }
+    }
+
+    private suspend fun generateAiCompactionFacts(
+        settings: AppSettings,
+        maxFacts: Int
+    ): List<String> {
+        val apiKey = settings.openRouterApiKey.trim()
+        val memoryModel = settings.assistantMemoryModel?.trim().orEmpty()
+        val fallbackModel = settings.aiModel.trim()
+        val model = memoryModel.ifEmpty { fallbackModel }
+
+        if (apiKey.isEmpty() || model.isEmpty()) {
+            return emptyList()
+        }
+
+        val snippetLines = assistantMemoryStore.snippets.value
+            .sortedByDescending { snippet -> snippet.createdAt.orEmpty() }
+            .mapNotNull { snippet ->
+                val normalizedContent = normalizeCompactionText(snippet.content)
+                    .take(assistantMemoryCompactionSnippetCharLimit)
+
+                if (normalizedContent.isEmpty()) {
+                    null
+                } else {
+                    val category = snippet.category
+                        ?.trim()
+                        ?.takeIf { value -> value.isNotEmpty() }
+                        ?: "memory"
+                    "- [$category] $normalizedContent"
+                }
+            }
+            .take(assistantMemoryCompactionSnippetLimit)
+
+        if (snippetLines.isEmpty()) {
+            return emptyList()
+        }
+
+        val effectiveMaxFacts = maxFacts.coerceIn(1, 20)
+
+        val response = assistantGateway.requestStreamingReply(
+            request = AssistantGatewayRequest(
+                apiKey = apiKey,
+                model = model,
+                messages = listOf(
+                    AssistantGatewayMessage(
+                        role = AssistantMessageRole.SYSTEM,
+                        content = buildString {
+                            appendLine("You compact aquarium assistant memory into durable facts.")
+                            appendLine("Return ONLY bullet points with no heading.")
+                            appendLine("Rules:")
+                            appendLine("- Up to $effectiveMaxFacts bullets")
+                            appendLine("- One fact per bullet")
+                            appendLine("- Keep each fact under 200 characters")
+                            appendLine("- Prefer stable user preferences, constraints, and recurring care routines")
+                            append("- Remove duplicates and contradictions")
+                        }
+                    ),
+                    AssistantGatewayMessage(
+                        role = AssistantMessageRole.USER,
+                        content = buildString {
+                            appendLine(
+                                "Compact the following memory snippets into up to $effectiveMaxFacts durable facts:"
+                            )
+                            appendLine()
+                            append(snippetLines.joinToString(separator = "\n"))
+                        }
+                    )
+                )
+            ),
+            onSnapshot = { }
+        )
+
+        return parseCompactionFacts(
+            raw = response.text,
+            maxFacts = effectiveMaxFacts
+        )
+    }
+
+    private fun parseCompactionFacts(
+        raw: String,
+        maxFacts: Int
+    ): List<String> {
+        val effectiveMaxFacts = maxFacts.coerceIn(1, 20)
+
+        val fromLines = raw
+            .lineSequence()
+            .map(::normalizeCompactionText)
+            .map { line ->
+                line.replace(Regex("^[-*•]\\s*"), "")
+                    .replace(Regex("^\\d+[.)]\\s*"), "")
+                    .trim()
+            }
+            .filter { line ->
+                line.isNotEmpty() &&
+                    !line.endsWith(":") &&
+                    !line.equals("facts", ignoreCase = true)
+            }
+            .filter { line -> line.length >= 12 }
+            .map { line -> line.take(assistantMemoryCompactionFactCharLimit) }
+            .distinct()
+            .take(effectiveMaxFacts)
+            .toList()
+
+        if (fromLines.isNotEmpty()) {
+            return fromLines
+        }
+
+        return raw
+            .split(Regex("(?<=[.!?])\\s+"))
+            .map(::normalizeCompactionText)
+            .filter { sentence -> sentence.length >= 12 }
+            .map { sentence -> sentence.take(assistantMemoryCompactionFactCharLimit) }
+            .distinct()
+            .take(effectiveMaxFacts)
+    }
+
+    private fun normalizeCompactionText(value: String): String =
+        value
+            .replace(Regex("[\\u0000-\\u001F]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
 
     private fun bootstrapConversationsIfNeeded() {
         launchWork {
