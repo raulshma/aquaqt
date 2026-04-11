@@ -36,7 +36,8 @@ interface AssistantMemoryStore {
 
     suspend fun queryRelevantSnippets(
         prompt: String,
-        limit: Int = 4
+        limit: Int = 4,
+        conversationId: String? = null
     ): List<AssistantMemorySnippet>
 
     suspend fun previewCompaction(
@@ -153,7 +154,8 @@ class AssistantMemoryRepository(
 
     override suspend fun queryRelevantSnippets(
         prompt: String,
-        limit: Int
+        limit: Int,
+        conversationId: String?
     ): List<AssistantMemorySnippet> {
         val normalizedPrompt = normalizeText(prompt)
         if (normalizedPrompt.isEmpty()) {
@@ -161,25 +163,13 @@ class AssistantMemoryRepository(
         }
 
         val effectiveLimit = limit.coerceIn(1, 12)
-        val queryTokens = toTokenSet(normalizedPrompt)
-        if (queryTokens.isEmpty()) {
-            return emptyList()
-        }
 
-        return snippets.value
-            .mapNotNull { snippet ->
-                val score = lexicalSimilarity(queryTokens, toTokenSet(snippet.content))
-                if (score <= 0.0) {
-                    null
-                } else {
-                    snippet.copy(similarity = score)
-                }
-            }
-            .sortedWith(
-                compareByDescending<AssistantMemorySnippet> { it.similarity ?: 0.0 }
-                    .thenByDescending { it.createdAt.orEmpty() }
-            )
-            .take(effectiveLimit)
+        return AssistantMemoryRanking.rank(
+            snippets = snippets.value,
+            prompt = normalizedPrompt,
+            limit = effectiveLimit,
+            conversationId = conversationId
+        )
     }
 
     override suspend fun previewCompaction(maxFacts: Int): AssistantMemoryCompactionPreview {
@@ -396,28 +386,6 @@ class AssistantMemoryRepository(
         } else {
             value.take(max - 1) + "…"
         }
-
-    private fun toTokenSet(value: String): Set<String> =
-        Regex("[a-z0-9]{2,}", RegexOption.IGNORE_CASE)
-            .findAll(value.lowercase())
-            .map { match -> match.value }
-            .toSet()
-
-    private fun lexicalSimilarity(
-        queryTokens: Set<String>,
-        candidateTokens: Set<String>
-    ): Double {
-        if (queryTokens.isEmpty() || candidateTokens.isEmpty()) {
-            return 0.0
-        }
-
-        val overlap = queryTokens.count { token -> token in candidateTokens }
-        if (overlap <= 0) {
-            return 0.0
-        }
-
-        return overlap.toDouble() / queryTokens.size.toDouble()
-    }
 
     private fun buildTurnSnippetId(
         conversationId: String,

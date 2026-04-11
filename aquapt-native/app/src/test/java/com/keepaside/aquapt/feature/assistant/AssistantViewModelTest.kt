@@ -556,6 +556,8 @@ class AssistantViewModelTest {
         try {
             advanceUntilIdle()
 
+            val activeConversationId = viewModel.uiState.value.activeConversationId
+
             viewModel.onComposerTextChanged("What should I do this weekend?")
             viewModel.sendMessage()
             advanceUntilIdle()
@@ -567,6 +569,7 @@ class AssistantViewModelTest {
                         message.content.contains("Long-term memory snippets")
                 }
             )
+            assertEquals(activeConversationId, memoryStore.lastQueryConversationId)
         } finally {
             viewModel.disposeForTests()
         }
@@ -1287,6 +1290,7 @@ private class FakeAssistantMemoryStore(
     )
     var applyCalls: Int = 0
     var lastAppliedFacts: List<String> = emptyList()
+    var lastQueryConversationId: String? = null
 
     override suspend fun rememberTurn(
         conversationId: String,
@@ -1342,8 +1346,10 @@ private class FakeAssistantMemoryStore(
 
     override suspend fun queryRelevantSnippets(
         prompt: String,
-        limit: Int
+        limit: Int,
+        conversationId: String?
     ): List<AssistantMemorySnippet> {
+        lastQueryConversationId = conversationId
         val source = queryResponse.ifEmpty { flow.value }
         return source.take(limit)
     }

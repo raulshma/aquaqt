@@ -65,7 +65,8 @@ private object NoOpAssistantMemoryStore : AssistantMemoryStore {
 
     override suspend fun queryRelevantSnippets(
         prompt: String,
-        limit: Int
+        limit: Int,
+        conversationId: String?
     ): List<AssistantMemorySnippet> = emptyList()
 
     override suspend fun previewCompaction(maxFacts: Int): AssistantMemoryCompactionPreview =
@@ -924,7 +925,8 @@ class AssistantViewModel(
                 runCatching {
                     assistantMemoryStore.queryRelevantSnippets(
                         prompt = normalizedPrompt,
-                        limit = 4
+                        limit = 4,
+                        conversationId = activeConversation.id
                     )
                 }.getOrDefault(emptyList())
             } else {
