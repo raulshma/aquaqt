@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -22,6 +25,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -30,6 +35,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -108,6 +115,37 @@ fun AssistantScreen(
     val context = LocalContext.current
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
+    val messageListState = rememberLazyListState()
+    val isNearLatestMessage by remember {
+        derivedStateOf {
+            val totalItems = messageListState.layoutInfo.totalItemsCount
+            if (totalItems == 0) {
+                return@derivedStateOf true
+            }
+
+            val lastVisibleIndex = messageListState.layoutInfo.visibleItemsInfo
+                .lastOrNull()
+                ?.index
+                ?: 0
+
+            lastVisibleIndex >= totalItems - 2
+        }
+    }
+    val showJumpToLatest by remember {
+        derivedStateOf {
+            val totalItems = messageListState.layoutInfo.totalItemsCount
+            if (totalItems == 0) {
+                return@derivedStateOf false
+            }
+
+            val lastVisibleIndex = messageListState.layoutInfo.visibleItemsInfo
+                .lastOrNull()
+                ?.index
+                ?: 0
+
+            lastVisibleIndex < totalItems - 2
+        }
+    }
     val microphonePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -120,6 +158,16 @@ fun AssistantScreen(
 
     var renameInput by remember(uiState.activeConversationId, uiState.activeConversationTitle) {
         mutableStateOf(uiState.activeConversationTitle)
+    }
+
+    LaunchedEffect(uiState.activeConversationId, uiState.messages.size, uiState.activeStreamingMessageId) {
+        if (uiState.messages.isEmpty()) {
+            return@LaunchedEffect
+        }
+
+        if (isNearLatestMessage) {
+            messageListState.animateScrollToItem(uiState.messages.lastIndex)
+        }
     }
 
     ModalNavigationDrawer(
@@ -581,175 +629,206 @@ fun AssistantScreen(
                 }
             }
 
-            LazyColumn(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .weight(1f)
             ) {
-                items(uiState.messages, key = { it.id }) { message ->
-                    val isUser = message.role == AssistantMessageRole.USER
-                    val isRemembered = message.id in uiState.rememberedAssistantMessageIds
-                    val isMemoryBusy = message.id in uiState.memoryActionBusyMessageIds
-                    val containerColor = when (message.role) {
-                        AssistantMessageRole.USER -> MaterialTheme.colorScheme.primaryContainer
-                        AssistantMessageRole.ASSISTANT -> MaterialTheme.colorScheme.tertiaryContainer
-                        AssistantMessageRole.SYSTEM -> MaterialTheme.colorScheme.surfaceVariant
-                    }
+                LazyColumn(
+                    state = messageListState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(uiState.messages, key = { it.id }) { message ->
+                        val isUser = message.role == AssistantMessageRole.USER
+                        val isRemembered = message.id in uiState.rememberedAssistantMessageIds
+                        val isMemoryBusy = message.id in uiState.memoryActionBusyMessageIds
+                        val containerColor = when (message.role) {
+                            AssistantMessageRole.USER -> MaterialTheme.colorScheme.primaryContainer
+                            AssistantMessageRole.ASSISTANT -> MaterialTheme.colorScheme.tertiaryContainer
+                            AssistantMessageRole.SYSTEM -> MaterialTheme.colorScheme.surfaceVariant
+                        }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-                    ) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(0.86f),
-                            colors = CardDefaults.cardColors(containerColor = containerColor)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
                         ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            Card(
+                                modifier = Modifier.fillMaxWidth(0.86f),
+                                colors = CardDefaults.cardColors(containerColor = containerColor)
                             ) {
-                                Text(
-                                    text = when (message.role) {
-                                        AssistantMessageRole.USER -> "You"
-                                        AssistantMessageRole.ASSISTANT -> "Assistant"
-                                        AssistantMessageRole.SYSTEM -> "System"
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-
-                                Text(
-                                    text = message.content,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-
-                                if (message.requestFailed && !message.requestError.isNullOrBlank()) {
-                                    Text(
-                                        text = message.requestError,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                }
-
-                                if (
-                                    message.role == AssistantMessageRole.ASSISTANT &&
-                                    message.responseTelemetry != null
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    val telemetry = message.responseTelemetry
-
-                                    val lineOneParts = buildList {
-                                        telemetry?.model?.takeIf { it.isNotBlank() }?.let { add(it) }
-                                        telemetry?.providerName?.takeIf { it.isNotBlank() }?.let { add("via $it") }
-                                        telemetry?.router?.takeIf { it.isNotBlank() }?.let { add(it) }
-                                        telemetry?.totalTokens?.let { add("$it tok") }
-                                        telemetry?.cost?.let { add("$${"%.4f".format(it)}") }
-                                    }
-
-                                    val lineTwoParts = buildList {
-                                        telemetry?.latencyMs?.let { add("lat ${it}ms") }
-                                            ?: telemetry?.elapsedMs?.let { add("${it}ms") }
-                                        telemetry?.generationTimeMs?.let { add("gen ${it}ms") }
-                                        telemetry?.throughputCharsPerSecond?.let {
-                                            add("${"%.1f".format(it)} ch/s")
-                                        }
-                                        telemetry?.throughputTokensPerSecond?.let {
-                                            add("${"%.1f".format(it)} tok/s")
-                                        }
-                                        telemetry?.finishReason
-                                            ?.takeIf { it.isNotBlank() }
-                                            ?.let { add(it) }
-                                    }
-
-                                    if (lineOneParts.isNotEmpty()) {
-                                        Text(
-                                            text = lineOneParts.joinToString(" • "),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-
-                                    if (lineTwoParts.isNotEmpty()) {
-                                        Text(
-                                            text = lineTwoParts.joinToString(" • "),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-
-                                Text(
-                                    text = message.createdAt,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (message.content.isNotBlank()) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                clipboardManager.setText(AnnotatedString(message.content))
-                                                viewModel.onMessageCopied(message.role)
-                                            },
-                                            enabled = controlsEnabled
-                                        ) {
-                                            Text("Copy")
-                                        }
-
-                                        OutlinedButton(
-                                            onClick = { viewModel.reuseMessageAsPrompt(message.id) },
-                                            enabled = controlsEnabled
-                                        ) {
-                                            Text("Reuse")
-                                        }
-                                    }
-
-                                    if (message.role == AssistantMessageRole.USER && message.requestFailed) {
-                                        OutlinedButton(
-                                            onClick = { viewModel.retryFailedMessage(message.id) },
-                                            enabled = controlsEnabled
-                                        ) {
-                                            Text("Retry")
-                                        }
-                                    }
+                                    Text(
+                                        text = when (message.role) {
+                                            AssistantMessageRole.USER -> "You"
+                                            AssistantMessageRole.ASSISTANT -> "Assistant"
+                                            AssistantMessageRole.SYSTEM -> "System"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
 
                                     if (message.role == AssistantMessageRole.ASSISTANT) {
-                                        OutlinedButton(
-                                            onClick = { viewModel.regenerateReply(message.id) },
-                                            enabled = controlsEnabled
-                                        ) {
-                                            Text("Regenerate")
+                                        AssistantMarkdownText(content = message.content)
+                                    } else {
+                                        Text(
+                                            text = message.content,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+
+                                    if (message.requestFailed && !message.requestError.isNullOrBlank()) {
+                                        Text(
+                                            text = message.requestError,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+
+                                    if (
+                                        message.role == AssistantMessageRole.ASSISTANT &&
+                                        message.responseTelemetry != null
+                                    ) {
+                                        val telemetry = message.responseTelemetry
+
+                                        val lineOneParts = buildList {
+                                            telemetry?.model?.takeIf { it.isNotBlank() }?.let { add(it) }
+                                            telemetry?.providerName?.takeIf { it.isNotBlank() }?.let { add("via $it") }
+                                            telemetry?.router?.takeIf { it.isNotBlank() }?.let { add(it) }
+                                            telemetry?.totalTokens?.let { add("$it tok") }
+                                            telemetry?.cost?.let { add("$${"%.4f".format(it)}") }
                                         }
 
-                                        if (uiState.assistantMemoryEnabled) {
-                                            OutlinedButton(
-                                                onClick = {
-                                                    if (isRemembered) {
-                                                        viewModel.forgetAssistantMessageMemory(message.id)
-                                                    } else {
-                                                        viewModel.rememberAssistantMessage(message.id)
-                                                    }
-                                                },
-                                                enabled = controlsEnabled && !isMemoryBusy
-                                            ) {
-                                                Text(if (isRemembered) "Forget" else "Remember")
+                                        val lineTwoParts = buildList {
+                                            telemetry?.latencyMs?.let { add("lat ${it}ms") }
+                                                ?: telemetry?.elapsedMs?.let { add("${it}ms") }
+                                            telemetry?.generationTimeMs?.let { add("gen ${it}ms") }
+                                            telemetry?.throughputCharsPerSecond?.let {
+                                                add("${"%.1f".format(it)} ch/s")
                                             }
+                                            telemetry?.throughputTokensPerSecond?.let {
+                                                add("${"%.1f".format(it)} tok/s")
+                                            }
+                                            telemetry?.finishReason
+                                                ?.takeIf { it.isNotBlank() }
+                                                ?.let { add(it) }
+                                        }
+
+                                        if (lineOneParts.isNotEmpty()) {
+                                            Text(
+                                                text = lineOneParts.joinToString(" • "),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        if (lineTwoParts.isNotEmpty()) {
+                                            Text(
+                                                text = lineTwoParts.joinToString(" • "),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
                                     }
 
-                                    if (uiState.isSending && uiState.activeStreamingMessageId == message.id) {
-                                        Text(
-                                            text = "Streaming…",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(top = 10.dp)
-                                        )
+                                    Text(
+                                        text = message.createdAt,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (message.content.isNotBlank()) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    clipboardManager.setText(AnnotatedString(message.content))
+                                                    viewModel.onMessageCopied(message.role)
+                                                },
+                                                enabled = controlsEnabled
+                                            ) {
+                                                Text("Copy")
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = { viewModel.reuseMessageAsPrompt(message.id) },
+                                                enabled = controlsEnabled
+                                            ) {
+                                                Text("Reuse")
+                                            }
+                                        }
+
+                                        if (message.role == AssistantMessageRole.USER && message.requestFailed) {
+                                            OutlinedButton(
+                                                onClick = { viewModel.retryFailedMessage(message.id) },
+                                                enabled = controlsEnabled
+                                            ) {
+                                                Text("Retry")
+                                            }
+                                        }
+
+                                        if (message.role == AssistantMessageRole.ASSISTANT) {
+                                            OutlinedButton(
+                                                onClick = { viewModel.regenerateReply(message.id) },
+                                                enabled = controlsEnabled
+                                            ) {
+                                                Text("Regenerate")
+                                            }
+
+                                            if (uiState.assistantMemoryEnabled) {
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        if (isRemembered) {
+                                                            viewModel.forgetAssistantMessageMemory(message.id)
+                                                        } else {
+                                                            viewModel.rememberAssistantMessage(message.id)
+                                                        }
+                                                    },
+                                                    enabled = controlsEnabled && !isMemoryBusy
+                                                ) {
+                                                    Text(if (isRemembered) "Forget" else "Remember")
+                                                }
+                                            }
+                                        }
+
+                                        if (uiState.isSending && uiState.activeStreamingMessageId == message.id) {
+                                            Text(
+                                                text = "Streaming…",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(top = 10.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
+                    }
+                }
+
+                if (showJumpToLatest) {
+                    FloatingActionButton(
+                        onClick = {
+                            if (uiState.messages.isNotEmpty()) {
+                                drawerScope.launch {
+                                    messageListState.animateScrollToItem(uiState.messages.lastIndex)
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(12.dp),
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowDownward,
+                            contentDescription = "Jump to latest message"
+                        )
                     }
                 }
             }

@@ -1255,11 +1255,13 @@ class AssistantViewModel(
                     sorted
                 } else {
                     sorted.filter { conversation ->
+                        val latestPreviewText = assistantMarkdownPreviewText(
+                            markdown = conversation.messages.lastOrNull()?.content.orEmpty(),
+                            maxLength = 240
+                        )
+
                         conversation.title.contains(normalizedSearch, ignoreCase = true) ||
-                            conversation.messages.lastOrNull()
-                                ?.content
-                                ?.contains(normalizedSearch, ignoreCase = true)
-                                ?: false
+                            latestPreviewText.contains(normalizedSearch, ignoreCase = true)
                     }
                 }
 
@@ -1282,11 +1284,10 @@ class AssistantViewModel(
                         isPinned = conversation.pinned,
                         updatedAtLabel = formatDateTime(conversation.updatedAt),
                         messageCount = conversation.messages.size,
-                        lastMessagePreview = conversation.messages.lastOrNull()
-                            ?.content
-                            ?.trim()
-                            ?.takeIf { it.isNotEmpty() }
-                            ?.take(72)
+                        lastMessagePreview = assistantMarkdownPreviewText(
+                            markdown = conversation.messages.lastOrNull()?.content.orEmpty(),
+                            maxLength = 72
+                        ).takeIf { it.isNotBlank() }
                     )
                 }
 
