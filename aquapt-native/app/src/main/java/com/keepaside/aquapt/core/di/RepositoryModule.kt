@@ -14,12 +14,16 @@ import org.koin.dsl.module
 val repositoryModule = module {
     single<AppSettingsStore> { AppSettingsRepository(androidContext()) }
     single<AssistantConversationsStore> { AssistantConversationsRepository(androidContext()) }
+    single<AssistantMemoryStore> { AssistantMemoryRepository(androidContext()) }
     single<AssistantGateway> { OpenRouterAssistantGateway() }
     single<AssistantActionReviewService> {
         AssistantActionReviewServiceImpl(
             aquariumRepository = get(),
+            livestockRepository = get(),
             taskTemplateRepository = get(),
             taskExecutionRepository = get(),
+            assetRepository = get(),
+            consumableRepository = get(),
             dosingLogRepository = get(),
             waterParameterLogRepository = get(),
             issueRepository = get(),

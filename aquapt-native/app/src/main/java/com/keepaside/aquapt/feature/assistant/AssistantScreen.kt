@@ -37,6 +37,7 @@ import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.model.AssistantMessageRole
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
+import com.keepaside.aquapt.core.repository.AssistantMemoryStore
 import com.keepaside.aquapt.core.repository.AppSettingsStore
 import org.koin.java.KoinJavaComponent
 
@@ -51,6 +52,9 @@ fun AssistantScreen(
     val appSettingsStore: AppSettingsStore = remember {
         KoinJavaComponent.get(AppSettingsStore::class.java)
     }
+    val assistantMemoryStore: AssistantMemoryStore = remember {
+        KoinJavaComponent.get(AssistantMemoryStore::class.java)
+    }
     val assistantGateway: AssistantGateway = remember {
         KoinJavaComponent.get(AssistantGateway::class.java)
     }
@@ -62,12 +66,14 @@ fun AssistantScreen(
         factory = remember(
             assistantStore,
             appSettingsStore,
+            assistantMemoryStore,
             assistantGateway,
             assistantActionReviewService
         ) {
             AssistantViewModel.factory(
                 assistantConversationsStore = assistantStore,
                 appSettingsStore = appSettingsStore,
+                assistantMemoryStore = assistantMemoryStore,
                 assistantGateway = assistantGateway,
                 assistantActionReviewService = assistantActionReviewService
             )
@@ -75,7 +81,8 @@ fun AssistantScreen(
     )
     val uiState by viewModel.uiState.collectAsState()
     val assistantError = uiState.assistantError
-    val controlsEnabled = !uiState.isSending && !uiState.isExecutingActions
+    val controlsEnabled =
+        !uiState.isSending && !uiState.isExecutingActions && !uiState.isApplyingMemoryCompaction
 
     var renameInput by remember(uiState.activeConversationId, uiState.activeConversationTitle) {
         mutableStateOf(uiState.activeConversationTitle)
@@ -333,6 +340,111 @@ fun AssistantScreen(
                 }
             }
 
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Assistant memory",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Text(
+                        text = if (uiState.assistantMemoryEnabled) {
+                            "${uiState.assistantMemorySnippetCount} snippet(s) saved${uiState.assistantMemoryModel?.takeIf { it.isNotBlank() }?.let { " • model $it" } ?: ""}"
+                        } else {
+                            "Memory is disabled in Settings preferences."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (uiState.assistantMemoryEnabled) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.previewMemoryCompaction() },
+                                enabled = controlsEnabled && !uiState.isMemoryPreviewing
+                            ) {
+                                Text("Preview compaction")
+                            }
+
+                            Button(
+                                onClick = { viewModel.applyMemoryCompaction() },
+                                enabled = controlsEnabled && uiState.canApplyMemoryCompaction
+                            ) {
+                                Text("Apply")
+                            }
+
+                            if (uiState.memoryCompactionBeforeCount != null) {
+                                OutlinedButton(
+                                    onClick = viewModel::dismissMemoryCompactionPreview,
+                                    enabled = controlsEnabled && !uiState.isMemoryPreviewing
+                                ) {
+                                    Text("Dismiss")
+                                }
+                            }
+                        }
+
+                        if (uiState.isMemoryPreviewing) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.padding(2.dp))
+                                Text(
+                                    text = "Building memory compaction preview…",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+
+                        if (uiState.isApplyingMemoryCompaction) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.padding(2.dp))
+                                Text(
+                                    text = "Applying memory compaction…",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+
+                        if (
+                            uiState.memoryCompactionBeforeCount != null &&
+                            uiState.memoryCompactionAfterCount != null
+                        ) {
+                            Text(
+                                text = "Preview: ${uiState.memoryCompactionBeforeCount} → ${uiState.memoryCompactionAfterCount} facts",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            uiState.memoryCompactionFacts.take(5).forEach { fact ->
+                                Text(
+                                    text = "• $fact",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             if (uiState.messages.isEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -357,6 +469,8 @@ fun AssistantScreen(
             ) {
                 items(uiState.messages, key = { it.id }) { message ->
                     val isUser = message.role == AssistantMessageRole.USER
+                    val isRemembered = message.id in uiState.rememberedAssistantMessageIds
+                    val isMemoryBusy = message.id in uiState.memoryActionBusyMessageIds
                     val containerColor = when (message.role) {
                         AssistantMessageRole.USER -> MaterialTheme.colorScheme.primaryContainer
                         AssistantMessageRole.ASSISTANT -> MaterialTheme.colorScheme.tertiaryContainer
@@ -400,6 +514,52 @@ fun AssistantScreen(
                                     )
                                 }
 
+                                if (
+                                    message.role == AssistantMessageRole.ASSISTANT &&
+                                    message.responseTelemetry != null
+                                ) {
+                                    val telemetry = message.responseTelemetry
+
+                                    val lineOneParts = buildList {
+                                        telemetry?.model?.takeIf { it.isNotBlank() }?.let { add(it) }
+                                        telemetry?.providerName?.takeIf { it.isNotBlank() }?.let { add("via $it") }
+                                        telemetry?.router?.takeIf { it.isNotBlank() }?.let { add(it) }
+                                        telemetry?.totalTokens?.let { add("$it tok") }
+                                        telemetry?.cost?.let { add("$${"%.4f".format(it)}") }
+                                    }
+
+                                    val lineTwoParts = buildList {
+                                        telemetry?.latencyMs?.let { add("lat ${it}ms") }
+                                            ?: telemetry?.elapsedMs?.let { add("${it}ms") }
+                                        telemetry?.generationTimeMs?.let { add("gen ${it}ms") }
+                                        telemetry?.throughputCharsPerSecond?.let {
+                                            add("${"%.1f".format(it)} ch/s")
+                                        }
+                                        telemetry?.throughputTokensPerSecond?.let {
+                                            add("${"%.1f".format(it)} tok/s")
+                                        }
+                                        telemetry?.finishReason
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?.let { add(it) }
+                                    }
+
+                                    if (lineOneParts.isNotEmpty()) {
+                                        Text(
+                                            text = lineOneParts.joinToString(" • "),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    if (lineTwoParts.isNotEmpty()) {
+                                        Text(
+                                            text = lineTwoParts.joinToString(" • "),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
                                 Text(
                                     text = message.createdAt,
                                     style = MaterialTheme.typography.labelSmall,
@@ -422,6 +582,21 @@ fun AssistantScreen(
                                             enabled = controlsEnabled
                                         ) {
                                             Text("Regenerate")
+                                        }
+
+                                        if (uiState.assistantMemoryEnabled) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    if (isRemembered) {
+                                                        viewModel.forgetAssistantMessageMemory(message.id)
+                                                    } else {
+                                                        viewModel.rememberAssistantMessage(message.id)
+                                                    }
+                                                },
+                                                enabled = controlsEnabled && !isMemoryBusy
+                                            ) {
+                                                Text(if (isRemembered) "Forget" else "Remember")
+                                            }
                                         }
                                     }
 

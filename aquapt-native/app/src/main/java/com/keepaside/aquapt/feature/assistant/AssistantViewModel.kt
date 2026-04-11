@@ -11,8 +11,12 @@ import com.keepaside.aquapt.core.model.AssistantActionTypes
 import com.keepaside.aquapt.core.model.AssistantChatMessage
 import com.keepaside.aquapt.core.model.AssistantConversation
 import com.keepaside.aquapt.core.model.AssistantDetectedAction
+import com.keepaside.aquapt.core.model.AssistantMemoryCompactionPreview
+import com.keepaside.aquapt.core.model.AssistantMemorySnippet
 import com.keepaside.aquapt.core.model.AssistantMessageRole
+import com.keepaside.aquapt.core.model.AssistantResponseTelemetry
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
+import com.keepaside.aquapt.core.repository.AssistantMemoryStore
 import com.keepaside.aquapt.core.repository.AppSettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -32,6 +36,54 @@ private const val assistantDefaultConversationTitle = "New Chat"
 private const val assistantDefaultStatusMessage =
     "Ask about tanks, tasks, issues, and quick next steps."
 
+private object NoOpAssistantMemoryStore : AssistantMemoryStore {
+    private val empty = MutableStateFlow<List<AssistantMemorySnippet>>(emptyList())
+
+    override val snippets: StateFlow<List<AssistantMemorySnippet>> = empty.asStateFlow()
+
+    override suspend fun rememberTurn(
+        conversationId: String,
+        userMessageId: String,
+        userPrompt: String,
+        assistantText: String
+    ) = Unit
+
+    override suspend fun rememberManualSnippet(
+        conversationId: String,
+        sourceMessageId: String,
+        content: String
+    ): String? = null
+
+    override suspend fun forgetManualSnippet(
+        conversationId: String,
+        sourceMessageId: String
+    ) = Unit
+
+    override suspend fun forgetSnippet(id: String) = Unit
+
+    override suspend fun queryRelevantSnippets(
+        prompt: String,
+        limit: Int
+    ): List<AssistantMemorySnippet> = emptyList()
+
+    override suspend fun previewCompaction(maxFacts: Int): AssistantMemoryCompactionPreview =
+        AssistantMemoryCompactionPreview(
+            beforeCount = 0,
+            afterCount = 0,
+            facts = emptyList()
+        )
+
+    override suspend fun applyCompaction(
+        precomputedFacts: List<String>,
+        maxFacts: Int
+    ): AssistantMemoryCompactionPreview =
+        AssistantMemoryCompactionPreview(
+            beforeCount = 0,
+            afterCount = 0,
+            facts = emptyList()
+        )
+}
+
 private data class AssistantTransientState(
     val activeId: String?,
     val composer: String,
@@ -39,7 +91,11 @@ private data class AssistantTransientState(
     val error: String?,
     val sending: Boolean,
     val streamingId: String?,
-    val executingActions: Boolean
+    val executingActions: Boolean,
+    val memoryBusyMessageIds: Set<String>,
+    val memoryPreviewing: Boolean,
+    val memoryApplying: Boolean,
+    val memoryPreview: AssistantMemoryCompactionPreview?
 )
 
 data class AssistantConversationItem(
@@ -80,12 +136,24 @@ data class AssistantUiState(
     val isExecutingActions: Boolean = false,
     val approvedActionCount: Int = 0,
     val canExecuteApprovedActions: Boolean = false,
-    val hasDetectedActions: Boolean = false
+    val hasDetectedActions: Boolean = false,
+    val assistantMemoryEnabled: Boolean = false,
+    val assistantMemoryModel: String? = null,
+    val assistantMemorySnippetCount: Int = 0,
+    val rememberedAssistantMessageIds: Set<String> = emptySet(),
+    val memoryActionBusyMessageIds: Set<String> = emptySet(),
+    val isMemoryPreviewing: Boolean = false,
+    val isApplyingMemoryCompaction: Boolean = false,
+    val canApplyMemoryCompaction: Boolean = false,
+    val memoryCompactionBeforeCount: Int? = null,
+    val memoryCompactionAfterCount: Int? = null,
+    val memoryCompactionFacts: List<String> = emptyList()
 )
 
 class AssistantViewModel(
     private val assistantConversationsStore: AssistantConversationsStore,
     private val appSettingsStore: AppSettingsStore,
+    private val assistantMemoryStore: AssistantMemoryStore = NoOpAssistantMemoryStore,
     private val assistantGateway: AssistantGateway,
     private val assistantActionReviewService: AssistantActionReviewService,
     private val externalScope: CoroutineScope? = null,
@@ -101,6 +169,10 @@ class AssistantViewModel(
     private val isSending = MutableStateFlow(false)
     private val activeStreamingMessageId = MutableStateFlow<String?>(null)
     private val isExecutingActions = MutableStateFlow(false)
+    private val memoryActionBusyMessageIds = MutableStateFlow<Set<String>>(emptySet())
+    private val isPreviewingMemoryCompaction = MutableStateFlow(false)
+    private val isApplyingMemoryCompaction = MutableStateFlow(false)
+    private val memoryCompactionPreview = MutableStateFlow<AssistantMemoryCompactionPreview?>(null)
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -108,7 +180,8 @@ class AssistantViewModel(
     private var observerJob: Job? = null
     private var generationJob: Job? = null
 
-    private fun isBusy(): Boolean = isSending.value || isExecutingActions.value
+    private fun isBusy(): Boolean =
+        isSending.value || isExecutingActions.value || isApplyingMemoryCompaction.value
 
     init {
         bootstrapConversationsIfNeeded()
@@ -430,6 +503,161 @@ class AssistantViewModel(
         }
     }
 
+    fun rememberAssistantMessage(messageId: String) {
+        if (isBusy()) return
+
+        val activeConversation = resolveActiveConversation(assistantConversationsStore.conversations.value)
+        if (activeConversation == null) {
+            statusMessage.update { "No conversation available." }
+            return
+        }
+
+        val settings = appSettingsStore.settings.value
+        if (!settings.assistantMemoryEnabled) {
+            statusMessage.update { "Assistant memory is disabled in Settings." }
+            return
+        }
+
+        val message = activeConversation.messages.firstOrNull { candidate ->
+            candidate.id == messageId && candidate.role == AssistantMessageRole.ASSISTANT
+        }
+
+        val content = message?.content?.trim().orEmpty()
+        if (content.isEmpty()) {
+            statusMessage.update { "Cannot remember an empty assistant message." }
+            return
+        }
+
+        launchWork {
+            setMemoryBusy(messageId, busy = true)
+
+            try {
+                assistantMemoryStore.rememberManualSnippet(
+                    conversationId = activeConversation.id,
+                    sourceMessageId = messageId,
+                    content = content
+                )
+                statusMessage.update { "Saved assistant reply to memory." }
+            } catch (error: Throwable) {
+                val messageText = error.message?.takeIf { it.isNotBlank() }
+                    ?: "Could not remember assistant reply."
+                assistantError.update { messageText }
+                statusMessage.update { messageText }
+            } finally {
+                setMemoryBusy(messageId, busy = false)
+            }
+        }
+    }
+
+    fun forgetAssistantMessageMemory(messageId: String) {
+        if (isBusy()) return
+
+        val activeConversation = resolveActiveConversation(assistantConversationsStore.conversations.value)
+        if (activeConversation == null) {
+            statusMessage.update { "No conversation available." }
+            return
+        }
+
+        launchWork {
+            setMemoryBusy(messageId, busy = true)
+
+            try {
+                assistantMemoryStore.forgetManualSnippet(
+                    conversationId = activeConversation.id,
+                    sourceMessageId = messageId
+                )
+                statusMessage.update { "Removed assistant memory snippet." }
+            } catch (error: Throwable) {
+                val messageText = error.message?.takeIf { it.isNotBlank() }
+                    ?: "Could not forget assistant memory snippet."
+                assistantError.update { messageText }
+                statusMessage.update { messageText }
+            } finally {
+                setMemoryBusy(messageId, busy = false)
+            }
+        }
+    }
+
+    fun previewMemoryCompaction(maxFacts: Int = 10) {
+        if (isBusy()) return
+        if (isPreviewingMemoryCompaction.value) return
+
+        val settings = appSettingsStore.settings.value
+        if (!settings.assistantMemoryEnabled) {
+            statusMessage.update { "Assistant memory is disabled in Settings." }
+            return
+        }
+
+        launchWork {
+            isPreviewingMemoryCompaction.update { true }
+
+            try {
+                val preview = assistantMemoryStore.previewCompaction(maxFacts = maxFacts)
+                memoryCompactionPreview.update { preview }
+
+                statusMessage.update {
+                    if (preview.beforeCount <= 0) {
+                        "No memory snippets available for compaction preview."
+                    } else {
+                        "Compaction preview: ${preview.beforeCount} → ${preview.afterCount} fact(s)."
+                    }
+                }
+            } catch (error: Throwable) {
+                val messageText = error.message?.takeIf { it.isNotBlank() }
+                    ?: "Could not preview memory compaction."
+                assistantError.update { messageText }
+                statusMessage.update { messageText }
+            } finally {
+                isPreviewingMemoryCompaction.update { false }
+            }
+        }
+    }
+
+    fun applyMemoryCompaction(maxFacts: Int = 10) {
+        if (isBusy()) return
+        if (isApplyingMemoryCompaction.value) return
+
+        val settings = appSettingsStore.settings.value
+        if (!settings.assistantMemoryEnabled) {
+            statusMessage.update { "Assistant memory is disabled in Settings." }
+            return
+        }
+
+        launchWork {
+            isApplyingMemoryCompaction.update { true }
+
+            try {
+                val previewFacts = memoryCompactionPreview.value?.facts.orEmpty()
+                val result = assistantMemoryStore.applyCompaction(
+                    precomputedFacts = previewFacts,
+                    maxFacts = maxFacts
+                )
+                memoryCompactionPreview.update { result }
+
+                statusMessage.update {
+                    if (result.beforeCount <= 0) {
+                        "No memory snippets available to compact."
+                    } else {
+                        "Applied memory compaction: ${result.beforeCount} → ${result.afterCount} fact(s)."
+                    }
+                }
+            } catch (error: Throwable) {
+                val messageText = error.message?.takeIf { it.isNotBlank() }
+                    ?: "Could not apply memory compaction."
+                assistantError.update { messageText }
+                statusMessage.update { messageText }
+            } finally {
+                isApplyingMemoryCompaction.update { false }
+            }
+        }
+    }
+
+    fun dismissMemoryCompactionPreview() {
+        if (isBusy()) return
+        memoryCompactionPreview.update { null }
+        statusMessage.update { "Dismissed memory compaction preview." }
+    }
+
     private fun requestAssistantReply(
         prompt: String,
         retryUserMessageId: String?,
@@ -550,12 +778,36 @@ class AssistantViewModel(
                 composerText.update { "" }
             }
 
-            val requestMessages = updatedConversations
+            val requestMessagesWithoutMemory = updatedConversations
                 .firstOrNull { it.id == activeConversation.id }
                 ?.messages
                 ?.filterNot { it.id == assistantDraftId }
                 .orEmpty()
                 .toGatewayMessages()
+
+            val memorySnippets = if (settings.assistantMemoryEnabled) {
+                runCatching {
+                    assistantMemoryStore.queryRelevantSnippets(
+                        prompt = normalizedPrompt,
+                        limit = 4
+                    )
+                }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+
+            val memoryPrompt = buildMemorySystemPrompt(memorySnippets)
+
+            val requestMessages = if (!memoryPrompt.isNullOrBlank()) {
+                listOf(
+                    AssistantGatewayMessage(
+                        role = AssistantMessageRole.SYSTEM,
+                        content = memoryPrompt
+                    )
+                ) + requestMessagesWithoutMemory
+            } else {
+                requestMessagesWithoutMemory
+            }
 
             if (requestMessages.none { it.role == AssistantMessageRole.USER }) {
                 statusMessage.update { "No user prompt available for assistant request." }
@@ -567,7 +819,8 @@ class AssistantViewModel(
             assistantError.update { null }
 
             try {
-                val finalText = assistantGateway.requestStreamingReply(
+                val requestStartedAtMs = System.currentTimeMillis()
+                val gatewayResponse = assistantGateway.requestStreamingReply(
                     request = AssistantGatewayRequest(
                         apiKey = apiKey,
                         model = model,
@@ -587,10 +840,56 @@ class AssistantViewModel(
                             )
                         }
                     }
-                ).trim()
+                )
+
+                val finalText = gatewayResponse.text.trim()
+                val streamedText = assistantConversationsStore.conversations.value
+                    .firstOrNull { it.id == activeConversation.id }
+                    ?.messages
+                    ?.firstOrNull { it.id == assistantDraftId }
+                    ?.content
+                    ?.trim()
+                    .orEmpty()
+
+                val resolvedReplyText = finalText.ifBlank { streamedText }
+                val elapsedMs = (System.currentTimeMillis() - requestStartedAtMs)
+                    .coerceAtLeast(1)
+                    .toLong()
+
+                val completionTokens = gatewayResponse.telemetry?.usage?.completionTokens
+                val throughputTokensPerSecond = if (completionTokens != null) {
+                    completionTokens / (elapsedMs / 1000.0)
+                } else {
+                    null
+                }
+
+                val throughputCharsPerSecond = if (resolvedReplyText.isNotBlank()) {
+                    resolvedReplyText.length / (elapsedMs / 1000.0)
+                } else {
+                    null
+                }
+
+                val responseTelemetry = AssistantResponseTelemetry(
+                    generationId = gatewayResponse.telemetry?.generationId,
+                    providerName = gatewayResponse.telemetry?.providerName,
+                    router = gatewayResponse.telemetry?.router,
+                    model = gatewayResponse.telemetry?.model ?: model,
+                    promptTokens = gatewayResponse.telemetry?.usage?.promptTokens,
+                    completionTokens = completionTokens,
+                    totalTokens = gatewayResponse.telemetry?.usage?.totalTokens,
+                    cost = gatewayResponse.telemetry?.cost ?: gatewayResponse.telemetry?.usage?.cost,
+                    elapsedMs = elapsedMs,
+                    latencyMs = gatewayResponse.telemetry?.latencyMs ?: elapsedMs,
+                    generationTimeMs = gatewayResponse.telemetry?.generationTimeMs,
+                    throughputCharsPerSecond = throughputCharsPerSecond,
+                    throughputTokensPerSecond = throughputTokensPerSecond,
+                    finishReason = gatewayResponse.telemetry?.finishReason,
+                    nativeFinishReason = gatewayResponse.telemetry?.nativeFinishReason,
+                    streamed = gatewayResponse.telemetry?.streamed ?: true
+                )
 
                 val extraction = assistantActionReviewService.parseAssistantActionExtraction(
-                    responseContent = finalText,
+                    responseContent = resolvedReplyText,
                     transcript = normalizedPrompt,
                     sourceMessageId = assistantDraftId
                 )
@@ -600,10 +899,11 @@ class AssistantViewModel(
                         messages = conversation.messages.map { message ->
                             if (message.id == assistantDraftId) {
                                 val current = message.content.trim()
-                                val next = finalText.ifBlank { current }
+                                val next = resolvedReplyText.ifBlank { current }
                                 message.copy(
                                     content = next,
-                                    detectedActionIds = extraction.actions.map { action -> action.id }
+                                    detectedActionIds = extraction.actions.map { action -> action.id },
+                                    responseTelemetry = responseTelemetry
                                 )
                             } else {
                                 message
@@ -615,6 +915,17 @@ class AssistantViewModel(
                         warnings = (conversation.warnings + extraction.warnings).takeLast(8),
                         updatedAt = nowIso()
                     )
+                }
+
+                if (settings.assistantMemoryEnabled && resolvedReplyText.isNotBlank()) {
+                    runCatching {
+                        assistantMemoryStore.rememberTurn(
+                            conversationId = activeConversation.id,
+                            userMessageId = userMessageId,
+                            userPrompt = normalizedPrompt,
+                            assistantText = resolvedReplyText
+                        )
+                    }
                 }
 
                 statusMessage.update {
@@ -712,6 +1023,29 @@ class AssistantViewModel(
             }
         }
 
+    private fun buildMemorySystemPrompt(snippets: List<AssistantMemorySnippet>): String? {
+        if (snippets.isEmpty()) {
+            return null
+        }
+
+        val lines = snippets.mapNotNull { snippet ->
+            snippet.content
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .takeIf { content -> content.isNotEmpty() }
+                ?.let { content -> "- $content" }
+        }
+
+        if (lines.isEmpty()) {
+            return null
+        }
+
+        return listOf(
+            "Long-term memory snippets from previous chats (may be outdated; verify before acting):",
+            *lines.toTypedArray()
+        ).joinToString(separator = "\n")
+    }
+
     private fun bootstrapConversationsIfNeeded() {
         launchWork {
             if (assistantConversationsStore.conversations.value.isNotEmpty()) {
@@ -742,7 +1076,11 @@ class AssistantViewModel(
                 assistantError,
                 isSending,
                 activeStreamingMessageId,
-                isExecutingActions
+                isExecutingActions,
+                memoryActionBusyMessageIds,
+                isPreviewingMemoryCompaction,
+                isApplyingMemoryCompaction,
+                memoryCompactionPreview
             ) { values ->
                 @Suppress("UNCHECKED_CAST")
                 AssistantTransientState(
@@ -752,20 +1090,35 @@ class AssistantViewModel(
                     error = values[3] as String?,
                     sending = values[4] as Boolean,
                     streamingId = values[5] as String?,
-                    executingActions = values[6] as Boolean
+                    executingActions = values[6] as Boolean,
+                    memoryBusyMessageIds = values[7] as Set<String>,
+                    memoryPreviewing = values[8] as Boolean,
+                    memoryApplying = values[9] as Boolean,
+                    memoryPreview = values[10] as AssistantMemoryCompactionPreview?
                 )
             }
 
             combine(
                 assistantConversationsStore.conversations,
-                transientState
-            ) { conversations, transient ->
+                transientState,
+                appSettingsStore.settings,
+                assistantMemoryStore.snippets
+            ) { conversations, transient, settings, snippets ->
                 val sorted = conversations.sortedWith(
                     compareByDescending<AssistantConversation> { it.pinned }
                         .thenByDescending { it.updatedAt }
                 )
                 val activeConversation =
                     sorted.firstOrNull { it.id == transient.activeId } ?: sorted.firstOrNull()
+
+                val rememberedAssistantMessageIds = snippets
+                    .asSequence()
+                    .filter { snippet ->
+                        snippet.category.equals("manual", ignoreCase = true) &&
+                            snippet.sourceConversationId == activeConversation?.id
+                    }
+                    .mapNotNull { snippet -> snippet.sourceMessageId }
+                    .toSet()
 
                 val items = sorted.map { conversation ->
                     AssistantConversationItem(
@@ -794,6 +1147,14 @@ class AssistantViewModel(
                     }
                     ?: 0
 
+                val canApplyMemoryCompaction = settings.assistantMemoryEnabled &&
+                    transient.memoryPreview != null &&
+                    (transient.memoryPreview.beforeCount > 0 || transient.memoryPreview.afterCount > 0) &&
+                    !transient.memoryPreviewing &&
+                    !transient.memoryApplying &&
+                    !transient.sending &&
+                    !transient.executingActions
+
                 AssistantUiState(
                     isLoading = false,
                     statusMessage = transient.status,
@@ -809,14 +1170,28 @@ class AssistantViewModel(
                     canSend = transient.composer.trim().isNotEmpty() &&
                         activeConversation != null &&
                         !transient.sending &&
-                        !transient.executingActions,
+                        !transient.executingActions &&
+                        !transient.memoryApplying,
                     isSending = transient.sending,
                     activeStreamingMessageId = transient.streamingId,
                     canStopGeneration = transient.sending && !transient.streamingId.isNullOrBlank(),
                     isExecutingActions = transient.executingActions,
                     approvedActionCount = approvedActionCount,
-                    canExecuteApprovedActions = approvedActionCount > 0 && !transient.sending,
-                    hasDetectedActions = detectedActions.isNotEmpty()
+                    canExecuteApprovedActions = approvedActionCount > 0 &&
+                        !transient.sending &&
+                        !transient.memoryApplying,
+                    hasDetectedActions = detectedActions.isNotEmpty(),
+                    assistantMemoryEnabled = settings.assistantMemoryEnabled,
+                    assistantMemoryModel = settings.assistantMemoryModel,
+                    assistantMemorySnippetCount = snippets.size,
+                    rememberedAssistantMessageIds = rememberedAssistantMessageIds,
+                    memoryActionBusyMessageIds = transient.memoryBusyMessageIds,
+                    isMemoryPreviewing = transient.memoryPreviewing,
+                    isApplyingMemoryCompaction = transient.memoryApplying,
+                    canApplyMemoryCompaction = canApplyMemoryCompaction,
+                    memoryCompactionBeforeCount = transient.memoryPreview?.beforeCount,
+                    memoryCompactionAfterCount = transient.memoryPreview?.afterCount,
+                    memoryCompactionFacts = transient.memoryPreview?.facts.orEmpty()
                 )
             }.collect { next ->
                 _uiState.update { next }
@@ -844,6 +1219,12 @@ class AssistantViewModel(
             AssistantActionTypes.ADD_ISSUE -> issueTitle?.ifBlank { null } ?: "Add issue"
             AssistantActionTypes.ADD_MEMO -> memoContent?.ifBlank { null }?.take(48) ?: "Add memo"
             AssistantActionTypes.SAVE_REMINDER_SETTINGS -> "Update reminder settings"
+            AssistantActionTypes.ADD_AQUARIUM -> title?.ifBlank { null } ?: "Add aquarium"
+            AssistantActionTypes.ADD_LIVESTOCK -> livestockName?.ifBlank { null } ?: "Add livestock"
+            AssistantActionTypes.ADD_ASSET -> brandModel?.ifBlank { null } ?: "Add asset"
+            AssistantActionTypes.ADD_CONSUMABLE -> consumableName?.ifBlank { null } ?: "Add consumable"
+            AssistantActionTypes.CONSUME_CONSUMABLE -> consumableName?.ifBlank { null } ?: "Consume consumable"
+            AssistantActionTypes.SET_ISSUE_STATUS -> issueTitle?.ifBlank { null } ?: "Set issue status"
             else -> title?.ifBlank { null } ?: type
         }
 
@@ -851,10 +1232,13 @@ class AssistantViewModel(
             aquariumName?.takeIf { it.isNotBlank() }?.let { add("Tank: $it") }
             frequency?.takeIf { it.isNotBlank() }?.let { add("Freq: $it") }
             amountMl?.takeIf { it > 0.0 }?.let { add("Amount: ${it}ml") }
+            amountUsed?.takeIf { it > 0.0 }?.let { add("Used: ${it}") }
+            quantity?.takeIf { it > 0 }?.let { add("Qty: $it") }
             reminderHour?.let { add("Hour: $it") }
             if (reminderHours.isNotEmpty()) {
                 add("Hours: ${reminderHours.joinToString(",")}")
             }
+            issueStatus?.let { add("Status: ${it.name.lowercase()}") }
             if (validationErrors.isNotEmpty()) {
                 add("Needs fixes")
             }
@@ -890,6 +1274,16 @@ class AssistantViewModel(
             block()
         }
 
+    private fun setMemoryBusy(messageId: String, busy: Boolean) {
+        memoryActionBusyMessageIds.update { current ->
+            if (busy) {
+                current + messageId
+            } else {
+                current - messageId
+            }
+        }
+    }
+
     internal fun disposeForTests() {
         observerJob?.cancel()
         generationJob?.cancel()
@@ -902,6 +1296,7 @@ class AssistantViewModel(
         fun factory(
             assistantConversationsStore: AssistantConversationsStore,
             appSettingsStore: AppSettingsStore,
+            assistantMemoryStore: AssistantMemoryStore,
             assistantGateway: AssistantGateway,
             assistantActionReviewService: AssistantActionReviewService
         ): ViewModelProvider.Factory =
@@ -912,6 +1307,7 @@ class AssistantViewModel(
                         return AssistantViewModel(
                             assistantConversationsStore = assistantConversationsStore,
                             appSettingsStore = appSettingsStore,
+                            assistantMemoryStore = assistantMemoryStore,
                             assistantGateway = assistantGateway,
                             assistantActionReviewService = assistantActionReviewService
                         ) as T

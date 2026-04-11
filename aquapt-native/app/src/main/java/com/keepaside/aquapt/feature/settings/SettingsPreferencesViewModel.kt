@@ -24,6 +24,8 @@ internal const val settingsReminderHoursErrorMessage =
 data class SettingsPreferencesDraft(
     val openRouterApiKey: String = "",
     val aiModel: String = "",
+    val assistantMemoryModel: String = "",
+    val assistantMemoryEnabled: Boolean = false,
     val themePreference: AppThemePreference = AppThemePreference.SYSTEM,
     val regionalPreferencesMode: RegionalPreferencesMode = RegionalPreferencesMode.AUTO,
     val notificationsEnabled: Boolean = false,
@@ -65,6 +67,18 @@ class SettingsPreferencesViewModel(
     fun onAiModelChanged(value: String) {
         _uiState.update { state ->
             state.copy(draft = state.draft.copy(aiModel = value))
+        }
+    }
+
+    fun onAssistantMemoryModelChanged(value: String) {
+        _uiState.update { state ->
+            state.copy(draft = state.draft.copy(assistantMemoryModel = value))
+        }
+    }
+
+    fun onAssistantMemoryEnabledChanged(value: Boolean) {
+        _uiState.update { state ->
+            state.copy(draft = state.draft.copy(assistantMemoryEnabled = value))
         }
     }
 
@@ -143,6 +157,10 @@ class SettingsPreferencesViewModel(
                     existing.copy(
                         openRouterApiKey = current.draft.openRouterApiKey.trim(),
                         aiModel = current.draft.aiModel.trim(),
+                        assistantMemoryModel = current.draft.assistantMemoryModel
+                            .trim()
+                            .takeIf { it.isNotEmpty() },
+                        assistantMemoryEnabled = current.draft.assistantMemoryEnabled,
                         themePreference = current.draft.themePreference,
                         regionalPreferencesMode = current.draft.regionalPreferencesMode,
                         notificationsEnabled = current.draft.notificationsEnabled,
@@ -259,6 +277,8 @@ internal fun parseSettingsReminderHoursInput(raw: String): List<Int>? {
 private fun AppSettings.toDraft(): SettingsPreferencesDraft = SettingsPreferencesDraft(
     openRouterApiKey = openRouterApiKey,
     aiModel = aiModel,
+    assistantMemoryModel = assistantMemoryModel.orEmpty(),
+    assistantMemoryEnabled = assistantMemoryEnabled,
     themePreference = themePreference,
     regionalPreferencesMode = regionalPreferencesMode,
     notificationsEnabled = notificationsEnabled,

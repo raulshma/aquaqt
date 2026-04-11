@@ -10,6 +10,12 @@ object AssistantActionTypes {
     const val ADD_ISSUE = "add_issue"
     const val ADD_MEMO = "add_memo"
     const val SAVE_REMINDER_SETTINGS = "save_reminder_settings"
+    const val ADD_AQUARIUM = "add_aquarium"
+    const val ADD_LIVESTOCK = "add_livestock"
+    const val ADD_ASSET = "add_asset"
+    const val ADD_CONSUMABLE = "add_consumable"
+    const val CONSUME_CONSUMABLE = "consume_consumable"
+    const val SET_ISSUE_STATUS = "set_issue_status"
 
     val supported = setOf(
         CREATE_TASK_TEMPLATE,
@@ -18,7 +24,13 @@ object AssistantActionTypes {
         LOG_PARAMETERS,
         ADD_ISSUE,
         ADD_MEMO,
-        SAVE_REMINDER_SETTINGS
+        SAVE_REMINDER_SETTINGS,
+        ADD_AQUARIUM,
+        ADD_LIVESTOCK,
+        ADD_ASSET,
+        ADD_CONSUMABLE,
+        CONSUME_CONSUMABLE,
+        SET_ISSUE_STATUS
     )
 }
 
@@ -42,6 +54,30 @@ data class AssistantDetectedAction(
     val reminderEnabled: Boolean? = null,
     val reminderHour: Int? = null,
     val reminderHours: List<Int> = emptyList(),
+    val waterType: WaterType? = null,
+    val volumeLiters: Double? = null,
+    val dimensions: String? = null,
+    val setupDate: String? = null,
+    val investmentCost: Double? = null,
+    val livestockId: String? = null,
+    val livestockName: String? = null,
+    val species: String? = null,
+    val quantity: Int? = null,
+    val livestockKind: LivestockKind? = null,
+    val livestockStatus: LivestockStatus? = null,
+    val issueId: String? = null,
+    val issueStatus: IssueStatus? = null,
+    val resolutionNote: String? = null,
+    val assetCategory: AssetCategory? = null,
+    val brandModel: String? = null,
+    val purchasedAt: String? = null,
+    val price: Double? = null,
+    val consumableId: String? = null,
+    val consumableName: String? = null,
+    val consumableUnit: ConsumableUnit? = null,
+    val remaining: Double? = null,
+    val reorderAt: Double? = null,
+    val amountUsed: Double? = null,
     val confidence: Double = 0.6,
     val approved: Boolean = false,
     val validationErrors: List<String> = emptyList(),

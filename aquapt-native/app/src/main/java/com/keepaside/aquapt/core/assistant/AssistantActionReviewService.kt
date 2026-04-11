@@ -5,11 +5,19 @@ import com.keepaside.aquapt.core.model.AssistantActionExecutionResult
 import com.keepaside.aquapt.core.model.AssistantActionExtractionResult
 import com.keepaside.aquapt.core.model.AssistantActionTypes
 import com.keepaside.aquapt.core.model.AssistantDetectedAction
+import com.keepaside.aquapt.core.model.Asset
+import com.keepaside.aquapt.core.model.AssetCategory
+import com.keepaside.aquapt.core.model.Aquarium
+import com.keepaside.aquapt.core.model.Consumable
+import com.keepaside.aquapt.core.model.ConsumableUnit
 import com.keepaside.aquapt.core.model.DosingLog
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.model.EntityRef
 import com.keepaside.aquapt.core.model.Issue
 import com.keepaside.aquapt.core.model.IssueStatus
+import com.keepaside.aquapt.core.model.Livestock
+import com.keepaside.aquapt.core.model.LivestockKind
+import com.keepaside.aquapt.core.model.LivestockStatus
 import com.keepaside.aquapt.core.model.Memo
 import com.keepaside.aquapt.core.model.TaskCategory
 import com.keepaside.aquapt.core.model.TaskExecution
@@ -17,12 +25,16 @@ import com.keepaside.aquapt.core.model.TaskFrequency
 import com.keepaside.aquapt.core.model.TaskTemplate
 import com.keepaside.aquapt.core.model.TimelineEvent
 import com.keepaside.aquapt.core.model.TimelineEventType
+import com.keepaside.aquapt.core.model.WaterType
 import com.keepaside.aquapt.core.model.WaterParameterLog
 import com.keepaside.aquapt.core.model.WaterParameters
+import com.keepaside.aquapt.core.repository.AssetRepository
 import com.keepaside.aquapt.core.repository.AppSettingsStore
 import com.keepaside.aquapt.core.repository.AquariumRepository
+import com.keepaside.aquapt.core.repository.ConsumableRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
+import com.keepaside.aquapt.core.repository.LivestockRepository
 import com.keepaside.aquapt.core.repository.MemoRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
@@ -57,8 +69,11 @@ interface AssistantActionReviewService {
 
 class AssistantActionReviewServiceImpl(
     private val aquariumRepository: AquariumRepository,
+    private val livestockRepository: LivestockRepository,
     private val taskTemplateRepository: TaskTemplateRepository,
     private val taskExecutionRepository: TaskExecutionRepository,
+    private val assetRepository: AssetRepository,
+    private val consumableRepository: ConsumableRepository,
     private val dosingLogRepository: DosingLogRepository,
     private val waterParameterLogRepository: WaterParameterLogRepository,
     private val issueRepository: IssueRepository,
@@ -126,8 +141,16 @@ class AssistantActionReviewServiceImpl(
         }
 
         val aquariums = aquariumRepository.getAll().first()
+        val livestock = livestockRepository.getAll().first()
         val templates = taskTemplateRepository.getAll().first()
+        val consumables = consumableRepository.getAll().first()
         val issues = issueRepository.getAll().first()
+
+        val mutableAquariums = aquariums.toMutableList()
+        val mutableLivestock = livestock.toMutableList()
+        val mutableTemplates = templates.toMutableList()
+        val mutableConsumables = consumables.toMutableList()
+        val mutableIssues = issues.toMutableList()
 
         val executionItems = mutableListOf<AssistantActionExecutionItemResult>()
         var createdCount = 0
@@ -169,8 +192,18 @@ class AssistantActionReviewServiceImpl(
                 continue
             }
 
-            val aquariumId = resolveAquariumId(action, aquariums)
-            if (aquariumId.isBlank()) {
+            val requiresExistingAquarium = action.type !in setOf(
+                AssistantActionTypes.ADD_AQUARIUM,
+                AssistantActionTypes.SET_ISSUE_STATUS,
+                AssistantActionTypes.CONSUME_CONSUMABLE
+            )
+            val aquariumId = if (requiresExistingAquarium) {
+                resolveAquariumId(action, mutableAquariums)
+            } else {
+                ""
+            }
+
+            if (requiresExistingAquarium && aquariumId.isBlank()) {
                 executionItems += AssistantActionExecutionItemResult(
                     actionId = action.id,
                     actionType = action.type,
@@ -195,7 +228,7 @@ class AssistantActionReviewServiceImpl(
                         continue
                     }
 
-                    val duplicate = templates.any { template ->
+                    val duplicate = mutableTemplates.any { template ->
                         template.title.equals(title, ignoreCase = true) &&
                             template.frequency.serialize() == frequency.serialize() &&
                             template.aquariumIds.contains(aquariumId)
@@ -225,6 +258,7 @@ class AssistantActionReviewServiceImpl(
                     )
 
                     taskTemplateRepository.upsert(taskTemplate, aquariumId)
+                    mutableTemplates += taskTemplate
                     timelineEventRepository.upsert(
                         TimelineEvent(
                             aquariumId = aquariumId,
@@ -250,7 +284,7 @@ class AssistantActionReviewServiceImpl(
                 }
 
                 AssistantActionTypes.COMPLETE_TASK -> {
-                    val taskTemplateId = resolveTaskTemplateId(action, aquariumId, templates)
+                    val taskTemplateId = resolveTaskTemplateId(action, aquariumId, mutableTemplates)
                     if (taskTemplateId.isBlank()) {
                         executionItems += AssistantActionExecutionItemResult(
                             actionId = action.id,
@@ -409,6 +443,7 @@ class AssistantActionReviewServiceImpl(
                         createdAt = nowIso()
                     )
                     issueRepository.upsert(issue)
+                    mutableIssues += issue
 
                     timelineEventRepository.upsert(
                         TimelineEvent(
@@ -479,6 +514,312 @@ class AssistantActionReviewServiceImpl(
                     )
                 }
 
+                AssistantActionTypes.ADD_AQUARIUM -> {
+                    val name = action.title?.trim().orEmpty()
+                    val waterType = action.waterType
+                    val volume = action.volumeLiters
+                    val dimensions = action.dimensions?.trim().orEmpty()
+
+                    if (name.isBlank() || waterType == null || volume == null || volume <= 0.0 || dimensions.isBlank()) {
+                        executionItems += AssistantActionExecutionItemResult(
+                            actionId = action.id,
+                            actionType = action.type,
+                            created = false,
+                            reason = "Aquarium fields are incomplete."
+                        )
+                        continue
+                    }
+
+                    val aquarium = Aquarium(
+                        id = idProvider("aquarium"),
+                        name = name,
+                        volumeLiters = volume,
+                        dimensions = dimensions,
+                        waterType = waterType,
+                        setupDate = action.setupDate?.trim()?.takeIf { it.isNotBlank() } ?: nowIso(),
+                        investmentCost = action.investmentCost
+                    )
+
+                    aquariumRepository.upsert(aquarium)
+                    mutableAquariums += aquarium
+
+                    createdCount += 1
+                    executionItems += AssistantActionExecutionItemResult(
+                        actionId = action.id,
+                        actionType = action.type,
+                        created = true,
+                        summary = "Aquarium added"
+                    )
+                }
+
+                AssistantActionTypes.ADD_LIVESTOCK -> {
+                    val livestockName = action.livestockName?.trim().orEmpty()
+                    val species = action.species?.trim().orEmpty()
+                    val kind = action.livestockKind
+                    val quantity = action.quantity
+
+                    if (livestockName.isBlank() || species.isBlank() || kind == null || quantity == null || quantity <= 0) {
+                        executionItems += AssistantActionExecutionItemResult(
+                            actionId = action.id,
+                            actionType = action.type,
+                            created = false,
+                            reason = "Livestock fields are incomplete."
+                        )
+                        continue
+                    }
+
+                    val item = Livestock(
+                        id = idProvider("livestock"),
+                        aquariumId = aquariumId,
+                        kind = kind,
+                        name = livestockName,
+                        species = species,
+                        quantity = quantity,
+                        acquiredAt = action.setupDate?.trim()?.takeIf { it.isNotBlank() } ?: nowIso(),
+                        purchasePrice = action.price,
+                        dietaryNotes = action.description,
+                        status = action.livestockStatus ?: LivestockStatus.ACTIVE
+                    )
+
+                    livestockRepository.upsert(item)
+                    mutableLivestock += item
+
+                    timelineEventRepository.upsert(
+                        TimelineEvent(
+                            aquariumId = aquariumId,
+                            type = TimelineEventType.LIVESTOCK,
+                            createdAt = nowIso(),
+                            title = "Assistant added livestock: ${item.name}",
+                            description = item.species,
+                            source = EntityRef(
+                                kind = EntityKind.LIVESTOCK,
+                                id = item.id,
+                                aquariumId = aquariumId
+                            )
+                        )
+                    )
+
+                    createdCount += 1
+                    executionItems += AssistantActionExecutionItemResult(
+                        actionId = action.id,
+                        actionType = action.type,
+                        created = true,
+                        summary = "Livestock added"
+                    )
+                }
+
+                AssistantActionTypes.ADD_ASSET -> {
+                    val category = action.assetCategory
+                    val brandModel = action.brandModel?.trim().orEmpty()
+
+                    if (category == null || brandModel.isBlank()) {
+                        executionItems += AssistantActionExecutionItemResult(
+                            actionId = action.id,
+                            actionType = action.type,
+                            created = false,
+                            reason = "Asset fields are incomplete."
+                        )
+                        continue
+                    }
+
+                    val asset = Asset(
+                        id = idProvider("asset"),
+                        aquariumId = aquariumId,
+                        category = category,
+                        brandModel = brandModel,
+                        purchasedAt = action.purchasedAt?.trim()?.takeIf { it.isNotBlank() },
+                        price = action.price
+                    )
+
+                    assetRepository.upsert(asset)
+
+                    timelineEventRepository.upsert(
+                        TimelineEvent(
+                            aquariumId = aquariumId,
+                            type = TimelineEventType.ASSET,
+                            createdAt = nowIso(),
+                            title = "Assistant added asset: ${asset.brandModel}",
+                            source = EntityRef(
+                                kind = EntityKind.ASSET,
+                                id = asset.id,
+                                aquariumId = aquariumId
+                            )
+                        )
+                    )
+
+                    createdCount += 1
+                    executionItems += AssistantActionExecutionItemResult(
+                        actionId = action.id,
+                        actionType = action.type,
+                        created = true,
+                        summary = "Asset added"
+                    )
+                }
+
+                AssistantActionTypes.ADD_CONSUMABLE -> {
+                    val name = action.consumableName?.trim().orEmpty()
+                    val unit = action.consumableUnit
+                    val remaining = action.remaining
+
+                    if (name.isBlank() || unit == null || remaining == null || remaining < 0.0) {
+                        executionItems += AssistantActionExecutionItemResult(
+                            actionId = action.id,
+                            actionType = action.type,
+                            created = false,
+                            reason = "Consumable fields are incomplete."
+                        )
+                        continue
+                    }
+
+                    val consumable = Consumable(
+                        id = idProvider("consumable"),
+                        aquariumId = aquariumId,
+                        name = name,
+                        unit = unit,
+                        remaining = remaining,
+                        reorderAt = action.reorderAt,
+                        updatedAt = nowIso()
+                    )
+
+                    consumableRepository.upsert(consumable)
+                    mutableConsumables += consumable
+
+                    timelineEventRepository.upsert(
+                        TimelineEvent(
+                            aquariumId = aquariumId,
+                            type = TimelineEventType.CONSUMABLE,
+                            createdAt = nowIso(),
+                            title = "Assistant added consumable: ${consumable.name}",
+                            source = EntityRef(
+                                kind = EntityKind.CONSUMABLE,
+                                id = consumable.id,
+                                aquariumId = aquariumId
+                            )
+                        )
+                    )
+
+                    createdCount += 1
+                    executionItems += AssistantActionExecutionItemResult(
+                        actionId = action.id,
+                        actionType = action.type,
+                        created = true,
+                        summary = "Consumable added"
+                    )
+                }
+
+                AssistantActionTypes.CONSUME_CONSUMABLE -> {
+                    val amountUsed = action.amountUsed
+                    if (amountUsed == null || amountUsed <= 0.0) {
+                        executionItems += AssistantActionExecutionItemResult(
+                            actionId = action.id,
+                            actionType = action.type,
+                            created = false,
+                            reason = "Consumable usage amount is invalid."
+                        )
+                        continue
+                    }
+
+                    val consumable = resolveConsumable(
+                        action = action,
+                        aquariumId = aquariumId.takeIf { it.isNotBlank() },
+                        consumables = mutableConsumables
+                    )
+                    if (consumable == null) {
+                        executionItems += AssistantActionExecutionItemResult(
+                            actionId = action.id,
+                            actionType = action.type,
+                            created = false,
+                            reason = "Consumable not found."
+                        )
+                        continue
+                    }
+
+                    val updated = consumable.copy(
+                        remaining = (consumable.remaining - amountUsed).coerceAtLeast(0.0),
+                        updatedAt = nowIso()
+                    )
+                    consumableRepository.upsert(updated)
+                    mutableConsumables.replaceAll { item ->
+                        if (item.id == updated.id) updated else item
+                    }
+
+                    timelineEventRepository.upsert(
+                        TimelineEvent(
+                            aquariumId = consumable.aquariumId,
+                            type = TimelineEventType.CONSUMABLE,
+                            createdAt = nowIso(),
+                            title = "Assistant logged consumable usage: ${updated.name}",
+                            description = "Used $amountUsed ${updated.unit.name.lowercase()}",
+                            source = EntityRef(
+                                kind = EntityKind.CONSUMABLE,
+                                id = updated.id,
+                                aquariumId = consumable.aquariumId
+                            )
+                        )
+                    )
+
+                    createdCount += 1
+                    executionItems += AssistantActionExecutionItemResult(
+                        actionId = action.id,
+                        actionType = action.type,
+                        created = true,
+                        summary = "Consumable usage logged"
+                    )
+                }
+
+                AssistantActionTypes.SET_ISSUE_STATUS -> {
+                    val issue = resolveIssue(
+                        action = action,
+                        aquariumId = aquariumId.takeIf { it.isNotBlank() },
+                        issues = mutableIssues
+                    )
+                    val nextStatus = action.issueStatus
+
+                    if (issue == null || nextStatus == null) {
+                        executionItems += AssistantActionExecutionItemResult(
+                            actionId = action.id,
+                            actionType = action.type,
+                            created = false,
+                            reason = "Issue or target status could not be resolved."
+                        )
+                        continue
+                    }
+
+                    val updatedIssue = issue.copy(
+                        status = nextStatus,
+                        resolutionNote = action.resolutionNote?.trim()?.takeIf { it.isNotBlank() }
+                            ?: action.note?.trim()?.takeIf { it.isNotBlank() }
+                    )
+
+                    issueRepository.upsert(updatedIssue)
+                    mutableIssues.replaceAll { item ->
+                        if (item.id == updatedIssue.id) updatedIssue else item
+                    }
+
+                    timelineEventRepository.upsert(
+                        TimelineEvent(
+                            aquariumId = issue.aquariumId,
+                            type = TimelineEventType.ISSUE,
+                            createdAt = nowIso(),
+                            title = "Assistant updated issue status: ${updatedIssue.title}",
+                            description = "Status ${updatedIssue.status.name.lowercase()}",
+                            source = EntityRef(
+                                kind = EntityKind.ISSUE,
+                                id = updatedIssue.id,
+                                aquariumId = issue.aquariumId
+                            )
+                        )
+                    )
+
+                    createdCount += 1
+                    executionItems += AssistantActionExecutionItemResult(
+                        actionId = action.id,
+                        actionType = action.type,
+                        created = true,
+                        summary = "Issue status updated"
+                    )
+                }
+
                 else -> {
                     executionItems += AssistantActionExecutionItemResult(
                         actionId = action.id,
@@ -521,9 +862,33 @@ class AssistantActionReviewServiceImpl(
         val memoContent = raw.stringValue("memoContent")
         val description = raw.stringValue("description")
         val issueTitle = raw.stringValue("issueTitle")
+        val issueId = raw.stringValue("issueId")
+        val issueStatus = raw.issueStatusValue("issueStatus")
+        val resolutionNote = raw.stringValue("resolutionNote")
         val reminderHour = raw.intValue("reminderHour")
         val reminderHours = raw.intListValue("reminderHours")
         val parameters = raw.waterParametersValue("parameters")
+        val waterType = raw.waterTypeValue("waterType")
+        val volumeLiters = raw.numberValue("volumeLiters")
+        val dimensions = raw.stringValue("dimensions")
+        val setupDate = raw.stringValue("setupDate")
+        val investmentCost = raw.numberValue("investmentCost")
+        val livestockName = raw.stringValue("livestockName") ?: title
+        val livestockId = raw.stringValue("livestockId")
+        val species = raw.stringValue("species")
+        val quantity = raw.intValue("quantity")
+        val livestockKind = raw.livestockKindValue("livestockKind")
+        val livestockStatus = raw.livestockStatusValue("livestockStatus")
+        val assetCategory = raw.assetCategoryValue("assetCategory")
+        val brandModel = raw.stringValue("brandModel")
+        val purchasedAt = raw.stringValue("purchasedAt")
+        val price = raw.numberValue("price")
+        val consumableId = raw.stringValue("consumableId")
+        val consumableName = raw.stringValue("consumableName")
+        val consumableUnit = raw.consumableUnitValue("consumableUnit")
+        val remaining = raw.numberValue("remaining")
+        val reorderAt = raw.numberValue("reorderAt")
+        val amountUsed = raw.numberValue("amountUsed")
 
         when (normalizedType) {
             AssistantActionTypes.CREATE_TASK_TEMPLATE -> {
@@ -581,6 +946,75 @@ class AssistantActionReviewServiceImpl(
                     }
                 }
             }
+
+            AssistantActionTypes.ADD_AQUARIUM -> {
+                if (title.isNullOrBlank()) {
+                    validationErrors += "Missing aquarium name"
+                }
+                if (volumeLiters == null || volumeLiters <= 0.0) {
+                    validationErrors += "Missing or invalid volumeLiters"
+                }
+                if (waterType == null) {
+                    validationErrors += "Missing or invalid waterType"
+                }
+                if (dimensions.isNullOrBlank()) {
+                    validationErrors += "Missing aquarium dimensions"
+                }
+            }
+
+            AssistantActionTypes.ADD_LIVESTOCK -> {
+                if (livestockName.isNullOrBlank()) {
+                    validationErrors += "Missing livestock name"
+                }
+                if (species.isNullOrBlank()) {
+                    validationErrors += "Missing livestock species"
+                }
+                if (quantity == null || quantity <= 0) {
+                    validationErrors += "Missing or invalid livestock quantity"
+                }
+                if (livestockKind == null) {
+                    validationErrors += "Missing or invalid livestock kind"
+                }
+            }
+
+            AssistantActionTypes.ADD_ASSET -> {
+                if (assetCategory == null) {
+                    validationErrors += "Missing or invalid asset category"
+                }
+                if (brandModel.isNullOrBlank()) {
+                    validationErrors += "Missing asset brandModel"
+                }
+            }
+
+            AssistantActionTypes.ADD_CONSUMABLE -> {
+                if (consumableName.isNullOrBlank()) {
+                    validationErrors += "Missing consumable name"
+                }
+                if (consumableUnit == null) {
+                    validationErrors += "Missing or invalid consumable unit"
+                }
+                if (remaining == null || remaining < 0.0) {
+                    validationErrors += "Missing or invalid consumable remaining amount"
+                }
+            }
+
+            AssistantActionTypes.CONSUME_CONSUMABLE -> {
+                if (consumableId.isNullOrBlank() && consumableName.isNullOrBlank()) {
+                    validationErrors += "Missing consumableId or consumableName"
+                }
+                if (amountUsed == null || amountUsed <= 0.0) {
+                    validationErrors += "Missing or invalid amountUsed"
+                }
+            }
+
+            AssistantActionTypes.SET_ISSUE_STATUS -> {
+                if (issueId.isNullOrBlank() && issueTitle.isNullOrBlank()) {
+                    validationErrors += "Missing issueId or issueTitle"
+                }
+                if (issueStatus == null) {
+                    validationErrors += "Missing or invalid issueStatus"
+                }
+            }
         }
 
         val confidence = raw.numberValue("confidence")
@@ -606,6 +1040,30 @@ class AssistantActionReviewServiceImpl(
             reminderEnabled = raw.booleanValue("reminderEnabled"),
             reminderHour = reminderHour,
             reminderHours = reminderHours,
+            waterType = waterType,
+            volumeLiters = volumeLiters,
+            dimensions = dimensions,
+            setupDate = setupDate,
+            investmentCost = investmentCost,
+            livestockId = livestockId,
+            livestockName = livestockName,
+            species = species,
+            quantity = quantity,
+            livestockKind = livestockKind,
+            livestockStatus = livestockStatus,
+            issueId = issueId,
+            issueStatus = issueStatus,
+            resolutionNote = resolutionNote,
+            assetCategory = assetCategory,
+            brandModel = brandModel,
+            purchasedAt = purchasedAt,
+            price = price,
+            consumableId = consumableId,
+            consumableName = consumableName,
+            consumableUnit = consumableUnit,
+            remaining = remaining,
+            reorderAt = reorderAt,
+            amountUsed = amountUsed,
             confidence = confidence,
             approved = false,
             validationErrors = validationErrors,
@@ -656,6 +1114,39 @@ class AssistantActionReviewServiceImpl(
             template.title.trim().lowercase() == normalizedTitle &&
                 template.aquariumIds.contains(aquariumId)
         }?.id.orEmpty()
+    }
+
+    private fun resolveIssue(
+        action: AssistantDetectedAction,
+        aquariumId: String?,
+        issues: List<Issue>
+    ): Issue? {
+        if (!action.issueId.isNullOrBlank()) {
+            issues.firstOrNull { issue -> issue.id == action.issueId }?.let { return it }
+        }
+
+        val normalizedTitle = action.issueTitle?.trim()?.lowercase() ?: return null
+        return issues.firstOrNull { issue ->
+            (aquariumId == null || issue.aquariumId == aquariumId) &&
+                issue.title.trim().lowercase() == normalizedTitle
+        }
+    }
+
+    private fun resolveConsumable(
+        action: AssistantDetectedAction,
+        aquariumId: String?,
+        consumables: List<Consumable>
+    ): Consumable? {
+        if (!action.consumableId.isNullOrBlank()) {
+            consumables.firstOrNull { consumable -> consumable.id == action.consumableId }
+                ?.let { return it }
+        }
+
+        val normalizedName = action.consumableName?.trim()?.lowercase() ?: return null
+        return consumables.firstOrNull { consumable ->
+            (aquariumId == null || consumable.aquariumId == aquariumId) &&
+                consumable.name.trim().lowercase() == normalizedName
+        }
     }
 
     private fun toTaskFrequency(value: String?): TaskFrequency? {
@@ -813,6 +1304,71 @@ class AssistantActionReviewServiceImpl(
         )
 
         return params.takeIf { it.hasAnyValue() }
+    }
+
+    private fun JsonObject.waterTypeValue(key: String): WaterType? {
+        val normalized = stringValue(key)?.lowercase() ?: return null
+        return when (normalized) {
+            "freshwater" -> WaterType.FRESHWATER
+            "marine" -> WaterType.MARINE
+            "brackish" -> WaterType.BRACKISH
+            else -> null
+        }
+    }
+
+    private fun JsonObject.livestockKindValue(key: String): LivestockKind? {
+        val normalized = stringValue(key)?.lowercase() ?: return null
+        return when (normalized) {
+            "fish" -> LivestockKind.FISH
+            "shrimp" -> LivestockKind.SHRIMP
+            "snail" -> LivestockKind.SNAIL
+            "coral" -> LivestockKind.CORAL
+            "plant" -> LivestockKind.PLANT
+            "other" -> LivestockKind.OTHER
+            else -> null
+        }
+    }
+
+    private fun JsonObject.livestockStatusValue(key: String): LivestockStatus? {
+        val normalized = stringValue(key)?.lowercase() ?: return null
+        return when (normalized) {
+            "active" -> LivestockStatus.ACTIVE
+            "ill" -> LivestockStatus.ILL
+            "deceased" -> LivestockStatus.DECEASED
+            else -> null
+        }
+    }
+
+    private fun JsonObject.issueStatusValue(key: String): IssueStatus? {
+        val normalized = stringValue(key)?.lowercase() ?: return null
+        return when (normalized) {
+            "open" -> IssueStatus.OPEN
+            "monitoring" -> IssueStatus.MONITORING
+            "resolved" -> IssueStatus.RESOLVED
+            else -> null
+        }
+    }
+
+    private fun JsonObject.assetCategoryValue(key: String): AssetCategory? {
+        val normalized = stringValue(key)?.lowercase() ?: return null
+        return when (normalized) {
+            "filter" -> AssetCategory.FILTER
+            "heater" -> AssetCategory.HEATER
+            "light" -> AssetCategory.LIGHT
+            "co2" -> AssetCategory.CO2
+            "other" -> AssetCategory.OTHER
+            else -> null
+        }
+    }
+
+    private fun JsonObject.consumableUnitValue(key: String): ConsumableUnit? {
+        val normalized = stringValue(key)?.lowercase() ?: return null
+        return when (normalized) {
+            "g" -> ConsumableUnit.G
+            "ml" -> ConsumableUnit.ML
+            "pcs" -> ConsumableUnit.PCS
+            else -> null
+        }
     }
 
     private fun JsonObject.jsonArrayValue(key: String): JsonArray? =

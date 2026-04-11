@@ -97,6 +97,8 @@ fun SettingsBackupScreen(
                 uiState = settingsPreferencesUiState,
                 onOpenRouterApiKeyChanged = settingsPreferencesViewModel::onOpenRouterApiKeyChanged,
                 onAiModelChanged = settingsPreferencesViewModel::onAiModelChanged,
+                onAssistantMemoryModelChanged = settingsPreferencesViewModel::onAssistantMemoryModelChanged,
+                onAssistantMemoryEnabledChanged = settingsPreferencesViewModel::onAssistantMemoryEnabledChanged,
                 onThemePreferenceChanged = settingsPreferencesViewModel::onThemePreferenceChanged,
                 onRegionalModeChanged = settingsPreferencesViewModel::onRegionalPreferencesModeChanged,
                 onNotificationsEnabledChanged = settingsPreferencesViewModel::onNotificationsEnabledChanged,
@@ -312,6 +314,8 @@ private fun SettingsPreferencesSection(
     uiState: SettingsPreferencesUiState,
     onOpenRouterApiKeyChanged: (String) -> Unit,
     onAiModelChanged: (String) -> Unit,
+    onAssistantMemoryModelChanged: (String) -> Unit,
+    onAssistantMemoryEnabledChanged: (Boolean) -> Unit,
     onThemePreferenceChanged: (AppThemePreference) -> Unit,
     onRegionalModeChanged: (RegionalPreferencesMode) -> Unit,
     onNotificationsEnabledChanged: (Boolean) -> Unit,
@@ -366,6 +370,32 @@ private fun SettingsPreferencesSection(
                 enabled = !uiState.isSaving,
                 singleLine = true
             )
+
+            OutlinedTextField(
+                value = uiState.draft.assistantMemoryModel,
+                onValueChange = onAssistantMemoryModelChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Assistant memory model") },
+                supportingText = { Text("Optional. Used for future memory summarization/compaction passes.") },
+                enabled = !uiState.isSaving,
+                singleLine = true
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Checkbox(
+                    checked = uiState.draft.assistantMemoryEnabled,
+                    onCheckedChange = { value -> onAssistantMemoryEnabledChanged(value) },
+                    enabled = !uiState.isSaving
+                )
+                Text(
+                    text = "Enable assistant memory",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
 
             Text(
                 text = "Appearance",
