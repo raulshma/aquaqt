@@ -365,6 +365,122 @@ class SettingsBackupViewModel(
         }
     }
 
+    fun deleteSelectedCloudBackupObject() {
+        val current = _uiState.value
+        if (current.isBusy) return
+
+        val selectedObjectKey = current.selectedCloudObjectKey.trim()
+        if (selectedObjectKey.isEmpty()) {
+            _uiState.update {
+                it.copy(statusMessage = "Select a cloud backup object first, then delete it.")
+            }
+            return
+        }
+
+        launchWork {
+            _uiState.update { it.copy(isBusy = true) }
+
+            runCatching {
+                val prereq = resolveCloudListPrerequisites()
+                val deleteOutcome = prereq.cloudGateway.deleteCloudBackupObject(
+                    settings = prereq.settings,
+                    credentials = prereq.credentials,
+                    objectKey = selectedObjectKey
+                )
+
+                val refreshedSettings = prereq.settingsStore.settings.value
+                val cloudObjects = prereq.cloudGateway.listAvailableCloudBackups(
+                    settings = refreshedSettings,
+                    credentials = prereq.credentials
+                )
+
+                val selected = resolveSelectedCloudObjectKey(
+                    objects = cloudObjects,
+                    preferredObjectKey = refreshedSettings.backupS3ObjectKey,
+                    currentSelectedObjectKey = if (selectedObjectKey == deleteOutcome.deletedObjectKey) {
+                        ""
+                    } else {
+                        _uiState.value.selectedCloudObjectKey
+                    }
+                )
+
+                Triple(deleteOutcome, cloudObjects, selected)
+            }.onSuccess { (deleteOutcome, cloudObjects, selectedObjectKeyAfterDelete) ->
+                val statusMessage = buildString {
+                    append("Deleted cloud object ${deleteOutcome.deletedObjectKey}.")
+                    if (deleteOutcome.wasLatestObject) {
+                        append(" The latest backup pointer was removed; run Sync to cloud to recreate it.")
+                    }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        cloudBackups = cloudObjects,
+                        selectedCloudObjectKey = selectedObjectKeyAfterDelete,
+                        statusMessage = statusMessage
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(statusMessage = error.message ?: "Cloud delete failed.")
+                }
+            }
+
+            _uiState.update { it.copy(isBusy = false) }
+        }
+    }
+
+    fun pruneCloudBackupHistory() {
+        val current = _uiState.value
+        if (current.isBusy) return
+
+        launchWork {
+            _uiState.update { it.copy(isBusy = true) }
+
+            runCatching {
+                val prereq = resolveCloudListPrerequisites()
+                val pruneOutcome = prereq.cloudGateway.pruneCloudBackupHistory(
+                    settings = prereq.settings,
+                    credentials = prereq.credentials
+                )
+
+                val refreshedSettings = prereq.settingsStore.settings.value
+                val cloudObjects = prereq.cloudGateway.listAvailableCloudBackups(
+                    settings = refreshedSettings,
+                    credentials = prereq.credentials
+                )
+
+                val selected = resolveSelectedCloudObjectKey(
+                    objects = cloudObjects,
+                    preferredObjectKey = refreshedSettings.backupS3ObjectKey,
+                    currentSelectedObjectKey = _uiState.value.selectedCloudObjectKey
+                )
+
+                Triple(pruneOutcome, cloudObjects, selected)
+            }.onSuccess { (pruneOutcome, cloudObjects, selectedObjectKey) ->
+                val statusMessage = if (pruneOutcome.deletedKeys.isEmpty()) {
+                    "Prune complete. No old versioned backups matched the retention policy."
+                } else {
+                    "Prune complete. Deleted ${pruneOutcome.deletedKeys.size} old versioned backup(s)."
+                }
+
+                _uiState.update {
+                    it.copy(
+                        cloudBackups = cloudObjects,
+                        selectedCloudObjectKey = selectedObjectKey,
+                        statusMessage = statusMessage
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(statusMessage = error.message ?: "Cloud prune failed.")
+                }
+            }
+
+            _uiState.update { it.copy(isBusy = false) }
+        }
+    }
+
     private fun resolveSelectedCloudObjectKey(
         objects: List<BackupCloudObject>,
         preferredObjectKey: String?,

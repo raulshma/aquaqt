@@ -85,6 +85,11 @@ data class BackupCloudObject(
     val isLatestObject: Boolean = false
 )
 
+data class BackupCloudDeleteOutcome(
+    val deletedObjectKey: String,
+    val wasLatestObject: Boolean
+)
+
 data class BackupRestoreOutcome(
     val restoredAt: String,
     val sourceObjectKey: String,
@@ -139,6 +144,18 @@ interface BackupCloudSyncGateway {
         credentials: BackupS3Credentials,
         replaceExisting: Boolean = true
     ): BackupRestoreOutcome
+
+    suspend fun deleteCloudBackupObject(
+        settings: AppSettings,
+        credentials: BackupS3Credentials,
+        objectKey: String
+    ): BackupCloudDeleteOutcome
+
+    suspend fun pruneCloudBackupHistory(
+        settings: AppSettings,
+        credentials: BackupS3Credentials,
+        retentionDaysOverride: Int? = null
+    ): S3HistoryCleanupOutcome
 }
 
 class BackupCloudSyncService(
@@ -299,6 +316,58 @@ class BackupCloudSyncService(
             ?: backupAutoSyncDefaultObjectKey,
         replaceExisting = replaceExisting
     )
+
+    override suspend fun deleteCloudBackupObject(
+        settings: AppSettings,
+        credentials: BackupS3Credentials,
+        objectKey: String
+    ): BackupCloudDeleteOutcome {
+        val normalizedObjectKey = normalizeKeyPrefix(objectKey)
+        require(normalizedObjectKey.isNotEmpty()) {
+            "Cloud backup object key is required."
+        }
+
+        val config = parseS3SyncConfig(settings, credentials)
+        deleteS3Object(
+            configInput = config,
+            objectKey = normalizedObjectKey
+        )
+
+        val latestObjectKey = normalizeKeyPrefix(
+            settings.backupS3ObjectKey
+                ?.trim()
+                ?.takeIf { value -> value.isNotEmpty() }
+                ?: backupAutoSyncDefaultObjectKey
+        )
+
+        return BackupCloudDeleteOutcome(
+            deletedObjectKey = normalizedObjectKey,
+            wasLatestObject = normalizedObjectKey == latestObjectKey
+        )
+    }
+
+    override suspend fun pruneCloudBackupHistory(
+        settings: AppSettings,
+        credentials: BackupS3Credentials,
+        retentionDaysOverride: Int?
+    ): S3HistoryCleanupOutcome {
+        val config = parseS3SyncConfig(settings, credentials)
+        val latestObjectKey = normalizeKeyPrefix(
+            settings.backupS3ObjectKey
+                ?.trim()
+                ?.takeIf { value -> value.isNotEmpty() }
+                ?: backupAutoSyncDefaultObjectKey
+        )
+        val retentionDays = retentionDaysOverride
+            ?: settings.backupRetentionDays
+            ?: 30
+
+        return cleanupVersionedBackups(
+            configInput = config,
+            latestObjectKey = latestObjectKey,
+            retentionDays = retentionDays
+        )
+    }
 }
 
 fun createBackupEnvelope(

@@ -2,11 +2,13 @@ package com.keepaside.aquapt.feature.settings
 
 import com.keepaside.aquapt.core.backup.AppStateImportResult
 import com.keepaside.aquapt.core.backup.BackupCloudObject
+import com.keepaside.aquapt.core.backup.BackupCloudDeleteOutcome
 import com.keepaside.aquapt.core.backup.BackupCloudSyncGateway
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.backup.BackupRestoreOutcome
 import com.keepaside.aquapt.core.backup.BackupSyncOutcome
 import com.keepaside.aquapt.core.backup.PersistedAppStateSnapshot
+import com.keepaside.aquapt.core.backup.S3HistoryCleanupOutcome
 import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.repository.AppSettingsStore
@@ -281,6 +283,102 @@ class SettingsBackupViewModelTest {
         assertEquals("2026-04-11T04:00:00Z", fakeStore.settings.value.backupLastRestoredAt)
         assertTrue(viewModel.uiState.value.statusMessage.contains("Cloud restore completed"))
     }
+
+    @Test
+    fun `delete selected cloud backup refreshes list and selection`() = runTest {
+        val fakeGateway = FakeBackupGateway()
+        val fakeCloudGateway = FakeBackupCloudGateway(
+            cloudObjects = listOf(
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/latest.enc.json",
+                    lastModified = "2026-04-11T03:00:00Z",
+                    isLatestObject = true
+                ),
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/history/2026-04-10.enc.json",
+                    lastModified = "2026-04-10T03:00:00Z"
+                )
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(
+                backupS3Endpoint = "https://s3.example.com",
+                backupS3Bucket = "aquapt-backups",
+                backupS3ObjectKey = "aquapt/backups/latest.enc.json"
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStoreForBackupViewModel(
+            masterKey = "valid-master-key-123",
+            credentials = BackupS3Credentials("AKIA123", "secret")
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            backupCloudSyncGateway = fakeCloudGateway,
+            externalScope = this
+        )
+
+        viewModel.onSelectedCloudObjectChanged("aquapt/backups/history/2026-04-10.enc.json")
+        viewModel.deleteSelectedCloudBackupObject()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(1, fakeCloudGateway.deleteCalls)
+        assertEquals("aquapt/backups/history/2026-04-10.enc.json", fakeCloudGateway.lastDeletedObjectKey)
+        assertEquals(1, state.cloudBackups.size)
+        assertEquals("aquapt/backups/latest.enc.json", state.selectedCloudObjectKey)
+        assertTrue(state.statusMessage.contains("Deleted cloud object"))
+    }
+
+    @Test
+    fun `prune cloud backup history removes old history objects`() = runTest {
+        val fakeGateway = FakeBackupGateway()
+        val fakeCloudGateway = FakeBackupCloudGateway(
+            cloudObjects = listOf(
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/latest.enc.json",
+                    lastModified = "2026-04-11T03:00:00Z",
+                    isLatestObject = true
+                ),
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/history/2026-04-10.enc.json",
+                    lastModified = "2026-04-10T03:00:00Z"
+                ),
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/history/2026-04-09.enc.json",
+                    lastModified = "2026-04-09T03:00:00Z"
+                )
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(
+                backupS3Endpoint = "https://s3.example.com",
+                backupS3Bucket = "aquapt-backups",
+                backupS3ObjectKey = "aquapt/backups/latest.enc.json"
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStoreForBackupViewModel(
+            masterKey = "valid-master-key-123",
+            credentials = BackupS3Credentials("AKIA123", "secret")
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            backupCloudSyncGateway = fakeCloudGateway,
+            externalScope = this
+        )
+
+        viewModel.pruneCloudBackupHistory()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(1, fakeCloudGateway.pruneCalls)
+        assertEquals(1, state.cloudBackups.size)
+        assertEquals("aquapt/backups/latest.enc.json", state.selectedCloudObjectKey)
+        assertTrue(state.statusMessage.contains("Prune complete"))
+    }
 }
 
 private class FakeBackupGateway(
@@ -365,11 +463,16 @@ private class FakeBackupCloudGateway(
     )
 ) : BackupCloudSyncGateway {
 
+    private val mutableCloudObjects = cloudObjects.toMutableList()
+
     var syncCalls: Int = 0
     var listCalls: Int = 0
     var restoreObjectCalls: Int = 0
     var restoreLatestCalls: Int = 0
+    var deleteCalls: Int = 0
+    var pruneCalls: Int = 0
     var lastRestoreObjectKey: String? = null
+    var lastDeletedObjectKey: String? = null
 
     override suspend fun syncCurrentStateToCloud(
         settings: AppSettings,
@@ -385,7 +488,7 @@ private class FakeBackupCloudGateway(
         credentials: BackupS3Credentials
     ): List<BackupCloudObject> {
         listCalls += 1
-        return cloudObjects
+        return mutableCloudObjects.toList()
     }
 
     override suspend fun restoreFromCloudObject(
@@ -408,5 +511,46 @@ private class FakeBackupCloudGateway(
     ): BackupRestoreOutcome {
         restoreLatestCalls += 1
         return restoreOutcome
+    }
+
+    override suspend fun deleteCloudBackupObject(
+        settings: AppSettings,
+        credentials: BackupS3Credentials,
+        objectKey: String
+    ): BackupCloudDeleteOutcome {
+        deleteCalls += 1
+        val normalizedObjectKey = objectKey.trim()
+        lastDeletedObjectKey = normalizedObjectKey
+        val latestObjectKey = mutableCloudObjects
+            .firstOrNull { cloudObject -> cloudObject.isLatestObject }
+            ?.objectKey
+        mutableCloudObjects.removeAll { cloudObject ->
+            cloudObject.objectKey == normalizedObjectKey
+        }
+
+        return BackupCloudDeleteOutcome(
+            deletedObjectKey = normalizedObjectKey,
+            wasLatestObject = latestObjectKey == normalizedObjectKey
+        )
+    }
+
+    override suspend fun pruneCloudBackupHistory(
+        settings: AppSettings,
+        credentials: BackupS3Credentials,
+        retentionDaysOverride: Int?
+    ): S3HistoryCleanupOutcome {
+        pruneCalls += 1
+        val deleted = mutableCloudObjects
+            .filter { cloudObject -> cloudObject.objectKey.contains("/history/") }
+            .map { cloudObject -> cloudObject.objectKey }
+
+        mutableCloudObjects.removeAll { cloudObject ->
+            cloudObject.objectKey in deleted
+        }
+
+        return S3HistoryCleanupOutcome(
+            deletedKeys = deleted,
+            keptKeys = mutableCloudObjects.map { cloudObject -> cloudObject.objectKey }
+        )
     }
 }

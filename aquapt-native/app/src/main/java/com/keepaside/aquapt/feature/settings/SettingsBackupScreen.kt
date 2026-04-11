@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -29,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -83,6 +85,9 @@ fun SettingsBackupScreen(
         }
     )
     val uiState by viewModel.uiState.collectAsState()
+    val selectedCloudObject = uiState.cloudBackups.firstOrNull { cloudObject ->
+        cloudObject.objectKey == uiState.selectedCloudObjectKey
+    }
 
     val settingsPreferencesViewModel: SettingsPreferencesViewModel = viewModel(
         factory = remember(appSettingsStore, backupSecretsStore) {
@@ -128,6 +133,10 @@ fun SettingsBackupScreen(
     ) {
         refreshNotificationPermissionStatus()
     }
+
+    var showRestoreSelectedConfirmation by remember { mutableStateOf(false) }
+    var showRestoreLatestConfirmation by remember { mutableStateOf(false) }
+    var showDeleteSelectedConfirmation by remember { mutableStateOf(false) }
 
     LaunchedEffect(context) {
         refreshNotificationPermissionStatus()
@@ -345,22 +354,100 @@ fun SettingsBackupScreen(
                 }
             }
 
+            selectedCloudObject?.let { cloudObject ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Restore preview",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = cloudObject.objectKey,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = if (cloudObject.lastModified.isNullOrBlank()) {
+                                if (cloudObject.isLatestObject) "Marked as latest" else "Last modified unknown"
+                            } else {
+                                "Last modified: ${cloudObject.lastModified}" +
+                                    if (cloudObject.isLatestObject) " • latest" else ""
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = if (uiState.replaceExisting) {
+                                "Restore mode: replace existing local state."
+                            } else {
+                                "Restore mode: merge with existing local state."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
-                    onClick = viewModel::restoreSelectedCloudBackup,
+                    onClick = {
+                        if (uiState.selectedCloudObjectKey.isBlank()) {
+                            viewModel.restoreSelectedCloudBackup()
+                        } else {
+                            showRestoreSelectedConfirmation = true
+                        }
+                    },
                     enabled = !uiState.isBusy
                 ) {
                     Text("Restore selected")
                 }
 
                 OutlinedButton(
-                    onClick = viewModel::restoreLatestCloudBackup,
+                    onClick = {
+                        showRestoreLatestConfirmation = true
+                    },
                     enabled = !uiState.isBusy
                 ) {
                     Text("Restore latest")
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        if (uiState.selectedCloudObjectKey.isBlank()) {
+                            viewModel.deleteSelectedCloudBackupObject()
+                        } else {
+                            showDeleteSelectedConfirmation = true
+                        }
+                    },
+                    enabled = !uiState.isBusy
+                ) {
+                    Text("Delete selected")
+                }
+
+                OutlinedButton(
+                    onClick = viewModel::pruneCloudBackupHistory,
+                    enabled = !uiState.isBusy
+                ) {
+                    Text("Prune history")
                 }
             }
 
@@ -509,6 +596,126 @@ fun SettingsBackupScreen(
                     )
                 }
             }
+        }
+
+        if (showRestoreSelectedConfirmation) {
+            AlertDialog(
+                onDismissRequest = {
+                    showRestoreSelectedConfirmation = false
+                },
+                title = {
+                    Text("Restore selected backup?")
+                },
+                text = {
+                    Text(
+                        "Restore from ${uiState.selectedCloudObjectKey}. " +
+                            if (uiState.replaceExisting) {
+                                "This will replace existing local state before import."
+                            } else {
+                                "This will merge imported records with local state."
+                            }
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showRestoreSelectedConfirmation = false
+                            viewModel.restoreSelectedCloudBackup()
+                        }
+                    ) {
+                        Text("Restore")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showRestoreSelectedConfirmation = false
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        if (showRestoreLatestConfirmation) {
+            AlertDialog(
+                onDismissRequest = {
+                    showRestoreLatestConfirmation = false
+                },
+                title = {
+                    Text("Restore latest backup?")
+                },
+                text = {
+                    Text(
+                        "Restore from the latest cloud object for this destination. " +
+                            if (uiState.replaceExisting) {
+                                "This will replace existing local state before import."
+                            } else {
+                                "This will merge imported records with local state."
+                            }
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showRestoreLatestConfirmation = false
+                            viewModel.restoreLatestCloudBackup()
+                        }
+                    ) {
+                        Text("Restore")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showRestoreLatestConfirmation = false
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        if (showDeleteSelectedConfirmation) {
+            AlertDialog(
+                onDismissRequest = {
+                    showDeleteSelectedConfirmation = false
+                },
+                title = {
+                    Text("Delete selected cloud object?")
+                },
+                text = {
+                    Text(
+                        "Delete ${uiState.selectedCloudObjectKey}. This cannot be undone." +
+                            if (selectedCloudObject?.isLatestObject == true) {
+                                " This object is marked as latest. Sync again to recreate the latest pointer after deletion."
+                            } else {
+                                ""
+                            }
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteSelectedConfirmation = false
+                            viewModel.deleteSelectedCloudBackupObject()
+                        }
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteSelectedConfirmation = false
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }
