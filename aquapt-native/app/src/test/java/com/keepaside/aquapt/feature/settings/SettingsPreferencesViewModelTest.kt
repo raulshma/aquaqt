@@ -4,6 +4,8 @@ import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.model.RegionalPreferencesMode
 import com.keepaside.aquapt.core.repository.AppSettingsStore
+import com.keepaside.aquapt.core.repository.BackupS3Credentials
+import com.keepaside.aquapt.core.repository.BackupSecretsStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,7 +13,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -20,7 +24,10 @@ class SettingsPreferencesViewModelTest {
     @Test
     fun `save preferences persists normalized manual values`() = runTest {
         val fakeStore = FakePreferencesAppSettingsStore()
-        val viewModel = SettingsPreferencesViewModel(fakeStore, this)
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            externalScope = this
+        )
 
         try {
             advanceUntilIdle()
@@ -65,7 +72,10 @@ class SettingsPreferencesViewModelTest {
     @Test
     fun `invalid reminder hours block save`() = runTest {
         val fakeStore = FakePreferencesAppSettingsStore()
-        val viewModel = SettingsPreferencesViewModel(fakeStore, this)
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            externalScope = this
+        )
 
         try {
             advanceUntilIdle()
@@ -84,7 +94,10 @@ class SettingsPreferencesViewModelTest {
     @Test
     fun `invalid backup sync hour blocks save`() = runTest {
         val fakeStore = FakePreferencesAppSettingsStore()
-        val viewModel = SettingsPreferencesViewModel(fakeStore, this)
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            externalScope = this
+        )
 
         try {
             advanceUntilIdle()
@@ -112,7 +125,10 @@ class SettingsPreferencesViewModelTest {
                 defaultCurrency = "USD"
             )
         )
-        val viewModel = SettingsPreferencesViewModel(fakeStore, this)
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            externalScope = this
+        )
 
         try {
             advanceUntilIdle()
@@ -142,6 +158,120 @@ class SettingsPreferencesViewModelTest {
         assertEquals(7, parseSettingsBackupSyncHourInput(" 7 "))
         assertEquals(null, parseSettingsBackupSyncHourInput("24"))
         assertEquals(null, parseSettingsBackupSyncHourInput(""))
+
+        assertEquals(30, parseSettingsBackupRetentionDaysInput("30"))
+        assertEquals(null, parseSettingsBackupRetentionDaysInput("0"))
+        assertEquals(null, parseSettingsBackupRetentionDaysInput(""))
+    }
+
+    @Test
+    fun `save preferences persists backup destination and secure secret status`() = runTest {
+        val fakeStore = FakePreferencesAppSettingsStore()
+        val fakeSecretsStore = FakeBackupSecretsStore()
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            externalScope = this
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onBackupSyncEnabledChanged(true)
+            viewModel.onBackupSyncHourChanged("4")
+            viewModel.onBackupS3EndpointChanged(" https://s3.example.com ")
+            viewModel.onBackupS3RegionChanged(" us-east-1 ")
+            viewModel.onBackupS3BucketChanged(" aquapt-backups ")
+            viewModel.onBackupS3ObjectKeyChanged(" aquapt/backups/latest.enc.json ")
+            viewModel.onBackupS3ForcePathStyleChanged(true)
+            viewModel.onBackupUseVersionedKeysChanged(true)
+            viewModel.onBackupRetentionDaysChanged("45")
+            viewModel.onBackupMasterKeyInputChanged(" super-secret-master-key ")
+            viewModel.onBackupS3AccessKeyIdInputChanged(" AKIA123 ")
+            viewModel.onBackupS3SecretAccessKeyInputChanged(" secret-xyz ")
+
+            viewModel.savePreferences()
+            advanceUntilIdle()
+
+            val saved = fakeStore.settings.value
+            assertEquals(true, saved.backupSyncEnabled)
+            assertEquals(4, saved.backupSyncHour)
+            assertEquals("https://s3.example.com", saved.backupS3Endpoint)
+            assertEquals("us-east-1", saved.backupS3Region)
+            assertEquals("aquapt-backups", saved.backupS3Bucket)
+            assertEquals("aquapt/backups/latest.enc.json", saved.backupS3ObjectKey)
+            assertEquals(true, saved.backupS3ForcePathStyle)
+            assertEquals(true, saved.backupUseVersionedKeys)
+            assertEquals(45, saved.backupRetentionDays)
+            assertEquals(true, saved.backupMasterKeySet)
+            assertEquals(true, saved.backupS3CredentialsSet)
+
+            assertEquals("super-secret-master-key", fakeSecretsStore.masterKey)
+            assertEquals("AKIA123", fakeSecretsStore.credentials?.accessKeyId)
+            assertEquals("secret-xyz", fakeSecretsStore.credentials?.secretAccessKey)
+            assertEquals("Settings saved.", viewModel.uiState.value.statusMessage)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `partial backup credentials block save`() = runTest {
+        val fakeStore = FakePreferencesAppSettingsStore()
+        val fakeSecretsStore = FakeBackupSecretsStore()
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            externalScope = this
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onBackupS3AccessKeyIdInputChanged("AKIA123")
+            viewModel.savePreferences()
+            advanceUntilIdle()
+
+            assertEquals(settingsBackupCredentialsErrorMessage, viewModel.uiState.value.statusMessage)
+            assertEquals(0, fakeStore.setCalls)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `clear backup secrets updates configured status`() = runTest {
+        val fakeStore = FakePreferencesAppSettingsStore(
+            AppSettings(
+                backupMasterKeySet = true,
+                backupS3CredentialsSet = true
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStore(
+            masterKey = "already-set",
+            credentials = BackupS3Credentials("AKIA123", "secret-xyz")
+        )
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            externalScope = this
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.clearBackupMasterKey()
+            viewModel.clearBackupS3Credentials()
+            advanceUntilIdle()
+
+            val saved = fakeStore.settings.value
+            assertFalse(saved.backupMasterKeySet)
+            assertFalse(saved.backupS3CredentialsSet)
+            assertTrue(fakeSecretsStore.masterKey.isEmpty())
+            assertTrue(fakeSecretsStore.credentials == null)
+        } finally {
+            viewModel.disposeForTests()
+        }
     }
 }
 
@@ -157,5 +287,37 @@ private class FakePreferencesAppSettingsStore(
     override suspend fun setSettings(settings: AppSettings) {
         setCalls += 1
         flow.value = settings
+    }
+}
+
+private class FakeBackupSecretsStore(
+    var masterKey: String = "",
+    var credentials: BackupS3Credentials? = null
+) : BackupSecretsStore {
+    override suspend fun saveBackupMasterKey(masterKey: String) {
+        this.masterKey = masterKey.trim()
+    }
+
+    override suspend fun loadBackupMasterKey(): String = masterKey
+
+    override suspend fun hasBackupMasterKey(): Boolean = masterKey.isNotEmpty()
+
+    override suspend fun clearBackupMasterKey() {
+        masterKey = ""
+    }
+
+    override suspend fun saveBackupS3Credentials(accessKeyId: String, secretAccessKey: String) {
+        credentials = BackupS3Credentials(
+            accessKeyId = accessKeyId.trim(),
+            secretAccessKey = secretAccessKey.trim()
+        )
+    }
+
+    override suspend fun loadBackupS3Credentials(): BackupS3Credentials? = credentials
+
+    override suspend fun hasBackupS3Credentials(): Boolean = credentials != null
+
+    override suspend fun clearBackupS3Credentials() {
+        credentials = null
     }
 }

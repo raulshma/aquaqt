@@ -3,6 +3,7 @@ package com.keepaside.aquapt.core.backup
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.keepaside.aquapt.core.repository.BackupSecretsStore
 import com.keepaside.aquapt.core.repository.AppSettingsStore
 import kotlinx.coroutines.CancellationException
 import org.koin.java.KoinJavaComponent
@@ -18,10 +19,28 @@ class BackupAutoSyncWorker(
             .takeIf { hour -> hour in 0..23 }
 
         val appSettingsStore: AppSettingsStore = KoinJavaComponent.get(AppSettingsStore::class.java)
-        val backupGateway: BackupCompatibilityGateway =
-            KoinJavaComponent.get(BackupCompatibilityGateway::class.java)
+        val backupSecretsStore: BackupSecretsStore =
+            KoinJavaComponent.get(BackupSecretsStore::class.java)
+        val backupCloudSyncService: BackupCloudSyncService =
+            KoinJavaComponent.get(BackupCloudSyncService::class.java)
 
-        val settings = appSettingsStore.settings.value
+        var settings = appSettingsStore.settings.value
+
+        val hasMasterKey = backupSecretsStore.hasBackupMasterKey()
+        val hasS3Credentials = backupSecretsStore.hasBackupS3Credentials()
+        if (
+            settings.backupMasterKeySet != hasMasterKey ||
+            settings.backupS3CredentialsSet != hasS3Credentials
+        ) {
+            appSettingsStore.setSettings(
+                settings.copy(
+                    backupMasterKeySet = hasMasterKey,
+                    backupS3CredentialsSet = hasS3Credentials
+                )
+            )
+            settings = appSettingsStore.settings.value
+        }
+
         val targetHour = resolveBackupAutoSyncHour(settings) ?: return Result.success()
 
         if (requestedHour != null && requestedHour != targetHour) {
@@ -42,18 +61,35 @@ class BackupAutoSyncWorker(
             return Result.success()
         }
 
+        val masterKey = backupSecretsStore.loadBackupMasterKey()
+        val s3Credentials = backupSecretsStore.loadBackupS3Credentials()
+        if (masterKey.isBlank() || s3Credentials == null) {
+            appSettingsStore.setSettings(
+                appSettingsStore.settings.value.copy(
+                    backupMasterKeySet = masterKey.isNotBlank(),
+                    backupS3CredentialsSet = s3Credentials != null,
+                    backupLastError =
+                        "Auto backup sync skipped: backup key or S3 credentials are not configured."
+                )
+            )
+            return Result.success()
+        }
+
         return try {
-            backupGateway.exportCurrentStateJson(
+            val syncOutcome = backupCloudSyncService.syncCurrentStateToCloud(
                 settings = settings,
-                pretty = false
+                masterKey = masterKey,
+                credentials = s3Credentials
             )
 
             val now = Instant.now()
             appSettingsStore.setSettings(
                 appSettingsStore.settings.value.copy(
-                    backupLastSyncedAt = now.toString(),
+                    backupLastSyncedAt = syncOutcome.uploadedAt,
                     backupLastAutoSyncDate = backupAutoSyncDateStamp(now = now),
-                    backupLastError = null
+                    backupLastError = null,
+                    backupMasterKeySet = true,
+                    backupS3CredentialsSet = true
                 )
             )
 

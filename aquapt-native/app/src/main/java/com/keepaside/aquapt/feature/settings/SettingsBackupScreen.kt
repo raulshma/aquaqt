@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -47,6 +48,7 @@ import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.model.RegionalPreferencesMode
 import com.keepaside.aquapt.core.repository.AppSettingsStore
+import com.keepaside.aquapt.core.repository.BackupSecretsStore
 import com.keepaside.aquapt.core.repository.ReminderGroupRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import org.koin.java.KoinJavaComponent
@@ -63,6 +65,9 @@ fun SettingsBackupScreen(
     val appSettingsStore: AppSettingsStore = remember {
         KoinJavaComponent.get(AppSettingsStore::class.java)
     }
+    val backupSecretsStore: BackupSecretsStore = remember {
+        KoinJavaComponent.get(BackupSecretsStore::class.java)
+    }
     val viewModel: SettingsBackupViewModel = viewModel(
         factory = remember(backupGateway, appSettingsStore) {
             SettingsBackupViewModel.factory(
@@ -74,8 +79,11 @@ fun SettingsBackupScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     val settingsPreferencesViewModel: SettingsPreferencesViewModel = viewModel(
-        factory = remember(appSettingsStore) {
-            SettingsPreferencesViewModel.factory(appSettingsStore)
+        factory = remember(appSettingsStore, backupSecretsStore) {
+            SettingsPreferencesViewModel.factory(
+                appSettingsStore = appSettingsStore,
+                backupSecretsStore = backupSecretsStore
+            )
         }
     )
     val settingsPreferencesUiState by settingsPreferencesViewModel.uiState.collectAsState()
@@ -142,6 +150,18 @@ fun SettingsBackupScreen(
                 onNotificationsEnabledChanged = settingsPreferencesViewModel::onNotificationsEnabledChanged,
                 onBackupSyncEnabledChanged = settingsPreferencesViewModel::onBackupSyncEnabledChanged,
                 onBackupSyncHourChanged = settingsPreferencesViewModel::onBackupSyncHourChanged,
+                onBackupS3EndpointChanged = settingsPreferencesViewModel::onBackupS3EndpointChanged,
+                onBackupS3RegionChanged = settingsPreferencesViewModel::onBackupS3RegionChanged,
+                onBackupS3BucketChanged = settingsPreferencesViewModel::onBackupS3BucketChanged,
+                onBackupS3ObjectKeyChanged = settingsPreferencesViewModel::onBackupS3ObjectKeyChanged,
+                onBackupS3ForcePathStyleChanged = settingsPreferencesViewModel::onBackupS3ForcePathStyleChanged,
+                onBackupUseVersionedKeysChanged = settingsPreferencesViewModel::onBackupUseVersionedKeysChanged,
+                onBackupRetentionDaysChanged = settingsPreferencesViewModel::onBackupRetentionDaysChanged,
+                onBackupMasterKeyInputChanged = settingsPreferencesViewModel::onBackupMasterKeyInputChanged,
+                onBackupS3AccessKeyIdInputChanged = settingsPreferencesViewModel::onBackupS3AccessKeyIdInputChanged,
+                onBackupS3SecretAccessKeyInputChanged = settingsPreferencesViewModel::onBackupS3SecretAccessKeyInputChanged,
+                onClearBackupMasterKey = settingsPreferencesViewModel::clearBackupMasterKey,
+                onClearBackupS3Credentials = settingsPreferencesViewModel::clearBackupS3Credentials,
                 notificationPermissionStatus = notificationPermissionStatus,
                 onRequestNotificationPermission = {
                     if (
@@ -373,6 +393,18 @@ private fun SettingsPreferencesSection(
     onNotificationsEnabledChanged: (Boolean) -> Unit,
     onBackupSyncEnabledChanged: (Boolean) -> Unit,
     onBackupSyncHourChanged: (String) -> Unit,
+    onBackupS3EndpointChanged: (String) -> Unit,
+    onBackupS3RegionChanged: (String) -> Unit,
+    onBackupS3BucketChanged: (String) -> Unit,
+    onBackupS3ObjectKeyChanged: (String) -> Unit,
+    onBackupS3ForcePathStyleChanged: (Boolean) -> Unit,
+    onBackupUseVersionedKeysChanged: (Boolean) -> Unit,
+    onBackupRetentionDaysChanged: (String) -> Unit,
+    onBackupMasterKeyInputChanged: (String) -> Unit,
+    onBackupS3AccessKeyIdInputChanged: (String) -> Unit,
+    onBackupS3SecretAccessKeyInputChanged: (String) -> Unit,
+    onClearBackupMasterKey: () -> Unit,
+    onClearBackupS3Credentials: () -> Unit,
     notificationPermissionStatus: NotificationPermissionStatus,
     onRequestNotificationPermission: () -> Unit,
     onOpenSystemNotificationSettings: () -> Unit,
@@ -587,6 +619,170 @@ private fun SettingsPreferencesSection(
                 },
                 enabled = !uiState.isSaving
             )
+
+            OutlinedTextField(
+                value = uiState.draft.backupS3Endpoint,
+                onValueChange = onBackupS3EndpointChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("S3 endpoint") },
+                supportingText = { Text("Example: https://s3.amazonaws.com") },
+                enabled = !uiState.isSaving,
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = uiState.draft.backupS3Region,
+                onValueChange = onBackupS3RegionChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("S3 region") },
+                supportingText = { Text("Example: us-east-1") },
+                enabled = !uiState.isSaving,
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = uiState.draft.backupS3Bucket,
+                onValueChange = onBackupS3BucketChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("S3 bucket") },
+                enabled = !uiState.isSaving,
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = uiState.draft.backupS3ObjectKey,
+                onValueChange = onBackupS3ObjectKeyChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("S3 object key") },
+                supportingText = { Text("Example: aquapt/backups/latest.enc.json") },
+                enabled = !uiState.isSaving,
+                singleLine = true
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Checkbox(
+                    checked = uiState.draft.backupS3ForcePathStyle,
+                    onCheckedChange = { value -> onBackupS3ForcePathStyleChanged(value) },
+                    enabled = !uiState.isSaving
+                )
+                Text(
+                    text = "Force path-style S3 URLs",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Checkbox(
+                    checked = uiState.draft.backupUseVersionedKeys,
+                    onCheckedChange = { value -> onBackupUseVersionedKeysChanged(value) },
+                    enabled = !uiState.isSaving
+                )
+                Text(
+                    text = "Upload daily versioned backups",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            OutlinedTextField(
+                value = uiState.draft.backupRetentionDaysInput,
+                onValueChange = onBackupRetentionDaysChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Backup retention days") },
+                supportingText = { Text("Optional. Applies to versioned backups (1-3650).") },
+                enabled = !uiState.isSaving,
+                singleLine = true
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Secure backup credentials",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+
+                    Text(
+                        text = "Master key: ${if (uiState.draft.backupMasterKeyConfigured) "Configured" else "Not configured"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        text = "S3 credentials: ${if (uiState.draft.backupS3CredentialsConfigured) "Configured" else "Not configured"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.draft.backupMasterKeyInput,
+                        onValueChange = onBackupMasterKeyInputChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Update backup master key") },
+                        supportingText = {
+                            Text("Leave blank to keep current key. Saves to encrypted device storage.")
+                        },
+                        enabled = !uiState.isSaving,
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.draft.backupS3AccessKeyIdInput,
+                        onValueChange = onBackupS3AccessKeyIdInputChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Update S3 access key ID") },
+                        supportingText = { Text("Leave blank to keep current credentials.") },
+                        enabled = !uiState.isSaving,
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.draft.backupS3SecretAccessKeyInput,
+                        onValueChange = onBackupS3SecretAccessKeyInputChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Update S3 secret access key") },
+                        supportingText = { Text("Provide together with access key ID.") },
+                        enabled = !uiState.isSaving,
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onClearBackupMasterKey,
+                            enabled = !uiState.isSaving
+                        ) {
+                            Text("Clear master key")
+                        }
+
+                        OutlinedButton(
+                            onClick = onClearBackupS3Credentials,
+                            enabled = !uiState.isSaving
+                        ) {
+                            Text("Clear S3 credentials")
+                        }
+                    }
+                }
+            }
 
             Text(
                 text = "Last auto-sync date: ${uiState.draft.backupLastAutoSyncDate.ifBlank { "Never" }}",
