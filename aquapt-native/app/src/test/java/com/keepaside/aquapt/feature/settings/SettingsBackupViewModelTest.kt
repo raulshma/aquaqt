@@ -424,6 +424,129 @@ class SettingsBackupViewModelTest {
     }
 
     @Test
+    fun `delete history range removes only matching history objects`() = runTest {
+        val fakeGateway = FakeBackupGateway()
+        val fakeCloudGateway = FakeBackupCloudGateway(
+            cloudObjects = listOf(
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/latest.enc.json",
+                    lastModified = "2026-04-11T03:00:00Z",
+                    isLatestObject = true
+                ),
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/history/2026-04-10.enc.json",
+                    lastModified = "2026-04-10T03:00:00Z"
+                ),
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/history/2026-04-09.enc.json",
+                    lastModified = "2026-04-09T03:00:00Z"
+                ),
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/history/2026-04-01.enc.json",
+                    lastModified = "2026-04-01T03:00:00Z"
+                )
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(
+                backupS3Endpoint = "https://s3.example.com",
+                backupS3Bucket = "aquapt-backups",
+                backupS3ObjectKey = "aquapt/backups/latest.enc.json"
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStoreForBackupViewModel(
+            masterKey = "valid-master-key-123",
+            credentials = BackupS3Credentials("AKIA123", "secret")
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            backupCloudSyncGateway = fakeCloudGateway,
+            externalScope = this
+        )
+
+        viewModel.deleteHistoryCloudBackupObjectsByDateRange(
+            startDateInput = "2026-04-09",
+            endDateInput = "2026-04-10"
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(2, fakeCloudGateway.deleteCalls)
+        assertEquals(2, state.cloudBackups.size)
+        assertEquals("aquapt/backups/latest.enc.json", state.selectedCloudObjectKey)
+        assertTrue(state.statusMessage.contains("Deleted 2 history backup object(s)"))
+        assertTrue(state.statusMessage.contains("2026-04-09 to 2026-04-10"))
+    }
+
+    @Test
+    fun `delete history range reports no matches`() = runTest {
+        val fakeGateway = FakeBackupGateway()
+        val fakeCloudGateway = FakeBackupCloudGateway(
+            cloudObjects = listOf(
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/latest.enc.json",
+                    lastModified = "2026-04-11T03:00:00Z",
+                    isLatestObject = true
+                ),
+                BackupCloudObject(
+                    objectKey = "aquapt/backups/history/2026-04-01.enc.json",
+                    lastModified = "2026-04-01T03:00:00Z"
+                )
+            )
+        )
+        val fakeStore = FakeAppSettingsStore(
+            AppSettings(
+                backupS3Endpoint = "https://s3.example.com",
+                backupS3Bucket = "aquapt-backups",
+                backupS3ObjectKey = "aquapt/backups/latest.enc.json"
+            )
+        )
+        val fakeSecretsStore = FakeBackupSecretsStoreForBackupViewModel(
+            masterKey = "valid-master-key-123",
+            credentials = BackupS3Credentials("AKIA123", "secret")
+        )
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = fakeGateway,
+            appSettingsStore = fakeStore,
+            backupSecretsStore = fakeSecretsStore,
+            backupCloudSyncGateway = fakeCloudGateway,
+            externalScope = this
+        )
+
+        viewModel.deleteHistoryCloudBackupObjectsByDateRange(
+            startDateInput = "2026-04-09",
+            endDateInput = "2026-04-10"
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(0, fakeCloudGateway.deleteCalls)
+        assertEquals(2, state.cloudBackups.size)
+        assertTrue(state.statusMessage.contains("No history backup objects matched range"))
+    }
+
+    @Test
+    fun `delete history range validates date ordering`() = runTest {
+        val viewModel = SettingsBackupViewModel(
+            backupGateway = FakeBackupGateway(),
+            externalScope = this
+        )
+
+        viewModel.deleteHistoryCloudBackupObjectsByDateRange(
+            startDateInput = "2026-04-12",
+            endDateInput = "2026-04-10"
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            "History range start date must be on or before end date.",
+            viewModel.uiState.value.statusMessage
+        )
+    }
+
+    @Test
     fun `prune cloud backup history removes old history objects`() = runTest {
         val fakeGateway = FakeBackupGateway()
         val fakeCloudGateway = FakeBackupCloudGateway(

@@ -153,6 +153,9 @@ fun SettingsBackupScreen(
     var showRestoreLatestConfirmation by remember { mutableStateOf(false) }
     var showDeleteSelectedConfirmation by remember { mutableStateOf(false) }
     var showDeleteHistoryConfirmation by remember { mutableStateOf(false) }
+    var showDeleteHistoryRangeConfirmation by remember { mutableStateOf(false) }
+    var historyRangeStartInput by remember { mutableStateOf("") }
+    var historyRangeEndInput by remember { mutableStateOf("") }
 
     LaunchedEffect(context) {
         refreshNotificationPermissionStatus()
@@ -535,6 +538,70 @@ fun SettingsBackupScreen(
                 Text("Delete all history objects")
             }
 
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Delete history by date range",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+
+                    Text(
+                        text = "Optional range filters for /history/ backups. Use yyyy-MM-dd. " +
+                            "Leave one side blank for open-ended ranges.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = historyRangeStartInput,
+                        onValueChange = { historyRangeStartInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Start date") },
+                        supportingText = { Text("Example: 2026-04-01") },
+                        enabled = !uiState.isBusy,
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = historyRangeEndInput,
+                        onValueChange = { historyRangeEndInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("End date") },
+                        supportingText = { Text("Example: 2026-04-10") },
+                        enabled = !uiState.isBusy,
+                        singleLine = true
+                    )
+
+                    OutlinedButton(
+                        onClick = {
+                            if (
+                                historyRangeStartInput.isBlank() &&
+                                historyRangeEndInput.isBlank()
+                            ) {
+                                viewModel.deleteHistoryCloudBackupObjectsByDateRange(
+                                    startDateInput = historyRangeStartInput,
+                                    endDateInput = historyRangeEndInput
+                                )
+                            } else {
+                                showDeleteHistoryRangeConfirmation = true
+                            }
+                        },
+                        enabled = !uiState.isBusy
+                    ) {
+                        Text("Delete history range")
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = uiState.payload,
                 onValueChange = viewModel::onPayloadChanged,
@@ -841,6 +908,45 @@ fun SettingsBackupScreen(
                     TextButton(
                         onClick = {
                             showDeleteHistoryConfirmation = false
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        if (showDeleteHistoryRangeConfirmation) {
+            AlertDialog(
+                onDismissRequest = {
+                    showDeleteHistoryRangeConfirmation = false
+                },
+                title = {
+                    Text("Delete history range?")
+                },
+                text = {
+                    Text(
+                        "Delete history backup objects for ${buildHistoryRangeSummaryText(historyRangeStartInput, historyRangeEndInput)}. " +
+                            "This cannot be undone."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteHistoryRangeConfirmation = false
+                            viewModel.deleteHistoryCloudBackupObjectsByDateRange(
+                                startDateInput = historyRangeStartInput,
+                                endDateInput = historyRangeEndInput
+                            )
+                        }
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteHistoryRangeConfirmation = false
                         }
                     ) {
                         Text("Cancel")
@@ -1421,3 +1527,15 @@ private fun buildRestorePreviewSummaryText(preview: CloudRestorePreviewUiState?)
 private fun isHistoryBackupObjectKey(objectKey: String): Boolean = objectKey
     .trim()
     .contains("/history/")
+
+private fun buildHistoryRangeSummaryText(startDateInput: String, endDateInput: String): String {
+    val start = startDateInput.trim().takeIf { text -> text.isNotEmpty() }
+    val end = endDateInput.trim().takeIf { text -> text.isNotEmpty() }
+
+    return when {
+        start != null && end != null -> "$start to $end"
+        start != null -> "$start onward"
+        end != null -> "up to $end"
+        else -> "the provided date range"
+    }
+}

@@ -19,12 +19,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 private const val DEFAULT_STATUS =
     "Export your current Room state to RN-compatible JSON, or import a previous backup payload."
 
 private const val cloudPrerequisiteMessage =
     "Cloud backup requires configured S3 destination and secure credentials in App preferences."
+
+private val historyBackupDateKeyRegex =
+    Regex("(?:^|/)history/(\\d{4}-\\d{2}-\\d{2})\\.enc\\.json$")
 
 data class BackupCollectionDiff(
     val label: String,
@@ -624,6 +628,128 @@ class SettingsBackupViewModel(
         }
     }
 
+    fun deleteHistoryCloudBackupObjectsByDateRange(
+        startDateInput: String,
+        endDateInput: String
+    ) {
+        val current = _uiState.value
+        if (current.isBusy) return
+
+        val normalizedStart = startDateInput.trim()
+        val normalizedEnd = endDateInput.trim()
+
+        if (normalizedStart.isEmpty() && normalizedEnd.isEmpty()) {
+            _uiState.update {
+                it.copy(
+                    statusMessage =
+                        "Enter a start date, end date, or both (yyyy-MM-dd) to delete a history range."
+                )
+            }
+            return
+        }
+
+        val range = parseHistoryBackupDateRange(
+            startDateInput = normalizedStart,
+            endDateInput = normalizedEnd
+        ) ?: return
+
+        launchWork {
+            _uiState.update { it.copy(isBusy = true) }
+
+            runCatching {
+                val prereq = resolveCloudListPrerequisites()
+                val currentCloudObjects = prereq.cloudGateway.listAvailableCloudBackups(
+                    settings = prereq.settings,
+                    credentials = prereq.credentials
+                )
+
+                val matchingHistoryObjectKeys = currentCloudObjects
+                    .mapNotNull { cloudObject ->
+                        val objectKey = cloudObject.objectKey.trim()
+                        val historyDate = extractHistoryBackupDate(objectKey)
+                            ?: return@mapNotNull null
+                        objectKey.takeIf { range.contains(historyDate) }
+                    }
+                    .distinct()
+
+                if (matchingHistoryObjectKeys.isEmpty()) {
+                    val selectedWhenNoMatch = resolveSelectedCloudObjectKey(
+                        objects = currentCloudObjects,
+                        preferredObjectKey = prereq.settings.backupS3ObjectKey,
+                        currentSelectedObjectKey = _uiState.value.selectedCloudObjectKey
+                    )
+
+                    DateRangeHistoryDeleteOutcome(
+                        deletedCount = 0,
+                        latestPointerRemoved = false,
+                        cloudObjects = currentCloudObjects,
+                        selectedObjectKey = selectedWhenNoMatch,
+                        rangeDescription = range.toDescription()
+                    )
+                } else {
+                    var latestPointerRemoved = false
+
+                    matchingHistoryObjectKeys.forEach { objectKey ->
+                        val deleteOutcome = prereq.cloudGateway.deleteCloudBackupObject(
+                            settings = prereq.settings,
+                            credentials = prereq.credentials,
+                            objectKey = objectKey
+                        )
+                        latestPointerRemoved = latestPointerRemoved || deleteOutcome.wasLatestObject
+                    }
+
+                    val refreshedSettings = prereq.settingsStore.settings.value
+                    val refreshedCloudObjects = prereq.cloudGateway.listAvailableCloudBackups(
+                        settings = refreshedSettings,
+                        credentials = prereq.credentials
+                    )
+                    val refreshedSelected = resolveSelectedCloudObjectKey(
+                        objects = refreshedCloudObjects,
+                        preferredObjectKey = refreshedSettings.backupS3ObjectKey,
+                        currentSelectedObjectKey = _uiState.value.selectedCloudObjectKey
+                    )
+
+                    DateRangeHistoryDeleteOutcome(
+                        deletedCount = matchingHistoryObjectKeys.size,
+                        latestPointerRemoved = latestPointerRemoved,
+                        cloudObjects = refreshedCloudObjects,
+                        selectedObjectKey = refreshedSelected,
+                        rangeDescription = range.toDescription()
+                    )
+                }
+            }.onSuccess { outcome ->
+                val statusMessage = if (outcome.deletedCount == 0) {
+                    "No history backup objects matched range ${outcome.rangeDescription}."
+                } else {
+                    buildString {
+                        append(
+                            "Deleted ${outcome.deletedCount} history backup object(s) " +
+                                "for range ${outcome.rangeDescription}."
+                        )
+                        if (outcome.latestPointerRemoved) {
+                            append(" The latest backup pointer was removed; run Sync to cloud to recreate it.")
+                        }
+                    }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        cloudBackups = outcome.cloudObjects,
+                        selectedCloudObjectKey = outcome.selectedObjectKey,
+                        restorePreview = null,
+                        statusMessage = statusMessage
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(statusMessage = error.message ?: "Cloud history range delete failed.")
+                }
+            }
+
+            _uiState.update { it.copy(isBusy = false) }
+        }
+    }
+
     fun pruneCloudBackupHistory() {
         val current = _uiState.value
         if (current.isBusy) return
@@ -838,6 +964,56 @@ class SettingsBackupViewModel(
         ?.trim()
         ?.takeIf { text -> text.isNotEmpty() }
 
+    private fun parseHistoryBackupDateRange(
+        startDateInput: String,
+        endDateInput: String
+    ): HistoryBackupDateRange? {
+        val startDate = if (startDateInput.isEmpty()) {
+            null
+        } else {
+            parseIsoDateOrNull(startDateInput)
+                ?: run {
+                    _uiState.update {
+                        it.copy(statusMessage = "Invalid start date. Use yyyy-MM-dd for history range delete.")
+                    }
+                    return null
+                }
+        }
+
+        val endDate = if (endDateInput.isEmpty()) {
+            null
+        } else {
+            parseIsoDateOrNull(endDateInput)
+                ?: run {
+                    _uiState.update {
+                        it.copy(statusMessage = "Invalid end date. Use yyyy-MM-dd for history range delete.")
+                    }
+                    return null
+                }
+        }
+
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            _uiState.update {
+                it.copy(statusMessage = "History range start date must be on or before end date.")
+            }
+            return null
+        }
+
+        return HistoryBackupDateRange(
+            startInclusive = startDate,
+            endInclusive = endDate
+        )
+    }
+
+    private fun parseIsoDateOrNull(value: String): LocalDate? =
+        runCatching { LocalDate.parse(value) }.getOrNull()
+
+    private fun extractHistoryBackupDate(objectKey: String): LocalDate? {
+        val match = historyBackupDateKeyRegex.find(objectKey.trim())
+            ?: return null
+        return parseIsoDateOrNull(match.groupValues[1])
+    }
+
     private fun isHistoryBackupObjectKey(objectKey: String): Boolean = objectKey
         .trim()
         .contains("/history/")
@@ -892,4 +1068,32 @@ class SettingsBackupViewModel(
         val cloudObjects: List<BackupCloudObject>,
         val selectedObjectKey: String
     )
+
+    private data class DateRangeHistoryDeleteOutcome(
+        val deletedCount: Int,
+        val latestPointerRemoved: Boolean,
+        val cloudObjects: List<BackupCloudObject>,
+        val selectedObjectKey: String,
+        val rangeDescription: String
+    )
+
+    private data class HistoryBackupDateRange(
+        val startInclusive: LocalDate?,
+        val endInclusive: LocalDate?
+    ) {
+        fun contains(date: LocalDate): Boolean {
+            val matchesStart = startInclusive?.let { !date.isBefore(it) } ?: true
+            val matchesEnd = endInclusive?.let { !date.isAfter(it) } ?: true
+            return matchesStart && matchesEnd
+        }
+
+        fun toDescription(): String = when {
+            startInclusive != null && endInclusive != null ->
+                "${startInclusive} to ${endInclusive}"
+
+            startInclusive != null -> "from ${startInclusive} onward"
+            endInclusive != null -> "up to ${endInclusive}"
+            else -> "(unspecified range)"
+        }
+    }
 }
