@@ -95,6 +95,8 @@ fun SettingsBackupScreen(
         ) {
             SettingsPreferencesSection(
                 uiState = settingsPreferencesUiState,
+                onOpenRouterApiKeyChanged = settingsPreferencesViewModel::onOpenRouterApiKeyChanged,
+                onAiModelChanged = settingsPreferencesViewModel::onAiModelChanged,
                 onThemePreferenceChanged = settingsPreferencesViewModel::onThemePreferenceChanged,
                 onRegionalModeChanged = settingsPreferencesViewModel::onRegionalPreferencesModeChanged,
                 onNotificationsEnabledChanged = settingsPreferencesViewModel::onNotificationsEnabledChanged,
@@ -308,6 +310,8 @@ fun SettingsBackupScreen(
 @Composable
 private fun SettingsPreferencesSection(
     uiState: SettingsPreferencesUiState,
+    onOpenRouterApiKeyChanged: (String) -> Unit,
+    onAiModelChanged: (String) -> Unit,
     onThemePreferenceChanged: (AppThemePreference) -> Unit,
     onRegionalModeChanged: (RegionalPreferencesMode) -> Unit,
     onNotificationsEnabledChanged: (Boolean) -> Unit,
@@ -338,6 +342,31 @@ private fun SettingsPreferencesSection(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            Text(
+                text = "Assistant runtime",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            OutlinedTextField(
+                value = uiState.draft.openRouterApiKey,
+                onValueChange = onOpenRouterApiKeyChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("OpenRouter API key") },
+                supportingText = { Text("Required for streaming assistant replies.") },
+                enabled = !uiState.isSaving,
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = uiState.draft.aiModel,
+                onValueChange = onAiModelChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("OpenRouter model") },
+                supportingText = { Text("Example: openai/gpt-4o-mini") },
+                enabled = !uiState.isSaving,
+                singleLine = true
+            )
+
             Text(
                 text = "Appearance",
                 style = MaterialTheme.typography.titleMedium

@@ -32,8 +32,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.model.AssistantMessageRole
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
+import com.keepaside.aquapt.core.repository.AppSettingsStore
 import org.koin.java.KoinJavaComponent
 
 @Composable
@@ -44,12 +46,24 @@ fun AssistantScreen(
     val assistantStore: AssistantConversationsStore = remember {
         KoinJavaComponent.get(AssistantConversationsStore::class.java)
     }
+    val appSettingsStore: AppSettingsStore = remember {
+        KoinJavaComponent.get(AppSettingsStore::class.java)
+    }
+    val assistantGateway: AssistantGateway = remember {
+        KoinJavaComponent.get(AssistantGateway::class.java)
+    }
+
     val viewModel: AssistantViewModel = viewModel(
-        factory = remember(assistantStore) {
-            AssistantViewModel.factory(assistantStore)
+        factory = remember(assistantStore, appSettingsStore, assistantGateway) {
+            AssistantViewModel.factory(
+                assistantConversationsStore = assistantStore,
+                appSettingsStore = appSettingsStore,
+                assistantGateway = assistantGateway
+            )
         }
     )
     val uiState by viewModel.uiState.collectAsState()
+    val assistantError = uiState.assistantError
 
     var renameInput by remember(uiState.activeConversationId, uiState.activeConversationTitle) {
         mutableStateOf(uiState.activeConversationTitle)
@@ -80,6 +94,14 @@ fun AssistantScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            if (!assistantError.isNullOrBlank()) {
+                Text(
+                    text = assistantError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = viewModel::createConversation) {
@@ -225,11 +247,48 @@ fun AssistantScreen(
                                     style = MaterialTheme.typography.bodyMedium
                                 )
 
+                                if (message.requestFailed && !message.requestError.isNullOrBlank()) {
+                                    Text(
+                                        text = message.requestError,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+
                                 Text(
                                     text = message.createdAt,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (message.role == AssistantMessageRole.USER && message.requestFailed) {
+                                        OutlinedButton(
+                                            onClick = { viewModel.retryFailedMessage(message.id) },
+                                            enabled = !uiState.isSending
+                                        ) {
+                                            Text("Retry")
+                                        }
+                                    }
+
+                                    if (message.role == AssistantMessageRole.ASSISTANT) {
+                                        OutlinedButton(
+                                            onClick = { viewModel.regenerateReply(message.id) },
+                                            enabled = !uiState.isSending
+                                        ) {
+                                            Text("Regenerate")
+                                        }
+                                    }
+
+                                    if (uiState.isSending && uiState.activeStreamingMessageId == message.id) {
+                                        Text(
+                                            text = "Streaming…",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(top = 10.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -247,14 +306,21 @@ fun AssistantScreen(
                     modifier = Modifier.weight(1f),
                     label = { Text("Message AquaPT assistant") },
                     minLines = 2,
-                    maxLines = 5
+                    maxLines = 5,
+                    enabled = !uiState.isSending
                 )
 
-                Button(
-                    onClick = viewModel::sendMessage,
-                    enabled = uiState.canSend
-                ) {
-                    Text("Send")
+                if (uiState.canStopGeneration) {
+                    OutlinedButton(onClick = viewModel::stopGeneration) {
+                        Text("Stop")
+                    }
+                } else {
+                    Button(
+                        onClick = viewModel::sendMessage,
+                        enabled = uiState.canSend
+                    ) {
+                        Text("Send")
+                    }
                 }
             }
         }

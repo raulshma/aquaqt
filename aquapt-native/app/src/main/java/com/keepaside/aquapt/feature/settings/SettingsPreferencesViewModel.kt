@@ -16,12 +16,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 internal const val settingsPreferencesDefaultStatus =
-    "Configure appearance and regional defaults for your native AquaPT experience."
+    "Configure appearance, regional defaults, and assistant runtime settings for your native AquaPT experience."
 
 internal const val settingsReminderHoursErrorMessage =
     "Reminder hours must be between 0 and 23."
 
 data class SettingsPreferencesDraft(
+    val openRouterApiKey: String = "",
+    val aiModel: String = "",
     val themePreference: AppThemePreference = AppThemePreference.SYSTEM,
     val regionalPreferencesMode: RegionalPreferencesMode = RegionalPreferencesMode.AUTO,
     val notificationsEnabled: Boolean = false,
@@ -52,6 +54,18 @@ class SettingsPreferencesViewModel(
 
     init {
         observerJob = observePreferences()
+    }
+
+    fun onOpenRouterApiKeyChanged(value: String) {
+        _uiState.update { state ->
+            state.copy(draft = state.draft.copy(openRouterApiKey = value))
+        }
+    }
+
+    fun onAiModelChanged(value: String) {
+        _uiState.update { state ->
+            state.copy(draft = state.draft.copy(aiModel = value))
+        }
     }
 
     fun onThemePreferenceChanged(value: AppThemePreference) {
@@ -127,6 +141,8 @@ class SettingsPreferencesViewModel(
 
                 appSettingsStore.setSettings(
                     existing.copy(
+                        openRouterApiKey = current.draft.openRouterApiKey.trim(),
+                        aiModel = current.draft.aiModel.trim(),
                         themePreference = current.draft.themePreference,
                         regionalPreferencesMode = current.draft.regionalPreferencesMode,
                         notificationsEnabled = current.draft.notificationsEnabled,
@@ -241,6 +257,8 @@ internal fun parseSettingsReminderHoursInput(raw: String): List<Int>? {
 }
 
 private fun AppSettings.toDraft(): SettingsPreferencesDraft = SettingsPreferencesDraft(
+    openRouterApiKey = openRouterApiKey,
+    aiModel = aiModel,
     themePreference = themePreference,
     regionalPreferencesMode = regionalPreferencesMode,
     notificationsEnabled = notificationsEnabled,
