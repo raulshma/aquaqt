@@ -1,7 +1,13 @@
 package com.keepaside.aquapt.feature.assistant
 
+import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.assistant.AssistantGatewayRequest
+import com.keepaside.aquapt.core.model.AssistantActionExecutionResult
+import com.keepaside.aquapt.core.model.AssistantActionExecutionItemResult
+import com.keepaside.aquapt.core.model.AssistantActionExtractionResult
+import com.keepaside.aquapt.core.model.AssistantActionTypes
+import com.keepaside.aquapt.core.model.AssistantDetectedAction
 import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.model.AssistantConversation
 import com.keepaside.aquapt.core.model.AssistantChatMessage
@@ -29,10 +35,12 @@ class AssistantViewModelTest {
         val store = FakeAssistantConversationsStore()
         val settingsStore = FakeAppSettingsStore()
         val gateway = FakeAssistantGateway()
+        val actionReviewService = FakeAssistantActionReviewService()
         val viewModel = AssistantViewModel(
             assistantConversationsStore = store,
             appSettingsStore = settingsStore,
             assistantGateway = gateway,
+            assistantActionReviewService = actionReviewService,
             externalScope = this,
             nowProvider = { Instant.parse("2026-04-11T10:00:00Z") },
             idProvider = { prefix -> "$prefix-1" }
@@ -65,10 +73,12 @@ class AssistantViewModelTest {
             snapshots = listOf("Echo", "Echo: done"),
             finalReply = "Echo: done"
         )
+        val actionReviewService = FakeAssistantActionReviewService()
         val viewModel = AssistantViewModel(
             assistantConversationsStore = store,
             appSettingsStore = settingsStore,
             assistantGateway = gateway,
+            assistantActionReviewService = actionReviewService,
             externalScope = this,
             nowProvider = { Instant.parse("2026-04-11T11:00:00Z") },
             idProvider = { prefix -> "$prefix-${store.nextId()}" }
@@ -99,10 +109,12 @@ class AssistantViewModelTest {
         val store = FakeAssistantConversationsStore()
         val settingsStore = FakeAppSettingsStore(AppSettings())
         val gateway = FakeAssistantGateway()
+        val actionReviewService = FakeAssistantActionReviewService()
         val viewModel = AssistantViewModel(
             assistantConversationsStore = store,
             appSettingsStore = settingsStore,
             assistantGateway = gateway,
+            assistantActionReviewService = actionReviewService,
             externalScope = this,
             nowProvider = { Instant.parse("2026-04-11T11:10:00Z") },
             idProvider = { prefix -> "$prefix-${store.nextId()}" }
@@ -151,11 +163,13 @@ class AssistantViewModelTest {
             snapshots = listOf("Retried"),
             finalReply = "Retried"
         )
+        val actionReviewService = FakeAssistantActionReviewService()
 
         val viewModel = AssistantViewModel(
             assistantConversationsStore = store,
             appSettingsStore = settingsStore,
             assistantGateway = gateway,
+            assistantActionReviewService = actionReviewService,
             externalScope = this,
             nowProvider = { Instant.parse("2026-04-11T11:15:00Z") },
             idProvider = { prefix -> "$prefix-${store.nextId()}" }
@@ -212,11 +226,13 @@ class AssistantViewModelTest {
             snapshots = listOf("New answer"),
             finalReply = "New answer"
         )
+        val actionReviewService = FakeAssistantActionReviewService()
 
         val viewModel = AssistantViewModel(
             assistantConversationsStore = store,
             appSettingsStore = settingsStore,
             assistantGateway = gateway,
+            assistantActionReviewService = actionReviewService,
             externalScope = this,
             nowProvider = { Instant.parse("2026-04-11T11:20:00Z") },
             idProvider = { prefix -> "$prefix-${store.nextId()}" }
@@ -263,10 +279,12 @@ class AssistantViewModelTest {
             AppSettings(openRouterApiKey = "key", aiModel = "openai/gpt-4o-mini")
         )
         val gateway = FakeAssistantGateway()
+        val actionReviewService = FakeAssistantActionReviewService()
         val viewModel = AssistantViewModel(
             assistantConversationsStore = store,
             appSettingsStore = settingsStore,
             assistantGateway = gateway,
+            assistantActionReviewService = actionReviewService,
             externalScope = this,
             nowProvider = { Instant.parse("2026-04-11T12:00:00Z") },
             idProvider = { prefix -> "$prefix-1" }
@@ -299,10 +317,12 @@ class AssistantViewModelTest {
         val store = FakeAssistantConversationsStore()
         val settingsStore = FakeAppSettingsStore()
         val gateway = FakeAssistantGateway()
+        val actionReviewService = FakeAssistantActionReviewService()
         val viewModel = AssistantViewModel(
             assistantConversationsStore = store,
             appSettingsStore = settingsStore,
             assistantGateway = gateway,
+            assistantActionReviewService = actionReviewService,
             externalScope = this,
             nowProvider = { Instant.parse("2026-04-11T13:00:00Z") },
             idProvider = { prefix -> "$prefix-1" }
@@ -319,6 +339,158 @@ class AssistantViewModelTest {
                 "Conversation title cannot be empty.",
                 viewModel.uiState.value.statusMessage
             )
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `assistant reply with extracted actions updates action review state`() = runTest {
+        val store = FakeAssistantConversationsStore()
+        val settingsStore = FakeAppSettingsStore(
+            AppSettings(openRouterApiKey = "key", aiModel = "openai/gpt-4o-mini")
+        )
+        val gateway = FakeAssistantGateway(
+            snapshots = listOf("done"),
+            finalReply = "done"
+        )
+        val actionReviewService = FakeAssistantActionReviewService().apply {
+            parseResponder = { _, _, sourceMessageId ->
+                AssistantActionExtractionResult(
+                    actions = listOf(
+                        AssistantDetectedAction(
+                            id = "action-1",
+                            type = AssistantActionTypes.CREATE_TASK_TEMPLATE,
+                            title = "Weekly water change",
+                            frequency = "weekly",
+                            validationErrors = emptyList(),
+                            sourceMessageId = sourceMessageId
+                        )
+                    ),
+                    warnings = emptyList(),
+                    raw = "done"
+                )
+            }
+        }
+
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = settingsStore,
+            assistantGateway = gateway,
+            assistantActionReviewService = actionReviewService,
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T13:10:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onComposerTextChanged("Set up a weekly water change task")
+            viewModel.sendMessage()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertTrue(state.hasDetectedActions)
+            assertEquals(1, state.detectedActions.size)
+            assertEquals("Weekly water change", state.detectedActions[0].title)
+            assertEquals(1, state.messages[1].detectedActionIds.size)
+            assertEquals("action-1", state.messages[1].detectedActionIds[0])
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `execute approved actions runs review service and appends system summary`() = runTest {
+        val existing = listOf(
+            AssistantConversation(
+                id = "conv-actions",
+                title = "Actions",
+                messages = listOf(
+                    AssistantChatMessage(
+                        id = "msg-user",
+                        role = AssistantMessageRole.USER,
+                        content = "Create a task",
+                        createdAt = "2026-04-11T14:00:00Z"
+                    ),
+                    AssistantChatMessage(
+                        id = "msg-assistant",
+                        role = AssistantMessageRole.ASSISTANT,
+                        content = "I can do that.",
+                        createdAt = "2026-04-11T14:00:10Z",
+                        detectedActionIds = listOf("action-valid", "action-invalid")
+                    )
+                ),
+                detectedActions = listOf(
+                    AssistantDetectedAction(
+                        id = "action-valid",
+                        type = AssistantActionTypes.ADD_MEMO,
+                        memoContent = "Top off reminder",
+                        approved = true,
+                        validationErrors = emptyList(),
+                        sourceMessageId = "msg-assistant"
+                    ),
+                    AssistantDetectedAction(
+                        id = "action-invalid",
+                        type = AssistantActionTypes.LOG_DOSING,
+                        product = "Calcium",
+                        amountMl = -1.0,
+                        approved = true,
+                        validationErrors = listOf("Invalid amount"),
+                        sourceMessageId = "msg-assistant"
+                    )
+                ),
+                createdAt = "2026-04-11T14:00:00Z",
+                updatedAt = "2026-04-11T14:00:10Z"
+            )
+        )
+
+        val store = FakeAssistantConversationsStore(existing)
+        val settingsStore = FakeAppSettingsStore()
+        val gateway = FakeAssistantGateway()
+        val actionReviewService = FakeAssistantActionReviewService().apply {
+            executionResult = AssistantActionExecutionResult(
+                createdCount = 1,
+                skippedCount = 0,
+                results = listOf(
+                    AssistantActionExecutionItemResult(
+                        actionId = "action-valid",
+                        actionType = AssistantActionTypes.ADD_MEMO,
+                        created = true,
+                        summary = "Memo added"
+                    )
+                )
+            )
+        }
+
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = settingsStore,
+            assistantGateway = gateway,
+            assistantActionReviewService = actionReviewService,
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T14:10:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+            viewModel.selectConversation("conv-actions")
+
+            viewModel.executeApprovedActions()
+            advanceUntilIdle()
+
+            assertEquals(1, actionReviewService.executedActions.size)
+            assertEquals("action-valid", actionReviewService.executedActions.first().id)
+
+            val state = viewModel.uiState.value
+            assertEquals(3, state.messages.size)
+            assertEquals(AssistantMessageRole.SYSTEM, state.messages.last().role)
+            assertTrue(state.messages.last().content.contains("Executed 1 action"))
+
+            val validAction = state.detectedActions.first { it.id == "action-valid" }
+            assertFalse(validAction.approved)
         } finally {
             viewModel.disposeForTests()
         }
@@ -352,6 +524,37 @@ private class FakeAppSettingsStore(
 
     override suspend fun setSettings(settings: AppSettings) {
         flow.value = settings
+    }
+}
+
+private class FakeAssistantActionReviewService : AssistantActionReviewService {
+    var parseResponder: (String, String, String) -> AssistantActionExtractionResult = { _, _, _ ->
+        AssistantActionExtractionResult(
+            actions = emptyList(),
+            warnings = emptyList(),
+            raw = ""
+        )
+    }
+
+    var executionResult: AssistantActionExecutionResult = AssistantActionExecutionResult(
+        createdCount = 0,
+        skippedCount = 0,
+        results = emptyList()
+    )
+
+    var executedActions: List<AssistantDetectedAction> = emptyList()
+
+    override fun parseAssistantActionExtraction(
+        responseContent: String,
+        transcript: String,
+        sourceMessageId: String
+    ): AssistantActionExtractionResult = parseResponder(responseContent, transcript, sourceMessageId)
+
+    override suspend fun executeApprovedActions(
+        actions: List<AssistantDetectedAction>
+    ): AssistantActionExecutionResult {
+        executedActions = actions
+        return executionResult
     }
 }
 

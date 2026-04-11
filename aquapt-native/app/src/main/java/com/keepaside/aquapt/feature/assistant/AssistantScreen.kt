@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.model.AssistantMessageRole
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
@@ -52,18 +54,28 @@ fun AssistantScreen(
     val assistantGateway: AssistantGateway = remember {
         KoinJavaComponent.get(AssistantGateway::class.java)
     }
+    val assistantActionReviewService: AssistantActionReviewService = remember {
+        KoinJavaComponent.get(AssistantActionReviewService::class.java)
+    }
 
     val viewModel: AssistantViewModel = viewModel(
-        factory = remember(assistantStore, appSettingsStore, assistantGateway) {
+        factory = remember(
+            assistantStore,
+            appSettingsStore,
+            assistantGateway,
+            assistantActionReviewService
+        ) {
             AssistantViewModel.factory(
                 assistantConversationsStore = assistantStore,
                 appSettingsStore = appSettingsStore,
-                assistantGateway = assistantGateway
+                assistantGateway = assistantGateway,
+                assistantActionReviewService = assistantActionReviewService
             )
         }
     )
     val uiState by viewModel.uiState.collectAsState()
     val assistantError = uiState.assistantError
+    val controlsEnabled = !uiState.isSending && !uiState.isExecutingActions
 
     var renameInput by remember(uiState.activeConversationId, uiState.activeConversationTitle) {
         mutableStateOf(uiState.activeConversationTitle)
@@ -104,7 +116,10 @@ fun AssistantScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = viewModel::createConversation) {
+                Button(
+                    onClick = viewModel::createConversation,
+                    enabled = controlsEnabled
+                ) {
                     Text("New chat")
                 }
 
@@ -112,7 +127,7 @@ fun AssistantScreen(
                     onClick = {
                         uiState.activeConversationId?.let(viewModel::togglePinConversation)
                     },
-                    enabled = uiState.activeConversationId != null
+                    enabled = uiState.activeConversationId != null && controlsEnabled
                 ) {
                     Text(if (uiState.activeConversationPinned) "Unpin" else "Pin")
                 }
@@ -121,7 +136,7 @@ fun AssistantScreen(
                     onClick = {
                         uiState.activeConversationId?.let(viewModel::deleteConversation)
                     },
-                    enabled = uiState.activeConversationId != null
+                    enabled = uiState.activeConversationId != null && controlsEnabled
                 ) {
                     Text("Delete")
                 }
@@ -132,7 +147,8 @@ fun AssistantScreen(
                 onValueChange = { renameInput = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Conversation title") },
-                singleLine = true
+                singleLine = true,
+                enabled = controlsEnabled
             )
 
             Row(
@@ -145,14 +161,14 @@ fun AssistantScreen(
                             viewModel.renameConversation(conversationId, renameInput)
                         }
                     },
-                    enabled = uiState.activeConversationId != null
+                    enabled = uiState.activeConversationId != null && controlsEnabled
                 ) {
                     Text("Rename")
                 }
 
                 OutlinedButton(
                     onClick = { renameInput = uiState.activeConversationTitle },
-                    enabled = uiState.activeConversationId != null
+                    enabled = uiState.activeConversationId != null && controlsEnabled
                 ) {
                     Text("Reset")
                 }
@@ -163,6 +179,7 @@ fun AssistantScreen(
                     FilterChip(
                         selected = uiState.activeConversationId == conversation.id,
                         onClick = { viewModel.selectConversation(conversation.id) },
+                        enabled = controlsEnabled,
                         label = {
                             Text(
                                 text = if (conversation.isPinned) "📌 ${conversation.title}" else conversation.title,
@@ -186,6 +203,134 @@ fun AssistantScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
+            }
+
+            if (uiState.hasDetectedActions || uiState.actionWarnings.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Action review",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        uiState.actionWarnings.forEach { warning ->
+                            Text(
+                                text = warning,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        if (!uiState.hasDetectedActions) {
+                            Text(
+                                text = "No detected actions in the active thread yet.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        uiState.detectedActions.forEach { action ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Checkbox(
+                                        checked = action.approved,
+                                        enabled = controlsEnabled && action.validationErrors.isEmpty(),
+                                        onCheckedChange = { checked ->
+                                            viewModel.toggleActionApproval(action.id, checked)
+                                        }
+                                    )
+
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = action.title,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+
+                                        Text(
+                                            text = "${action.type} • ${(action.confidence * 100).toInt()}% confidence",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+
+                                        if (action.subtitle.isNotBlank()) {
+                                            Text(
+                                                text = action.subtitle,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        action.validationErrors.forEach { validationError ->
+                                            Text(
+                                                text = validationError,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = viewModel::approveAllValidActions,
+                                enabled = controlsEnabled && uiState.hasDetectedActions
+                            ) {
+                                Text("Approve valid")
+                            }
+
+                            Button(
+                                onClick = viewModel::executeApprovedActions,
+                                enabled = controlsEnabled && uiState.canExecuteApprovedActions
+                            ) {
+                                Text("Execute (${uiState.approvedActionCount})")
+                            }
+                        }
+
+                        if (uiState.isExecutingActions) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.padding(2.dp))
+                                Text(
+                                    text = "Executing approved actions…",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             if (uiState.messages.isEmpty()) {
@@ -265,7 +410,7 @@ fun AssistantScreen(
                                     if (message.role == AssistantMessageRole.USER && message.requestFailed) {
                                         OutlinedButton(
                                             onClick = { viewModel.retryFailedMessage(message.id) },
-                                            enabled = !uiState.isSending
+                                            enabled = controlsEnabled
                                         ) {
                                             Text("Retry")
                                         }
@@ -274,7 +419,7 @@ fun AssistantScreen(
                                     if (message.role == AssistantMessageRole.ASSISTANT) {
                                         OutlinedButton(
                                             onClick = { viewModel.regenerateReply(message.id) },
-                                            enabled = !uiState.isSending
+                                            enabled = controlsEnabled
                                         ) {
                                             Text("Regenerate")
                                         }
@@ -307,7 +452,7 @@ fun AssistantScreen(
                     label = { Text("Message AquaPT assistant") },
                     minLines = 2,
                     maxLines = 5,
-                    enabled = !uiState.isSending
+                    enabled = controlsEnabled
                 )
 
                 if (uiState.canStopGeneration) {
@@ -317,7 +462,7 @@ fun AssistantScreen(
                 } else {
                     Button(
                         onClick = viewModel::sendMessage,
-                        enabled = uiState.canSend
+                        enabled = uiState.canSend && controlsEnabled
                     ) {
                         Text("Send")
                     }

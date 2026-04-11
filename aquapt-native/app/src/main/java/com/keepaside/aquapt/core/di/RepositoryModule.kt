@@ -2,6 +2,8 @@ package com.keepaside.aquapt.core.di
 
 import com.keepaside.aquapt.core.backup.AppStateBackupCompatibilityService
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
+import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
+import com.keepaside.aquapt.core.assistant.AssistantActionReviewServiceImpl
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.assistant.OpenRouterAssistantGateway
 import com.keepaside.aquapt.core.database.dao.*
@@ -13,6 +15,19 @@ val repositoryModule = module {
     single<AppSettingsStore> { AppSettingsRepository(androidContext()) }
     single<AssistantConversationsStore> { AssistantConversationsRepository(androidContext()) }
     single<AssistantGateway> { OpenRouterAssistantGateway() }
+    single<AssistantActionReviewService> {
+        AssistantActionReviewServiceImpl(
+            aquariumRepository = get(),
+            taskTemplateRepository = get(),
+            taskExecutionRepository = get(),
+            dosingLogRepository = get(),
+            waterParameterLogRepository = get(),
+            issueRepository = get(),
+            memoRepository = get(),
+            appSettingsStore = get(),
+            timelineEventRepository = get()
+        )
+    }
 
     single { AquariumRepository(get()) }
     single { LivestockRepository(get()) }

@@ -26,6 +26,7 @@ data class AssistantConversation(
     val title: String,
     val pinned: Boolean = false,
     val messages: List<AssistantChatMessage> = emptyList(),
+    val detectedActions: List<AssistantDetectedAction> = emptyList(),
     val warnings: List<String> = emptyList(),
     val createdAt: String,
     val updatedAt: String

@@ -3,11 +3,14 @@ package com.keepaside.aquapt.feature.assistant
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.assistant.AssistantGatewayMessage
 import com.keepaside.aquapt.core.assistant.AssistantGatewayRequest
+import com.keepaside.aquapt.core.model.AssistantActionTypes
 import com.keepaside.aquapt.core.model.AssistantChatMessage
 import com.keepaside.aquapt.core.model.AssistantConversation
+import com.keepaside.aquapt.core.model.AssistantDetectedAction
 import com.keepaside.aquapt.core.model.AssistantMessageRole
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
 import com.keepaside.aquapt.core.repository.AppSettingsStore
@@ -35,7 +38,8 @@ private data class AssistantTransientState(
     val status: String,
     val error: String?,
     val sending: Boolean,
-    val streamingId: String?
+    val streamingId: String?,
+    val executingActions: Boolean
 )
 
 data class AssistantConversationItem(
@@ -47,6 +51,16 @@ data class AssistantConversationItem(
     val lastMessagePreview: String?
 )
 
+data class AssistantDetectedActionItem(
+    val id: String,
+    val type: String,
+    val title: String,
+    val subtitle: String,
+    val approved: Boolean,
+    val confidence: Double,
+    val validationErrors: List<String>
+)
+
 data class AssistantUiState(
     val isLoading: Boolean = true,
     val statusMessage: String = assistantDefaultStatusMessage,
@@ -56,17 +70,24 @@ data class AssistantUiState(
     val activeConversationTitle: String = assistantDefaultConversationTitle,
     val activeConversationPinned: Boolean = false,
     val messages: List<AssistantChatMessage> = emptyList(),
+    val detectedActions: List<AssistantDetectedActionItem> = emptyList(),
+    val actionWarnings: List<String> = emptyList(),
     val composerText: String = "",
     val canSend: Boolean = false,
     val isSending: Boolean = false,
     val activeStreamingMessageId: String? = null,
-    val canStopGeneration: Boolean = false
+    val canStopGeneration: Boolean = false,
+    val isExecutingActions: Boolean = false,
+    val approvedActionCount: Int = 0,
+    val canExecuteApprovedActions: Boolean = false,
+    val hasDetectedActions: Boolean = false
 )
 
 class AssistantViewModel(
     private val assistantConversationsStore: AssistantConversationsStore,
     private val appSettingsStore: AppSettingsStore,
     private val assistantGateway: AssistantGateway,
+    private val assistantActionReviewService: AssistantActionReviewService,
     private val externalScope: CoroutineScope? = null,
     private val nowProvider: () -> Instant = { Instant.now() },
     private val idProvider: (String) -> String = { prefix -> "$prefix-${UUID.randomUUID()}" },
@@ -79,6 +100,7 @@ class AssistantViewModel(
     private val assistantError = MutableStateFlow<String?>(null)
     private val isSending = MutableStateFlow(false)
     private val activeStreamingMessageId = MutableStateFlow<String?>(null)
+    private val isExecutingActions = MutableStateFlow(false)
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -86,18 +108,20 @@ class AssistantViewModel(
     private var observerJob: Job? = null
     private var generationJob: Job? = null
 
+    private fun isBusy(): Boolean = isSending.value || isExecutingActions.value
+
     init {
         bootstrapConversationsIfNeeded()
         observerJob = observeUiState()
     }
 
     fun onComposerTextChanged(value: String) {
-        if (isSending.value) return
+        if (isBusy()) return
         composerText.update { value }
     }
 
     fun createConversation() {
-        if (isSending.value) return
+        if (isBusy()) return
 
         launchWork {
             val now = nowIso()
@@ -121,13 +145,13 @@ class AssistantViewModel(
     }
 
     fun selectConversation(conversationId: String) {
-        if (isSending.value) return
+        if (isBusy()) return
         activeConversationId.update { conversationId }
         statusMessage.update { "Switched conversation." }
     }
 
     fun renameConversation(conversationId: String, title: String) {
-        if (isSending.value) return
+        if (isBusy()) return
 
         val normalizedTitle = title.trim()
         if (normalizedTitle.isBlank()) {
@@ -153,7 +177,7 @@ class AssistantViewModel(
     }
 
     fun togglePinConversation(conversationId: String) {
-        if (isSending.value) return
+        if (isBusy()) return
 
         launchWork {
             val updated = assistantConversationsStore.conversations.value.map { conversation ->
@@ -173,7 +197,7 @@ class AssistantViewModel(
     }
 
     fun deleteConversation(conversationId: String) {
-        if (isSending.value) return
+        if (isBusy()) return
 
         launchWork {
             val remaining = assistantConversationsStore.conversations.value
@@ -208,7 +232,7 @@ class AssistantViewModel(
     }
 
     fun sendMessage() {
-        if (isSending.value) return
+        if (isBusy()) return
 
         requestAssistantReply(
             prompt = composerText.value,
@@ -218,7 +242,7 @@ class AssistantViewModel(
     }
 
     fun retryFailedMessage(userMessageId: String) {
-        if (isSending.value) return
+        if (isBusy()) return
 
         val activeConversation = resolveActiveConversation(assistantConversationsStore.conversations.value)
             ?: return
@@ -235,7 +259,7 @@ class AssistantViewModel(
     }
 
     fun regenerateReply(assistantMessageId: String) {
-        if (isSending.value) return
+        if (isBusy()) return
 
         val activeConversation = resolveActiveConversation(assistantConversationsStore.conversations.value)
             ?: return
@@ -269,6 +293,143 @@ class AssistantViewModel(
         generationJob?.cancel()
     }
 
+    fun toggleActionApproval(actionId: String, approved: Boolean) {
+        if (isBusy()) return
+
+        launchWork {
+            val activeConversation = resolveActiveConversation(assistantConversationsStore.conversations.value)
+                ?: return@launchWork
+
+            mutateConversation(activeConversation.id) { conversation ->
+                conversation.copy(
+                    detectedActions = conversation.detectedActions.map { action ->
+                        if (action.id == actionId) {
+                            action.copy(approved = approved)
+                        } else {
+                            action
+                        }
+                    },
+                    updatedAt = nowIso()
+                )
+            }
+
+            statusMessage.update {
+                if (approved) {
+                    "Action approved."
+                } else {
+                    "Action unapproved."
+                }
+            }
+        }
+    }
+
+    fun approveAllValidActions() {
+        if (isBusy()) return
+
+        launchWork {
+            val activeConversation = resolveActiveConversation(assistantConversationsStore.conversations.value)
+                ?: return@launchWork
+
+            mutateConversation(activeConversation.id) { conversation ->
+                conversation.copy(
+                    detectedActions = conversation.detectedActions.map { action ->
+                        if (action.validationErrors.isEmpty()) {
+                            action.copy(approved = true)
+                        } else {
+                            action
+                        }
+                    },
+                    updatedAt = nowIso()
+                )
+            }
+
+            statusMessage.update { "Approved all valid actions." }
+        }
+    }
+
+    fun executeApprovedActions() {
+        if (isBusy()) return
+
+        launchWork {
+            val activeConversation = resolveActiveConversation(assistantConversationsStore.conversations.value)
+            if (activeConversation == null) {
+                statusMessage.update { "No conversation available." }
+                return@launchWork
+            }
+
+            val approvedActions = activeConversation.detectedActions.filter { action ->
+                action.approved && action.validationErrors.isEmpty()
+            }
+
+            if (approvedActions.isEmpty()) {
+                statusMessage.update { "No approved valid actions to execute." }
+                return@launchWork
+            }
+
+            isExecutingActions.update { true }
+
+            try {
+                val executionResult = assistantActionReviewService.executeApprovedActions(approvedActions)
+                val approvedIds = approvedActions.map { action -> action.id }.toSet()
+
+                val summaryHeader = buildString {
+                    append("Executed ${executionResult.createdCount} action")
+                    if (executionResult.createdCount != 1) {
+                        append("s")
+                    }
+
+                    if (executionResult.skippedCount > 0) {
+                        append(" • Skipped ${executionResult.skippedCount}")
+                    }
+                }
+
+                val details = executionResult.results
+                    .take(5)
+                    .joinToString(separator = "\n") { item ->
+                        val prefix = if (item.created) "✓" else "•"
+                        val message = item.summary ?: item.reason ?: "No details"
+                        "$prefix ${item.actionType}: $message"
+                    }
+
+                val systemMessage = AssistantChatMessage(
+                    id = idProvider("msg"),
+                    role = AssistantMessageRole.SYSTEM,
+                    content = listOf(summaryHeader, details)
+                        .filter { it.isNotBlank() }
+                        .joinToString(separator = "\n"),
+                    createdAt = nowIso()
+                )
+
+                mutateConversation(activeConversation.id) { conversation ->
+                    conversation.copy(
+                        detectedActions = conversation.detectedActions.map { action ->
+                            if (action.id in approvedIds) {
+                                action.copy(approved = false)
+                            } else {
+                                action
+                            }
+                        },
+                        messages = conversation.messages + systemMessage,
+                        warnings = (conversation.warnings + executionResult.results
+                            .filter { item -> !item.created }
+                            .mapNotNull { item -> item.reason })
+                            .takeLast(8),
+                        updatedAt = nowIso()
+                    )
+                }
+
+                statusMessage.update { summaryHeader }
+            } catch (error: Throwable) {
+                val message = error.message?.takeIf { it.isNotBlank() }
+                    ?: "Failed to execute assistant actions."
+                assistantError.update { message }
+                statusMessage.update { message }
+            } finally {
+                isExecutingActions.update { false }
+            }
+        }
+    }
+
     private fun requestAssistantReply(
         prompt: String,
         retryUserMessageId: String?,
@@ -276,7 +437,7 @@ class AssistantViewModel(
     ) {
         val normalizedPrompt = prompt.trim()
         if (normalizedPrompt.isBlank()) return
-        if (isSending.value) return
+        if (isBusy()) return
 
         generationJob = launchWork {
             val conversations = assistantConversationsStore.conversations.value
@@ -337,11 +498,16 @@ class AssistantViewModel(
                     conversation
                 } else {
                     var messages = conversation.messages
+                    var detectedActions = conversation.detectedActions
 
                     if (replaceAssistantMessageId != null) {
                         messages = messages.filterNot { message ->
                             message.id == replaceAssistantMessageId &&
                                 message.role == AssistantMessageRole.ASSISTANT
+                        }
+
+                        detectedActions = detectedActions.filterNot { action ->
+                            action.sourceMessageId == replaceAssistantMessageId
                         }
                     }
 
@@ -372,6 +538,7 @@ class AssistantViewModel(
                             conversation.title
                         },
                         messages = messages + assistantDraft,
+                        detectedActions = detectedActions,
                         updatedAt = now
                     )
                 }
@@ -422,22 +589,41 @@ class AssistantViewModel(
                     }
                 ).trim()
 
+                val extraction = assistantActionReviewService.parseAssistantActionExtraction(
+                    responseContent = finalText,
+                    transcript = normalizedPrompt,
+                    sourceMessageId = assistantDraftId
+                )
+
                 mutateConversation(activeConversation.id) { conversation ->
                     conversation.copy(
                         messages = conversation.messages.map { message ->
                             if (message.id == assistantDraftId) {
                                 val current = message.content.trim()
                                 val next = finalText.ifBlank { current }
-                                message.copy(content = next)
+                                message.copy(
+                                    content = next,
+                                    detectedActionIds = extraction.actions.map { action -> action.id }
+                                )
                             } else {
                                 message
                             }
                         },
+                        detectedActions = conversation.detectedActions
+                            .filterNot { action -> action.sourceMessageId == assistantDraftId } +
+                            extraction.actions,
+                        warnings = (conversation.warnings + extraction.warnings).takeLast(8),
                         updatedAt = nowIso()
                     )
                 }
 
-                statusMessage.update { "Assistant response received." }
+                statusMessage.update {
+                    if (extraction.actions.isNotEmpty()) {
+                        "Assistant response received with ${extraction.actions.size} detected action(s)."
+                    } else {
+                        "Assistant response received."
+                    }
+                }
             } catch (_: CancellationException) {
                 val hasPartialContent = assistantConversationsStore.conversations.value
                     .firstOrNull { it.id == activeConversation.id }
@@ -451,6 +637,9 @@ class AssistantViewModel(
                     mutateConversation(activeConversation.id) { conversation ->
                         conversation.copy(
                             messages = conversation.messages.filterNot { it.id == assistantDraftId },
+                            detectedActions = conversation.detectedActions.filterNot { action ->
+                                action.sourceMessageId == assistantDraftId
+                            },
                             updatedAt = nowIso()
                         )
                     }
@@ -481,6 +670,9 @@ class AssistantViewModel(
 
                     conversation.copy(
                         messages = cleanedMessages,
+                        detectedActions = conversation.detectedActions.filterNot { action ->
+                            action.sourceMessageId == assistantDraftId
+                        },
                         updatedAt = nowIso()
                     )
                 }
@@ -549,7 +741,8 @@ class AssistantViewModel(
                 statusMessage,
                 assistantError,
                 isSending,
-                activeStreamingMessageId
+                activeStreamingMessageId,
+                isExecutingActions
             ) { values ->
                 @Suppress("UNCHECKED_CAST")
                 AssistantTransientState(
@@ -558,7 +751,8 @@ class AssistantViewModel(
                     status = values[2] as String,
                     error = values[3] as String?,
                     sending = values[4] as Boolean,
-                    streamingId = values[5] as String?
+                    streamingId = values[5] as String?,
+                    executingActions = values[6] as Boolean
                 )
             }
 
@@ -588,6 +782,18 @@ class AssistantViewModel(
                     )
                 }
 
+                val detectedActions = activeConversation
+                    ?.detectedActions
+                    .orEmpty()
+                    .map { action -> action.toActionItem() }
+
+                val approvedActionCount = activeConversation
+                    ?.detectedActions
+                    ?.count { action ->
+                        action.approved && action.validationErrors.isEmpty()
+                    }
+                    ?: 0
+
                 AssistantUiState(
                     isLoading = false,
                     statusMessage = transient.status,
@@ -597,13 +803,20 @@ class AssistantViewModel(
                     activeConversationTitle = activeConversation?.title ?: assistantDefaultConversationTitle,
                     activeConversationPinned = activeConversation?.pinned ?: false,
                     messages = activeConversation?.messages.orEmpty(),
+                    detectedActions = detectedActions,
+                    actionWarnings = activeConversation?.warnings.orEmpty(),
                     composerText = transient.composer,
                     canSend = transient.composer.trim().isNotEmpty() &&
                         activeConversation != null &&
-                        !transient.sending,
+                        !transient.sending &&
+                        !transient.executingActions,
                     isSending = transient.sending,
                     activeStreamingMessageId = transient.streamingId,
-                    canStopGeneration = transient.sending && !transient.streamingId.isNullOrBlank()
+                    canStopGeneration = transient.sending && !transient.streamingId.isNullOrBlank(),
+                    isExecutingActions = transient.executingActions,
+                    approvedActionCount = approvedActionCount,
+                    canExecuteApprovedActions = approvedActionCount > 0 && !transient.sending,
+                    hasDetectedActions = detectedActions.isNotEmpty()
                 )
             }.collect { next ->
                 _uiState.update { next }
@@ -612,6 +825,51 @@ class AssistantViewModel(
                 }
             }
         }
+
+    private fun AssistantDetectedAction.toActionItem(): AssistantDetectedActionItem {
+        val titleValue = when (type) {
+            AssistantActionTypes.CREATE_TASK_TEMPLATE -> {
+                title?.ifBlank { null } ?: "Create task template"
+            }
+
+            AssistantActionTypes.COMPLETE_TASK -> {
+                taskTitle?.ifBlank { null } ?: title?.ifBlank { null } ?: "Complete task"
+            }
+
+            AssistantActionTypes.LOG_DOSING -> {
+                product?.ifBlank { null }?.let { "Log dosing: $it" } ?: "Log dosing"
+            }
+
+            AssistantActionTypes.LOG_PARAMETERS -> "Log water parameters"
+            AssistantActionTypes.ADD_ISSUE -> issueTitle?.ifBlank { null } ?: "Add issue"
+            AssistantActionTypes.ADD_MEMO -> memoContent?.ifBlank { null }?.take(48) ?: "Add memo"
+            AssistantActionTypes.SAVE_REMINDER_SETTINGS -> "Update reminder settings"
+            else -> title?.ifBlank { null } ?: type
+        }
+
+        val subtitleParts = buildList {
+            aquariumName?.takeIf { it.isNotBlank() }?.let { add("Tank: $it") }
+            frequency?.takeIf { it.isNotBlank() }?.let { add("Freq: $it") }
+            amountMl?.takeIf { it > 0.0 }?.let { add("Amount: ${it}ml") }
+            reminderHour?.let { add("Hour: $it") }
+            if (reminderHours.isNotEmpty()) {
+                add("Hours: ${reminderHours.joinToString(",")}")
+            }
+            if (validationErrors.isNotEmpty()) {
+                add("Needs fixes")
+            }
+        }
+
+        return AssistantDetectedActionItem(
+            id = id,
+            type = type,
+            title = titleValue,
+            subtitle = subtitleParts.joinToString(" • "),
+            approved = approved,
+            confidence = confidence,
+            validationErrors = validationErrors
+        )
+    }
 
     private fun resolveActiveConversation(
         conversations: List<AssistantConversation>
@@ -644,7 +902,8 @@ class AssistantViewModel(
         fun factory(
             assistantConversationsStore: AssistantConversationsStore,
             appSettingsStore: AppSettingsStore,
-            assistantGateway: AssistantGateway
+            assistantGateway: AssistantGateway,
+            assistantActionReviewService: AssistantActionReviewService
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -653,7 +912,8 @@ class AssistantViewModel(
                         return AssistantViewModel(
                             assistantConversationsStore = assistantConversationsStore,
                             appSettingsStore = appSettingsStore,
-                            assistantGateway = assistantGateway
+                            assistantGateway = assistantGateway,
+                            assistantActionReviewService = assistantActionReviewService
                         ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
