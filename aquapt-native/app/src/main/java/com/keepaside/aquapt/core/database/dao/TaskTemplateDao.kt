@@ -23,4 +23,7 @@ interface TaskTemplateDao {
 
     @Query("DELETE FROM task_templates WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("UPDATE task_templates SET reminderGroupId = NULL WHERE reminderGroupId = :reminderGroupId")
+    suspend fun clearReminderGroup(reminderGroupId: String): Int
 }

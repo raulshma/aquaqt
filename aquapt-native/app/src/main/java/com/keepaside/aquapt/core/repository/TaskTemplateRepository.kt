@@ -26,4 +26,7 @@ class TaskTemplateRepository(
 
     suspend fun deleteById(id: String) =
         dao.deleteById(id)
+
+    suspend fun clearReminderGroup(reminderGroupId: String): Int =
+        dao.clearReminderGroup(reminderGroupId)
 }
