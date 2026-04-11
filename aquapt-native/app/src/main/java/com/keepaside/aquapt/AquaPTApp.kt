@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -38,6 +39,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.feature.entity.EntityDetailScreen
+import com.keepaside.aquapt.feature.insights.GlobalInsightsScreen
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
 import com.keepaside.aquapt.feature.livestock.LivestockScreen
 import com.keepaside.aquapt.feature.tasks.TasksDashboardScreen
@@ -120,6 +122,22 @@ fun AquaPTApp() {
                         text = topBarTitleForRoute(currentRoute),
                         style = MaterialTheme.typography.titleLarge
                     )
+                },
+                actions = {
+                    if (currentRoute != AquaPTRoute.Insights) {
+                        IconButton(
+                            onClick = {
+                                navController.navigate(AquaPTRoute.Insights) {
+                                    launchSingleTop = true
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Analytics,
+                                contentDescription = "Open global insights"
+                            )
+                        }
+                    }
                 }
             )
         },
@@ -196,10 +214,16 @@ fun AquaPTApp() {
                 )
             }
             composable(AquaPTRoute.Insights) {
-                PlaceholderScreen(
-                    title = "Global insights",
-                    subtitle = "Portfolio-level indicators and recommendations are staged for a modal flow.",
-                    icon = { Icon(Icons.Rounded.Analytics, contentDescription = null) }
+                GlobalInsightsScreen(
+                    onBackToDashboard = {
+                        navController.navigate(AquaPTRoute.Tanks) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
                 )
             }
             composable(AquaPTRoute.EntityDetailPattern) { backStackEntry ->
