@@ -55,6 +55,7 @@ import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
 import com.keepaside.aquapt.feature.settings.ModelBrowserTarget
 import com.keepaside.aquapt.feature.settings.SettingsMemoryScreen
 import com.keepaside.aquapt.feature.settings.SettingsModelBrowserScreen
+import com.keepaside.aquapt.feature.settings.SettingsScreen
 import com.keepaside.aquapt.feature.settings.SettingsWorkflowScreen
 import com.keepaside.aquapt.feature.livestock.LivestockScreen
 import com.keepaside.aquapt.feature.tasks.TasksDashboardScreen
@@ -76,6 +77,7 @@ private object AquaPTRoute {
     const val Timeline = "timeline"
     const val Assistant = "assistant"
     const val Settings = "settings"
+    const val SettingsCore = "settings-core"
 
     const val Livestock = "livestock"
     const val Insights = "insights"
@@ -338,6 +340,25 @@ fun AquaPTApp(
                 AssistantScreen()
             }
             composable(AquaPTRoute.Settings) {
+                SettingsScreen(
+                    onOpenCoreSettings = {
+                        navController.navigate(AquaPTRoute.SettingsCore) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onOpenWorkflows = {
+                        navController.navigate(AquaPTRoute.Workflows) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onOpenMemoryTools = {
+                        navController.navigate(AquaPTRoute.MemoryTools) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+            composable(AquaPTRoute.SettingsCore) {
                 val settingsEntry = navController.currentBackStackEntry
                 val selectedAssistantModelId by settingsEntry
                     ?.savedStateHandle
@@ -539,6 +560,7 @@ private fun topBarTitleForRoute(route: String?): String = when {
     route == AquaPTRoute.Timeline -> "Timeline"
     route == AquaPTRoute.Assistant -> "Assistant"
     route == AquaPTRoute.Settings -> "Settings"
+    route == AquaPTRoute.SettingsCore -> "Core settings"
     route == AquaPTRoute.Livestock -> "Livestock"
     route == AquaPTRoute.Insights -> "Global insights"
     route == AquaPTRoute.Workflows -> "AI workflows"
@@ -555,7 +577,8 @@ private fun topBarSubtitleForRoute(route: String?): String? = when {
     route == AquaPTRoute.Tasks -> "Recurring care, done on time"
     route == AquaPTRoute.Timeline -> "Every event, one clear stream"
     route == AquaPTRoute.Assistant -> "Context-aware aquarium copilot"
-    route == AquaPTRoute.Settings -> "Personalize your workflow"
+    route == AquaPTRoute.Settings -> "Grouped controls for faster navigation"
+    route == AquaPTRoute.SettingsCore -> "Preferences, reminders, and backup"
     route == AquaPTRoute.Insights -> "Cross-tank performance insights"
     route?.startsWith(AquaPTRoute.Entity) == true -> "Detailed activity context"
     else -> null
@@ -604,7 +627,8 @@ internal fun mapExternalRouteToNativeRoute(route: String): String? {
         "memory" -> AquaPTRoute.MemoryTools
 
         "settings" -> when (second) {
-            "", "index", "assistant", "backup", "reminders", "reminder-groups" -> AquaPTRoute.Settings
+            "", "index" -> AquaPTRoute.Settings
+            "assistant", "backup", "reminders", "reminder-groups", "core" -> AquaPTRoute.SettingsCore
             "workflows" -> AquaPTRoute.Workflows
             "memory" -> AquaPTRoute.MemoryTools
             "models" -> {

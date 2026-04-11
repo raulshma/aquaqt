@@ -8,19 +8,27 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.rounded.Analytics
+import androidx.compose.material.icons.rounded.Assistant
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -29,9 +37,11 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +53,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -60,8 +72,11 @@ import com.keepaside.aquapt.core.repository.AppSettingsStore
 import com.keepaside.aquapt.core.repository.BackupSecretsStore
 import com.keepaside.aquapt.core.repository.ReminderGroupRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
+import com.keepaside.aquapt.ui.theme.NeoHeroContainer
+import com.keepaside.aquapt.ui.theme.NeoHeroOnContainer
 import org.koin.java.KoinJavaComponent
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsBackupScreen(
     onOpenWorkflows: () -> Unit = {},
@@ -193,21 +208,18 @@ fun SettingsBackupScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            OutlinedButton(
-                onClick = onOpenWorkflows,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("AI workflow tools")
-            }
+            CoreSettingsHeroCard(
+                themeLabel = settingsPreferencesUiState.draft.themePreference.toReadableLabel(),
+                memoryEnabled = settingsPreferencesUiState.draft.assistantMemoryEnabled,
+                backupSyncEnabled = settingsPreferencesUiState.draft.backupSyncEnabled
+            )
 
-            OutlinedButton(
-                onClick = onOpenMemoryTools,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Assistant memory tools")
-            }
+            CoreSettingsToolsCard(
+                onOpenWorkflows = onOpenWorkflows,
+                onOpenMemoryTools = onOpenMemoryTools
+            )
 
             SettingsPreferencesSection(
                 uiState = settingsPreferencesUiState,
@@ -258,83 +270,114 @@ fun SettingsBackupScreen(
                 onReset = settingsPreferencesViewModel::resetDraftToSaved
             )
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
             Text(
-                text = "Backup compatibility",
-                style = MaterialTheme.typography.headlineSmall
+                text = "Backup & restore",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 6.dp)
             )
 
-            Text(
-                text = uiState.statusMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Checkbox(
-                    checked = uiState.replaceExisting,
-                    onCheckedChange = viewModel::onReplaceExistingChanged,
-                    enabled = !uiState.isBusy
+            Card(
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
                 )
-                Text(
-                    text = "Replace existing local state on import",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Button(
-                    onClick = viewModel::exportJson,
-                    enabled = !uiState.isBusy
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Export JSON")
-                }
+                    Text(
+                        text = uiState.statusMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
-                Button(
-                    onClick = viewModel::importJson,
-                    enabled = !uiState.isBusy
-                ) {
-                    Text("Import JSON")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Checkbox(
+                            checked = uiState.replaceExisting,
+                            onCheckedChange = viewModel::onReplaceExistingChanged,
+                            enabled = !uiState.isBusy
+                        )
+                        Text(
+                            text = "Replace existing local state on import",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = viewModel::exportJson,
+                            enabled = !uiState.isBusy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Export JSON")
+                        }
+
+                        Button(
+                            onClick = viewModel::importJson,
+                            enabled = !uiState.isBusy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Import JSON")
+                        }
+                    }
                 }
             }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
             Text(
                 text = "Cloud backup",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 6.dp)
             )
 
-            Text(
-                text = "Uses configured S3 destination and secure credentials from App preferences.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                )
             ) {
-                Button(
-                    onClick = viewModel::syncToCloud,
-                    enabled = !uiState.isBusy
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("Sync to cloud")
-                }
+                    Text(
+                        text = "Uses configured S3 destination and secure credentials from App preferences.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
-                OutlinedButton(
-                    onClick = viewModel::loadCloudBackups,
-                    enabled = !uiState.isBusy
-                ) {
-                    Text("Load cloud list")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = viewModel::syncToCloud,
+                            enabled = !uiState.isBusy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Sync to cloud")
+                        }
+
+                        OutlinedButton(
+                            onClick = viewModel::loadCloudBackups,
+                            enabled = !uiState.isBusy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Load cloud list")
+                        }
+                    }
                 }
             }
 
@@ -502,7 +545,8 @@ fun SettingsBackupScreen(
 
             OutlinedButton(
                 onClick = viewModel::loadSelectedCloudBackupPreview,
-                enabled = !uiState.isBusy && uiState.selectedCloudObjectKey.isNotBlank()
+                enabled = !uiState.isBusy && uiState.selectedCloudObjectKey.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     if (uiState.isRestorePreviewLoading) {
@@ -525,7 +569,8 @@ fun SettingsBackupScreen(
                             showRestoreSelectedConfirmation = true
                         }
                     },
-                    enabled = !uiState.isBusy
+                    enabled = !uiState.isBusy,
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text("Restore selected")
                 }
@@ -534,7 +579,8 @@ fun SettingsBackupScreen(
                     onClick = {
                         showRestoreLatestConfirmation = true
                     },
-                    enabled = !uiState.isBusy
+                    enabled = !uiState.isBusy,
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text("Restore latest")
                 }
@@ -552,14 +598,16 @@ fun SettingsBackupScreen(
                             showDeleteSelectedConfirmation = true
                         }
                     },
-                    enabled = !uiState.isBusy
+                    enabled = !uiState.isBusy,
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text("Delete selected")
                 }
 
                 OutlinedButton(
                     onClick = viewModel::pruneCloudBackupHistory,
-                    enabled = !uiState.isBusy
+                    enabled = !uiState.isBusy,
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text("Prune history")
                 }
@@ -642,149 +690,192 @@ fun SettingsBackupScreen(
                 }
             }
 
-            OutlinedTextField(
-                value = uiState.payload,
-                onValueChange = viewModel::onPayloadChanged,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                label = { Text("Backup JSON payload") },
-                minLines = 14,
-                maxLines = 24,
-                enabled = !uiState.isBusy
-            )
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Backup JSON payload",
+                        style = MaterialTheme.typography.titleSmall
+                    )
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    OutlinedTextField(
+                        value = uiState.payload,
+                        onValueChange = viewModel::onPayloadChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 14,
+                        maxLines = 24,
+                        enabled = !uiState.isBusy
+                    )
+                }
+            }
 
             Text(
                 text = "Reminder groups",
-                style = MaterialTheme.typography.headlineSmall
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 6.dp)
             )
 
-            Text(
-                text = reminderGroupsUiState.statusMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (reminderGroupsUiState.isLoading) {
-                CircularProgressIndicator()
-            }
-
-            if (!reminderGroupsUiState.isLoading && reminderGroupsUiState.groups.isEmpty()) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+            Card(
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "No reminder groups yet. Create one to reuse hour presets across recurring tasks.",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = reminderGroupsUiState.statusMessage,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            }
 
-            reminderGroupsUiState.groups.forEach { group ->
-                Card {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = group.name,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = "Hours: ${group.hoursLabel}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "Assigned templates: ${group.assignedTaskCount}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    if (reminderGroupsUiState.isLoading) {
+                        CircularProgressIndicator()
+                    }
 
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    if (!reminderGroupsUiState.isLoading && reminderGroupsUiState.groups.isEmpty()) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
                         ) {
-                            OutlinedButton(
-                                onClick = { reminderGroupsViewModel.startEditDraft(group.id) },
-                                enabled = !reminderGroupsUiState.isBusy
+                            Text(
+                                text = "No reminder groups yet. Create one to reuse hour presets across recurring tasks.",
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    reminderGroupsUiState.groups.forEach { group ->
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text("Edit")
-                            }
-                            OutlinedButton(
-                                onClick = { reminderGroupsViewModel.deleteGroup(group.id) },
-                                enabled = !reminderGroupsUiState.isBusy
-                            ) {
-                                Text("Delete")
+                                Text(
+                                    text = group.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Hours: ${group.hoursLabel}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Assigned templates: ${group.assignedTaskCount}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { reminderGroupsViewModel.startEditDraft(group.id) },
+                                        enabled = !reminderGroupsUiState.isBusy,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Edit")
+                                    }
+                                    OutlinedButton(
+                                        onClick = { reminderGroupsViewModel.deleteGroup(group.id) },
+                                        enabled = !reminderGroupsUiState.isBusy,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Delete")
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            OutlinedTextField(
-                value = reminderGroupsUiState.draft.name,
-                onValueChange = reminderGroupsViewModel::onDraftNameChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Group name") },
-                enabled = !reminderGroupsUiState.isBusy
-            )
-
-            OutlinedTextField(
-                value = reminderGroupsUiState.draft.hoursInput,
-                onValueChange = reminderGroupsViewModel::onDraftHoursChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Default reminder hours") },
-                supportingText = {
-                    Text("Optional. Use 24h integers (0-23), separated by commas, spaces, or semicolons.")
-                },
-                enabled = !reminderGroupsUiState.isBusy
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = reminderGroupsViewModel::saveDraft,
-                    enabled = !reminderGroupsUiState.isBusy
-                ) {
-                    Text(
-                        if (reminderGroupsUiState.draft.id == null) {
-                            "Save group"
-                        } else {
-                            "Update group"
-                        }
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
                     )
-                }
 
-                OutlinedButton(
-                    onClick = {
-                        if (reminderGroupsUiState.draft.id == null &&
-                            reminderGroupsUiState.draft.name.isBlank() &&
-                            reminderGroupsUiState.draft.hoursInput.isBlank()
+                    OutlinedTextField(
+                        value = reminderGroupsUiState.draft.name,
+                        onValueChange = reminderGroupsViewModel::onDraftNameChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Group name") },
+                        enabled = !reminderGroupsUiState.isBusy
+                    )
+
+                    OutlinedTextField(
+                        value = reminderGroupsUiState.draft.hoursInput,
+                        onValueChange = reminderGroupsViewModel::onDraftHoursChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Default reminder hours") },
+                        supportingText = {
+                            Text("Optional. Use 24h integers (0-23), separated by commas, spaces, or semicolons.")
+                        },
+                        enabled = !reminderGroupsUiState.isBusy
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = reminderGroupsViewModel::saveDraft,
+                            enabled = !reminderGroupsUiState.isBusy,
+                            modifier = Modifier.weight(1f)
                         ) {
-                            reminderGroupsViewModel.startCreateDraft()
-                        } else {
-                            reminderGroupsViewModel.clearDraft()
+                            Text(
+                                if (reminderGroupsUiState.draft.id == null) {
+                                    "Save group"
+                                } else {
+                                    "Update group"
+                                }
+                            )
                         }
-                    },
-                    enabled = !reminderGroupsUiState.isBusy
-                ) {
-                    Text(
-                        if (reminderGroupsUiState.draft.id == null) {
-                            "New draft"
-                        } else {
-                            "Cancel edit"
+
+                        OutlinedButton(
+                            onClick = {
+                                if (reminderGroupsUiState.draft.id == null &&
+                                    reminderGroupsUiState.draft.name.isBlank() &&
+                                    reminderGroupsUiState.draft.hoursInput.isBlank()
+                                ) {
+                                    reminderGroupsViewModel.startCreateDraft()
+                                } else {
+                                    reminderGroupsViewModel.clearDraft()
+                                }
+                            },
+                            enabled = !reminderGroupsUiState.isBusy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                if (reminderGroupsUiState.draft.id == null) {
+                                    "New draft"
+                                } else {
+                                    "Cancel edit"
+                                }
+                            )
                         }
-                    )
+                    }
                 }
             }
         }
@@ -997,6 +1088,7 @@ fun SettingsBackupScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SettingsPreferencesSection(
     uiState: SettingsPreferencesUiState,
@@ -1039,25 +1131,44 @@ private fun SettingsPreferencesSection(
 ) {
     Text(
         text = "App preferences",
-        style = MaterialTheme.typography.headlineSmall
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 6.dp)
     )
 
-    Text(
-        text = uiState.statusMessage,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-
-    Card {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+        )
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            if (uiState.statusMessage.isNotBlank()) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        text = uiState.statusMessage,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             Text(
                 text = "Assistant runtime",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
             )
 
             OutlinedTextField(
@@ -1132,11 +1243,19 @@ private fun SettingsPreferencesSection(
                 )
             }
 
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+            )
+
             Text(
                 text = "Appearance",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 AppThemePreference.entries.forEach { preference ->
                     FilterChip(
                         selected = uiState.draft.themePreference == preference,
@@ -1149,9 +1268,13 @@ private fun SettingsPreferencesSection(
 
             Text(
                 text = "Regional defaults",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 RegionalPreferencesMode.entries.forEach { mode ->
                     FilterChip(
                         selected = uiState.draft.regionalPreferencesMode == mode,
@@ -1234,9 +1357,14 @@ private fun SettingsPreferencesSection(
                 enabled = !uiState.isSaving
             )
 
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+            )
+
             Text(
                 text = "Backup automation",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
             )
 
             Row(
@@ -1464,6 +1592,16 @@ private fun SettingsPreferencesSection(
                 var showDefaultCurrencyPicker by remember { mutableStateOf(false) }
                 var showBaseCurrencyPicker by remember { mutableStateOf(false) }
 
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                )
+
+                Text(
+                    text = "Manual regional configuration",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+
                 OutlinedTextField(
                     value = uiState.draft.defaultLocale,
                     onValueChange = onDefaultLocaleChanged,
@@ -1656,20 +1794,26 @@ private fun SettingsPreferencesSection(
                 }
             }
 
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
                     onClick = onSave,
-                    enabled = !uiState.isLoading && !uiState.isSaving
+                    enabled = !uiState.isLoading && !uiState.isSaving,
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text("Save preferences")
                 }
 
                 OutlinedButton(
                     onClick = onReset,
-                    enabled = !uiState.isLoading && !uiState.isSaving
+                    enabled = !uiState.isLoading && !uiState.isSaving,
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text("Reset")
                 }
@@ -1682,6 +1826,173 @@ private fun AppThemePreference.toReadableLabel(): String = when (this) {
     AppThemePreference.SYSTEM -> "System"
     AppThemePreference.LIGHT -> "Light"
     AppThemePreference.DARK -> "Dark"
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CoreSettingsHeroCard(
+    themeLabel: String,
+    memoryEnabled: Boolean,
+    backupSyncEnabled: Boolean
+) {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = NeoHeroContainer,
+            contentColor = NeoHeroOnContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                text = "Core settings",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = NeoHeroOnContainer
+            )
+            Text(
+                text = "Tune app preferences, backup strategy, and reminders with one cohesive control center.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = NeoHeroOnContainer.copy(alpha = 0.76f)
+            )
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CoreSettingsStatusPill(
+                    label = "Theme",
+                    value = themeLabel
+                )
+                CoreSettingsStatusPill(
+                    label = "Memory",
+                    value = if (memoryEnabled) "Enabled" else "Off"
+                )
+                CoreSettingsStatusPill(
+                    label = "Backup",
+                    value = if (backupSyncEnabled) "Auto" else "Manual"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CoreSettingsToolsCard(
+    onOpenWorkflows: () -> Unit,
+    onOpenMemoryTools: () -> Unit
+) {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+        )
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            CoreSettingsToolRow(
+                title = "AI workflow tools",
+                description = "Run diagnostics, compatibility, and assistant workflow actions.",
+                icon = Icons.Rounded.Analytics,
+                onClick = onOpenWorkflows
+            )
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 18.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+            )
+
+            CoreSettingsToolRow(
+                title = "Assistant memory tools",
+                description = "Inspect snippets, preview compaction, and maintain memory quality.",
+                icon = Icons.Rounded.Assistant,
+                onClick = onOpenMemoryTools
+            )
+        }
+    }
+}
+
+@Composable
+private fun CoreSettingsToolRow(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Surface(
+            modifier = Modifier.size(42.dp),
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = "Open $title",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun CoreSettingsStatusPill(
+    label: String,
+    value: String
+) {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
 }
 
 private fun RegionalPreferencesMode.toReadableLabel(): String = when (this) {
