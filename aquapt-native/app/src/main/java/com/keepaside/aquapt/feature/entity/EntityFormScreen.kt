@@ -3,10 +3,10 @@ package com.keepaside.aquapt.feature.entity
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,7 +32,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.model.ConsumableUnit
 import com.keepaside.aquapt.core.model.EntityKind
+import com.keepaside.aquapt.core.media.createTempPhotoCaptureUri
 import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.ConsumableRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
@@ -121,6 +124,26 @@ fun EntityFormScreen(
             EntityKind.MEMO -> formViewModel.onMemoPhotoUriChanged(uri?.toString().orEmpty())
             EntityKind.CONSUMABLE -> formViewModel.onConsumablePhotoUriChanged(uri?.toString().orEmpty())
             else -> Unit
+        }
+    }
+    var pendingPhotoCaptureUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraCaptureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { wasSaved ->
+        val capturedUri = pendingPhotoCaptureUri
+        pendingPhotoCaptureUri = null
+        if (!wasSaved || capturedUri == null) return@rememberLauncherForActivityResult
+        when (uiState.kind) {
+            EntityKind.MEMO -> formViewModel.onMemoPhotoUriChanged(capturedUri.toString())
+            EntityKind.CONSUMABLE -> formViewModel.onConsumablePhotoUriChanged(capturedUri.toString())
+            else -> Unit
+        }
+    }
+    val launchCameraCapture = {
+        val captureUri = createTempPhotoCaptureUri(context)
+        if (captureUri != null) {
+            pendingPhotoCaptureUri = captureUri
+            cameraCaptureLauncher.launch(captureUri)
         }
     }
 
@@ -256,6 +279,15 @@ fun EntityFormScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     OutlinedButton(
+                                        onClick = launchCameraCapture,
+                                        enabled = !uiState.isSaving
+                                    ) {
+                                        Text(
+                                            if (uiState.draft.memoPhotoUri.isBlank()) "Camera" else "Retake"
+                                        )
+                                    }
+
+                                    OutlinedButton(
                                         onClick = {
                                             photoPickerLauncher.launch(
                                                 PickVisualMediaRequest.Builder()
@@ -265,9 +297,7 @@ fun EntityFormScreen(
                                         },
                                         enabled = !uiState.isSaving
                                     ) {
-                                        Text(
-                                            if (uiState.draft.memoPhotoUri.isBlank()) "Attach photo" else "Change photo"
-                                        )
+                                        Text("Library")
                                     }
 
                                     if (uiState.draft.memoPhotoUri.isNotBlank()) {
@@ -370,6 +400,19 @@ fun EntityFormScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         OutlinedButton(
+                                            onClick = launchCameraCapture,
+                                            enabled = !uiState.isSaving
+                                        ) {
+                                            Text(
+                                                if (uiState.draft.consumablePhotoUri.isBlank()) {
+                                                    "Camera"
+                                                } else {
+                                                    "Retake"
+                                                }
+                                            )
+                                        }
+
+                                        OutlinedButton(
                                             onClick = {
                                                 photoPickerLauncher.launch(
                                                     PickVisualMediaRequest.Builder()
@@ -379,13 +422,7 @@ fun EntityFormScreen(
                                             },
                                             enabled = !uiState.isSaving
                                         ) {
-                                            Text(
-                                                if (uiState.draft.consumablePhotoUri.isBlank()) {
-                                                    "Attach photo"
-                                                } else {
-                                                    "Change photo"
-                                                }
-                                            )
+                                            Text("Library")
                                         }
 
                                         if (uiState.draft.consumablePhotoUri.isNotBlank()) {

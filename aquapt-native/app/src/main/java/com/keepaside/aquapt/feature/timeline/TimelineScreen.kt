@@ -1,5 +1,6 @@
 package com.keepaside.aquapt.feature.timeline
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,11 +40,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.model.EntityKind
+import com.keepaside.aquapt.core.media.createTempPhotoCaptureUri
 import com.keepaside.aquapt.core.repository.AssetRepository
 import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.repository.AquariumRepository
@@ -130,6 +133,7 @@ fun TimelineScreen(
     )
 
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     var showQuickLogSheet by rememberSaveable { mutableStateOf(false) }
     var selectedEventId by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedEvent = uiState.dayGroups
@@ -141,6 +145,16 @@ fun TimelineScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         viewModel.onQuickLogPhotoUriChanged(uri?.toString())
+    }
+    var pendingPhotoCaptureUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraCaptureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { wasSaved ->
+        val capturedUri = pendingPhotoCaptureUri
+        pendingPhotoCaptureUri = null
+        if (wasSaved && capturedUri != null) {
+            viewModel.onQuickLogPhotoUriChanged(capturedUri.toString())
+        }
     }
 
     Box(
@@ -302,6 +316,13 @@ fun TimelineScreen(
                                 .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 .build()
                         )
+                    },
+                    onCapturePhoto = {
+                        val captureUri = createTempPhotoCaptureUri(context)
+                        if (captureUri != null) {
+                            pendingPhotoCaptureUri = captureUri
+                            cameraCaptureLauncher.launch(captureUri)
+                        }
                     },
                     onRemovePhoto = { viewModel.onQuickLogPhotoUriChanged(null) },
                     onSave = {
@@ -494,6 +515,7 @@ private fun QuickLogSheet(
     onParameterValueChanged: (TimelineParameterField, String) -> Unit,
     onCreatedAtChanged: (String) -> Unit,
     onPickPhoto: () -> Unit,
+    onCapturePhoto: () -> Unit,
     onRemovePhoto: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit
@@ -543,6 +565,7 @@ private fun QuickLogSheet(
                 uiState = uiState,
                 onMemoContentChanged = onMemoContentChanged,
                 onPickPhoto = onPickPhoto,
+                onCapturePhoto = onCapturePhoto,
                 onRemovePhoto = onRemovePhoto
             )
             TimelineQuickLogType.ISSUE -> IssueQuickLogFields(
@@ -643,6 +666,7 @@ private fun MemoQuickLogFields(
     uiState: TimelineUiState,
     onMemoContentChanged: (String) -> Unit,
     onPickPhoto: () -> Unit,
+    onCapturePhoto: () -> Unit,
     onRemovePhoto: () -> Unit
 ) {
     OutlinedTextField(
@@ -658,8 +682,11 @@ private fun MemoQuickLogFields(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        OutlinedButton(onClick = onCapturePhoto) {
+            Text(if (uiState.quickLogDraft.photoUri == null) "Camera" else "Retake")
+        }
         OutlinedButton(onClick = onPickPhoto) {
-            Text(if (uiState.quickLogDraft.photoUri == null) "Attach photo" else "Change photo")
+            Text("Library")
         }
         uiState.quickLogDraft.photoUri?.let {
             TextButton(onClick = onRemovePhoto) {

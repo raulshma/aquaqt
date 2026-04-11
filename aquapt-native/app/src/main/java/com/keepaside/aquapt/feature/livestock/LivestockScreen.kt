@@ -1,5 +1,6 @@
 package com.keepaside.aquapt.feature.livestock
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +49,7 @@ import com.keepaside.aquapt.core.model.LivestockKind
 import com.keepaside.aquapt.core.model.LivestockStatus
 import com.keepaside.aquapt.core.model.TaskFrequency
 import com.keepaside.aquapt.core.model.TaskFrequencyKind
+import com.keepaside.aquapt.core.media.createTempPhotoCaptureUri
 import com.keepaside.aquapt.core.repository.AquariumRepository
 import com.keepaside.aquapt.core.repository.LivestockRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
@@ -89,11 +92,22 @@ fun LivestockScreen(
     )
 
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         viewModel.onResidentDraftPhotoUriChanged(uri?.toString())
+    }
+    var pendingPhotoCaptureUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraCaptureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { wasSaved ->
+        val capturedUri = pendingPhotoCaptureUri
+        pendingPhotoCaptureUri = null
+        if (wasSaved && capturedUri != null) {
+            viewModel.onResidentDraftPhotoUriChanged(capturedUri.toString())
+        }
     }
 
     Box(
@@ -226,6 +240,13 @@ fun LivestockScreen(
                                     .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                     .build()
                             )
+                        },
+                        onCapturePhoto = {
+                            val captureUri = createTempPhotoCaptureUri(context)
+                            if (captureUri != null) {
+                                pendingPhotoCaptureUri = captureUri
+                                cameraCaptureLauncher.launch(captureUri)
+                            }
                         },
                         onRemovePhoto = { viewModel.onResidentDraftPhotoUriChanged(null) },
                         onSave = viewModel::saveResidentDraft,
@@ -733,6 +754,7 @@ private fun ResidentEditorCard(
     onPurchasePriceChanged: (String) -> Unit,
     onDietaryNotesChanged: (String) -> Unit,
     onPickPhoto: () -> Unit,
+    onCapturePhoto: () -> Unit,
     onRemovePhoto: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit
@@ -888,8 +910,11 @@ private fun ResidentEditorCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                OutlinedButton(onClick = onCapturePhoto) {
+                    Text(if (draft.photoUri == null) "Camera" else "Retake")
+                }
                 OutlinedButton(onClick = onPickPhoto) {
-                    Text(if (draft.photoUri == null) "Attach photo" else "Change photo")
+                    Text("Library")
                 }
                 draft.photoUri?.let {
                     TextButton(onClick = onRemovePhoto) {
