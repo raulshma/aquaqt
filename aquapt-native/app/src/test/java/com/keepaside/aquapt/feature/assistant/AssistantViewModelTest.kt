@@ -1,6 +1,7 @@
 package com.keepaside.aquapt.feature.assistant
 
 import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
+import com.keepaside.aquapt.core.assistant.AssistantDictationController
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.assistant.AssistantGatewayResponse
 import com.keepaside.aquapt.core.assistant.AssistantGatewayTelemetry
@@ -105,6 +106,76 @@ class AssistantViewModelTest {
             assertEquals("Echo: done", state.messages[1].content)
             assertTrue(state.activeConversationTitle.startsWith("Check nitrate trend"))
             assertEquals(1, gateway.requests.size)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `dictation appends transcript to composer and exits listening on final result`() = runTest {
+        val store = FakeAssistantConversationsStore()
+        val dictationController = FakeAssistantDictationController(isAvailable = true)
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = FakeAppSettingsStore(),
+            assistantGateway = FakeAssistantGateway(),
+            assistantActionReviewService = FakeAssistantActionReviewService(),
+            assistantDictationController = dictationController,
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T11:00:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onComposerTextChanged("Review")
+            viewModel.startDictation()
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.isDictating)
+            assertEquals("Listening… tap Stop when finished.", viewModel.uiState.value.statusMessage)
+
+            dictationController.emitPartial("nitrate")
+            advanceUntilIdle()
+            assertEquals("Review nitrate", viewModel.uiState.value.composerText)
+
+            dictationController.emitFinal("nitrate trends today")
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertFalse(state.isDictating)
+            assertEquals("Review nitrate trends today", state.composerText)
+            assertTrue(state.statusMessage.contains("Dictation captured"))
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `dictation unavailable surfaces status feedback`() = runTest {
+        val store = FakeAssistantConversationsStore()
+        val dictationController = FakeAssistantDictationController(isAvailable = false)
+        val viewModel = AssistantViewModel(
+            assistantConversationsStore = store,
+            appSettingsStore = FakeAppSettingsStore(),
+            assistantGateway = FakeAssistantGateway(),
+            assistantActionReviewService = FakeAssistantActionReviewService(),
+            assistantDictationController = dictationController,
+            externalScope = this,
+            nowProvider = { Instant.parse("2026-04-11T11:05:00Z") },
+            idProvider = { prefix -> "$prefix-${store.nextId()}" }
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.startDictation()
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertFalse(state.isDictating)
+            assertEquals("Dictation is unavailable on this device.", state.statusMessage)
         } finally {
             viewModel.disposeForTests()
         }
@@ -1141,6 +1212,51 @@ private class FakeAssistantGateway(
             text = finalReply,
             telemetry = telemetry
         )
+    }
+}
+
+private class FakeAssistantDictationController(
+    override val isAvailable: Boolean
+) : AssistantDictationController {
+    private var onPartialTranscript: ((String) -> Unit)? = null
+    private var onFinalTranscript: ((String) -> Unit)? = null
+    private var onError: ((String) -> Unit)? = null
+
+    override fun startListening(
+        onPartialTranscript: (String) -> Unit,
+        onFinalTranscript: (String) -> Unit,
+        onError: (String) -> Unit
+    ): Boolean {
+        if (!isAvailable) {
+            return false
+        }
+
+        this.onPartialTranscript = onPartialTranscript
+        this.onFinalTranscript = onFinalTranscript
+        this.onError = onError
+        return true
+    }
+
+    override fun stopListening() = Unit
+
+    override fun cancelListening() = Unit
+
+    override fun release() {
+        onPartialTranscript = null
+        onFinalTranscript = null
+        onError = null
+    }
+
+    fun emitPartial(value: String) {
+        onPartialTranscript?.invoke(value)
+    }
+
+    fun emitFinal(value: String) {
+        onFinalTranscript?.invoke(value)
+    }
+
+    fun emitError(value: String) {
+        onError?.invoke(value)
     }
 }
 

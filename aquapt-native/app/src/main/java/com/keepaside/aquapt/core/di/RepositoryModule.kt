@@ -4,7 +4,9 @@ import com.keepaside.aquapt.core.backup.AppStateBackupCompatibilityService
 import com.keepaside.aquapt.core.backup.BackupCompatibilityGateway
 import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
 import com.keepaside.aquapt.core.assistant.AssistantActionReviewServiceImpl
+import com.keepaside.aquapt.core.assistant.AssistantDictationController
 import com.keepaside.aquapt.core.assistant.AssistantGateway
+import com.keepaside.aquapt.core.assistant.AndroidSpeechAssistantDictationController
 import com.keepaside.aquapt.core.assistant.OpenRouterAssistantGateway
 import com.keepaside.aquapt.core.database.dao.*
 import com.keepaside.aquapt.core.repository.*
@@ -16,6 +18,7 @@ val repositoryModule = module {
     single<AssistantConversationsStore> { AssistantConversationsRepository(androidContext()) }
     single<AssistantMemoryStore> { AssistantMemoryRepository(androidContext()) }
     single<AssistantGateway> { OpenRouterAssistantGateway() }
+    single<AssistantDictationController> { AndroidSpeechAssistantDictationController(androidContext()) }
     single<AssistantActionReviewService> {
         AssistantActionReviewServiceImpl(
             aquariumRepository = get(),

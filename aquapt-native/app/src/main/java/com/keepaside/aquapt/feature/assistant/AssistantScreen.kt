@@ -1,5 +1,9 @@
 package com.keepaside.aquapt.feature.assistant
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,12 +39,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
+import com.keepaside.aquapt.core.assistant.AssistantDictationController
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.model.AssistantMessageRole
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
@@ -69,6 +76,9 @@ fun AssistantScreen(
     val assistantActionReviewService: AssistantActionReviewService = remember {
         KoinJavaComponent.get(AssistantActionReviewService::class.java)
     }
+    val assistantDictationController: AssistantDictationController = remember {
+        KoinJavaComponent.get(AssistantDictationController::class.java)
+    }
 
     val viewModel: AssistantViewModel = viewModel(
         factory = remember(
@@ -76,24 +86,37 @@ fun AssistantScreen(
             appSettingsStore,
             assistantMemoryStore,
             assistantGateway,
-            assistantActionReviewService
+            assistantActionReviewService,
+            assistantDictationController
         ) {
             AssistantViewModel.factory(
                 assistantConversationsStore = assistantStore,
                 appSettingsStore = appSettingsStore,
                 assistantMemoryStore = assistantMemoryStore,
                 assistantGateway = assistantGateway,
-                assistantActionReviewService = assistantActionReviewService
+                assistantActionReviewService = assistantActionReviewService,
+                assistantDictationController = assistantDictationController
             )
         }
     )
     val uiState by viewModel.uiState.collectAsState()
     val assistantError = uiState.assistantError
-    val controlsEnabled =
+    val dictationControlsEnabled =
         !uiState.isSending && !uiState.isExecutingActions && !uiState.isApplyingMemoryCompaction
+    val controlsEnabled = dictationControlsEnabled && !uiState.isDictating
     val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            viewModel.startDictation()
+        } else {
+            viewModel.onDictationPermissionDenied()
+        }
+    }
 
     var renameInput by remember(uiState.activeConversationId, uiState.activeConversationTitle) {
         mutableStateOf(uiState.activeConversationTitle)
@@ -745,6 +768,35 @@ fun AssistantScreen(
                         maxLines = 5,
                         enabled = controlsEnabled
                     )
+
+                    if (uiState.dictationSupported) {
+                        if (uiState.isDictating) {
+                            OutlinedButton(
+                                onClick = viewModel::stopDictation,
+                                enabled = dictationControlsEnabled
+                            ) {
+                                Text("Stop mic")
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = {
+                                    val hasMicrophonePermission = ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECORD_AUDIO
+                                    ) == PackageManager.PERMISSION_GRANTED
+
+                                    if (hasMicrophonePermission) {
+                                        viewModel.startDictation()
+                                    } else {
+                                        microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                },
+                                enabled = dictationControlsEnabled
+                            ) {
+                                Text("Dictate")
+                            }
+                        }
+                    }
 
                     if (uiState.canStopGeneration) {
                         OutlinedButton(onClick = viewModel::stopGeneration) {

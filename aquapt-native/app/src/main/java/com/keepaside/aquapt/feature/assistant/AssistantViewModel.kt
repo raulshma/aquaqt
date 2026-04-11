@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.keepaside.aquapt.core.assistant.AssistantActionReviewService
+import com.keepaside.aquapt.core.assistant.AssistantDictationController
 import com.keepaside.aquapt.core.assistant.AssistantGateway
 import com.keepaside.aquapt.core.assistant.AssistantGatewayMessage
 import com.keepaside.aquapt.core.assistant.AssistantGatewayRequest
+import com.keepaside.aquapt.core.assistant.NoOpAssistantDictationController
 import com.keepaside.aquapt.core.model.AssistantActionTypes
 import com.keepaside.aquapt.core.model.AssistantChatMessage
 import com.keepaside.aquapt.core.model.AssistantConversation
@@ -18,6 +20,7 @@ import com.keepaside.aquapt.core.model.AssistantResponseTelemetry
 import com.keepaside.aquapt.core.repository.AssistantConversationsStore
 import com.keepaside.aquapt.core.repository.AssistantMemoryStore
 import com.keepaside.aquapt.core.repository.AppSettingsStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +29,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CancellationException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -93,6 +95,7 @@ private data class AssistantTransientState(
     val sending: Boolean,
     val streamingId: String?,
     val executingActions: Boolean,
+    val dictating: Boolean,
     val memoryBusyMessageIds: Set<String>,
     val memoryPreviewing: Boolean,
     val memoryApplying: Boolean,
@@ -137,6 +140,8 @@ data class AssistantUiState(
     val isSending: Boolean = false,
     val activeStreamingMessageId: String? = null,
     val canStopGeneration: Boolean = false,
+    val dictationSupported: Boolean = false,
+    val isDictating: Boolean = false,
     val isExecutingActions: Boolean = false,
     val approvedActionCount: Int = 0,
     val canExecuteApprovedActions: Boolean = false,
@@ -160,6 +165,8 @@ class AssistantViewModel(
     private val assistantMemoryStore: AssistantMemoryStore = NoOpAssistantMemoryStore,
     private val assistantGateway: AssistantGateway,
     private val assistantActionReviewService: AssistantActionReviewService,
+    private val assistantDictationController: AssistantDictationController =
+        NoOpAssistantDictationController,
     private val externalScope: CoroutineScope? = null,
     private val nowProvider: () -> Instant = { Instant.now() },
     private val idProvider: (String) -> String = { prefix -> "$prefix-${UUID.randomUUID()}" },
@@ -174,10 +181,13 @@ class AssistantViewModel(
     private val isSending = MutableStateFlow(false)
     private val activeStreamingMessageId = MutableStateFlow<String?>(null)
     private val isExecutingActions = MutableStateFlow(false)
+    private val isDictating = MutableStateFlow(false)
     private val memoryActionBusyMessageIds = MutableStateFlow<Set<String>>(emptySet())
     private val isPreviewingMemoryCompaction = MutableStateFlow(false)
     private val isApplyingMemoryCompaction = MutableStateFlow(false)
     private val memoryCompactionPreview = MutableStateFlow<AssistantMemoryCompactionPreview?>(null)
+
+    private var dictationBaseComposerText: String = ""
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -186,7 +196,10 @@ class AssistantViewModel(
     private var generationJob: Job? = null
 
     private fun isBusy(): Boolean =
-        isSending.value || isExecutingActions.value || isApplyingMemoryCompaction.value
+        isSending.value ||
+            isExecutingActions.value ||
+            isApplyingMemoryCompaction.value ||
+            isDictating.value
 
     init {
         bootstrapConversationsIfNeeded()
@@ -325,6 +338,69 @@ class AssistantViewModel(
             retryUserMessageId = null,
             replaceAssistantMessageId = null
         )
+    }
+
+    fun startDictation() {
+        if (isBusy()) return
+
+        if (!assistantDictationController.isAvailable) {
+            statusMessage.update { "Dictation is unavailable on this device." }
+            return
+        }
+
+        dictationBaseComposerText = composerText.value.trim()
+        assistantError.update { null }
+
+        val started = assistantDictationController.startListening(
+            onPartialTranscript = { partial ->
+                if (!isDictating.value) {
+                    return@startListening
+                }
+
+                val merged = mergeDictationIntoComposer(partial)
+                composerText.update { merged }
+            },
+            onFinalTranscript = { final ->
+                val merged = mergeDictationIntoComposer(final)
+                composerText.update { merged }
+                dictationBaseComposerText = merged
+                isDictating.update { false }
+                statusMessage.update {
+                    if (merged.isBlank()) {
+                        "No speech detected. Try dictation again."
+                    } else {
+                        "Dictation captured. Review and send when ready."
+                    }
+                }
+            },
+            onError = { error ->
+                isDictating.update { false }
+                statusMessage.update {
+                    error.trim().ifBlank { "Dictation failed. Please try again." }
+                }
+            }
+        )
+
+        if (started) {
+            isDictating.update { true }
+            statusMessage.update { "Listening… tap Stop when finished." }
+        } else {
+            statusMessage.update { "Could not start dictation." }
+        }
+    }
+
+    fun stopDictation() {
+        if (!isDictating.value) return
+
+        assistantDictationController.stopListening()
+        isDictating.update { false }
+        dictationBaseComposerText = composerText.value.trim()
+        statusMessage.update { "Dictation stopped." }
+    }
+
+    fun onDictationPermissionDenied() {
+        if (isBusy()) return
+        statusMessage.update { "Microphone permission is required for dictation." }
     }
 
     fun reuseMessageAsPrompt(messageId: String) {
@@ -1137,6 +1213,7 @@ class AssistantViewModel(
                 isSending,
                 activeStreamingMessageId,
                 isExecutingActions,
+                isDictating,
                 memoryActionBusyMessageIds,
                 isPreviewingMemoryCompaction,
                 isApplyingMemoryCompaction,
@@ -1152,10 +1229,11 @@ class AssistantViewModel(
                     sending = values[5] as Boolean,
                     streamingId = values[6] as String?,
                     executingActions = values[7] as Boolean,
-                    memoryBusyMessageIds = values[8] as Set<String>,
-                    memoryPreviewing = values[9] as Boolean,
-                    memoryApplying = values[10] as Boolean,
-                    memoryPreview = values[11] as AssistantMemoryCompactionPreview?
+                    dictating = values[8] as Boolean,
+                    memoryBusyMessageIds = values[9] as Set<String>,
+                    memoryPreviewing = values[10] as Boolean,
+                    memoryApplying = values[11] as Boolean,
+                    memoryPreview = values[12] as AssistantMemoryCompactionPreview?
                 )
             }
 
@@ -1227,6 +1305,7 @@ class AssistantViewModel(
                     (transient.memoryPreview.beforeCount > 0 || transient.memoryPreview.afterCount > 0) &&
                     !transient.memoryPreviewing &&
                     !transient.memoryApplying &&
+                    !transient.dictating &&
                     !transient.sending &&
                     !transient.executingActions
 
@@ -1247,15 +1326,19 @@ class AssistantViewModel(
                     composerText = transient.composer,
                     canSend = transient.composer.trim().isNotEmpty() &&
                         activeConversation != null &&
+                        !transient.dictating &&
                         !transient.sending &&
                         !transient.executingActions &&
                         !transient.memoryApplying,
                     isSending = transient.sending,
                     activeStreamingMessageId = transient.streamingId,
                     canStopGeneration = transient.sending && !transient.streamingId.isNullOrBlank(),
+                    dictationSupported = assistantDictationController.isAvailable,
+                    isDictating = transient.dictating,
                     isExecutingActions = transient.executingActions,
                     approvedActionCount = approvedActionCount,
                     canExecuteApprovedActions = approvedActionCount > 0 &&
+                        !transient.dictating &&
                         !transient.sending &&
                         !transient.memoryApplying,
                     hasDetectedActions = detectedActions.isNotEmpty(),
@@ -1342,6 +1425,21 @@ class AssistantViewModel(
 
     private fun nowIso(): String = nowProvider().toString()
 
+    private fun mergeDictationIntoComposer(transcript: String): String {
+        val cleanedTranscript = transcript
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        if (cleanedTranscript.isBlank()) {
+            return dictationBaseComposerText
+        }
+
+        return listOf(dictationBaseComposerText, cleanedTranscript)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .trim()
+    }
+
     private fun formatDateTime(value: String): String {
         val instant = runCatching { Instant.parse(value) }.getOrNull() ?: return value
         return dateTimeFormatter.format(instant.atZone(zoneId))
@@ -1365,7 +1463,13 @@ class AssistantViewModel(
     internal fun disposeForTests() {
         observerJob?.cancel()
         generationJob?.cancel()
+        assistantDictationController.release()
         generationJob = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        assistantDictationController.release()
     }
 
     companion object {
@@ -1376,7 +1480,9 @@ class AssistantViewModel(
             appSettingsStore: AppSettingsStore,
             assistantMemoryStore: AssistantMemoryStore,
             assistantGateway: AssistantGateway,
-            assistantActionReviewService: AssistantActionReviewService
+            assistantActionReviewService: AssistantActionReviewService,
+            assistantDictationController: AssistantDictationController =
+                NoOpAssistantDictationController
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -1387,7 +1493,8 @@ class AssistantViewModel(
                             appSettingsStore = appSettingsStore,
                             assistantMemoryStore = assistantMemoryStore,
                             assistantGateway = assistantGateway,
-                            assistantActionReviewService = assistantActionReviewService
+                            assistantActionReviewService = assistantActionReviewService,
+                            assistantDictationController = assistantDictationController
                         ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
