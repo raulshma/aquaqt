@@ -1,5 +1,6 @@
 package com.keepaside.aquapt.feature.tanks
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,12 +22,19 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,6 +43,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +65,7 @@ import com.keepaside.aquapt.core.repository.ConsumableRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
 import com.keepaside.aquapt.core.repository.LivestockRepository
+import com.keepaside.aquapt.core.repository.MemoRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
@@ -90,6 +107,9 @@ fun TanksDashboardScreen(
     val timelineEventRepository: TimelineEventRepository = remember {
         KoinJavaComponent.get(TimelineEventRepository::class.java)
     }
+    val memoRepository: MemoRepository = remember {
+        KoinJavaComponent.get(MemoRepository::class.java)
+    }
 
     val viewModel: TanksDashboardViewModel = viewModel(
         factory = remember(
@@ -102,7 +122,8 @@ fun TanksDashboardScreen(
             dosingLogRepository,
             assetRepository,
             consumableRepository,
-            timelineEventRepository
+            timelineEventRepository,
+            memoRepository
         ) {
             TanksDashboardViewModel.factory(
                 aquariumRepository = aquariumRepository,
@@ -114,7 +135,8 @@ fun TanksDashboardScreen(
                 dosingLogRepository = dosingLogRepository,
                 assetRepository = assetRepository,
                 consumableRepository = consumableRepository,
-                timelineEventRepository = timelineEventRepository
+                timelineEventRepository = timelineEventRepository,
+                memoRepository = memoRepository
             )
         }
     )
@@ -124,6 +146,7 @@ fun TanksDashboardScreen(
     var livestockDraft by remember { mutableStateOf<TanksLivestockDraft?>(null) }
     var assetDraft by remember { mutableStateOf<TanksAssetDraft?>(null) }
     var consumableDraft by remember { mutableStateOf<TanksConsumableDraft?>(null) }
+    var showQuickLog by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -215,6 +238,16 @@ fun TanksDashboardScreen(
                     onCreateAsset = { assetDraft = viewModel.newAssetDraft() },
                     onCreateConsumable = { consumableDraft = viewModel.newConsumableDraft() }
                 )
+            }
+
+            if (uiState.aquariums.isNotEmpty()) {
+                item {
+                    ParameterAnalyticsCard(
+                        chartState = uiState.parameterChart,
+                        onSelectMetric = { viewModel.selectChartMetric(it) },
+                        onSelectAquarium = { viewModel.selectChartAquarium(it) }
+                    )
+                }
             }
 
             if (uiState.isEmpty) {
@@ -418,6 +451,42 @@ fun TanksDashboardScreen(
                 onConfirm = {
                     viewModel.saveConsumableDraft(draft)
                     consumableDraft = null
+                }
+            )
+        }
+
+        if (uiState.aquariums.isNotEmpty()) {
+            FloatingActionButton(
+                onClick = {
+                    viewModel.prepareQuickLog()
+                    showQuickLog = true
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 16.dp, end = 16.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Quick log")
+            }
+        }
+
+        if (showQuickLog) {
+            TanksQuickLogBottomSheet(
+                draft = uiState.quickLogDraft,
+                aquariums = uiState.aquariums,
+                dueTaskOptions = uiState.quickLogDueTaskOptions,
+                onDismiss = { showQuickLog = false },
+                onTypeSelected = { viewModel.onQuickLogTypeSelected(it) },
+                onAquariumSelected = { viewModel.onQuickLogAquariumSelected(it) },
+                onTaskTemplateSelected = { viewModel.onQuickLogTaskTemplateSelected(it) },
+                onTaskNoteChanged = { viewModel.onQuickLogTaskNoteChanged(it) },
+                onMemoContentChanged = { viewModel.onQuickLogMemoContentChanged(it) },
+                onIssueTitleChanged = { viewModel.onQuickLogIssueTitleChanged(it) },
+                onDosingProductChanged = { viewModel.onQuickLogDosingProductChanged(it) },
+                onDosingAmountChanged = { viewModel.onQuickLogDosingAmountChanged(it) },
+                onParameterChanged = { field, value -> viewModel.onQuickLogParameterChanged(field, value) },
+                onSave = {
+                    viewModel.saveQuickLog()
+                    showQuickLog = false
                 }
             )
         }
@@ -913,6 +982,180 @@ private fun formatAlertValue(value: Double, unit: String): String {
     return if (unit.isBlank()) rendered else "$rendered $unit"
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TanksQuickLogBottomSheet(
+    draft: TanksQuickLogDraft,
+    aquariums: List<AquariumDashboardCard>,
+    dueTaskOptions: List<TanksQuickLogDueTaskOption>,
+    onDismiss: () -> Unit,
+    onTypeSelected: (TanksQuickLogType) -> Unit,
+    onAquariumSelected: (String) -> Unit,
+    onTaskTemplateSelected: (String) -> Unit,
+    onTaskNoteChanged: (String) -> Unit,
+    onMemoContentChanged: (String) -> Unit,
+    onIssueTitleChanged: (String) -> Unit,
+    onDosingProductChanged: (String) -> Unit,
+    onDosingAmountChanged: (String) -> Unit,
+    onParameterChanged: (AnalyticMetric, String) -> Unit,
+    onSave: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 560.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Quick log",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(aquariums, key = { it.aquariumId }) { aquarium ->
+                    FilterChip(
+                        selected = draft.aquariumId == aquarium.aquariumId,
+                        onClick = { onAquariumSelected(aquarium.aquariumId) },
+                        label = { Text(aquarium.aquariumName, maxLines = 1) }
+                    )
+                }
+            }
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(TanksQuickLogType.entries, key = { it.name }) { type ->
+                    FilterChip(
+                        selected = draft.type == type,
+                        onClick = { onTypeSelected(type) },
+                        label = { Text(type.label) }
+                    )
+                }
+            }
+
+            when (draft.type) {
+                TanksQuickLogType.TASK -> {
+                    if (dueTaskOptions.isEmpty()) {
+                        Text(
+                            text = "No due tasks for this aquarium.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(dueTaskOptions, key = { it.taskTemplateId }) { option ->
+                                FilterChip(
+                                    selected = draft.taskTemplateId == option.taskTemplateId,
+                                    onClick = { onTaskTemplateSelected(option.taskTemplateId) },
+                                    label = { Text(option.title, maxLines = 1) }
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = draft.taskNote,
+                        onValueChange = onTaskNoteChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Note") },
+                        supportingText = { Text("Optional") },
+                        maxLines = 2
+                    )
+                }
+
+                TanksQuickLogType.PARAMETER -> {
+                    val parameterFields = listOf(
+                        AnalyticMetric.AMMONIA to "Ammonia (ppm)",
+                        AnalyticMetric.NITRITE to "Nitrite (ppm)",
+                        AnalyticMetric.NITRATE to "Nitrate (ppm)",
+                        AnalyticMetric.PH to "pH",
+                        AnalyticMetric.TEMPERATURE to "Temperature C",
+                        AnalyticMetric.GH to "GH",
+                        AnalyticMetric.KH to "KH",
+                        AnalyticMetric.SALINITY to "Salinity",
+                        AnalyticMetric.CALCIUM to "Calcium (ppm)",
+                        AnalyticMetric.ALKALINITY to "Alkalinity (dKH)"
+                    )
+                    parameterFields.forEach { (metric, label) ->
+                        val fieldValue = when (metric) {
+                            AnalyticMetric.AMMONIA -> draft.ammonia
+                            AnalyticMetric.NITRITE -> draft.nitrite
+                            AnalyticMetric.NITRATE -> draft.nitrate
+                            AnalyticMetric.PH -> draft.ph
+                            AnalyticMetric.TEMPERATURE -> draft.temperatureC
+                            AnalyticMetric.GH -> draft.gh
+                            AnalyticMetric.KH -> draft.kh
+                            AnalyticMetric.SALINITY -> draft.salinity
+                            AnalyticMetric.CALCIUM -> draft.calcium
+                            AnalyticMetric.ALKALINITY -> draft.alkalinity
+                        }
+                        OutlinedTextField(
+                            value = fieldValue,
+                            onValueChange = { onParameterChanged(metric, it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(label) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true
+                        )
+                    }
+                }
+
+                TanksQuickLogType.MEMO -> {
+                    OutlinedTextField(
+                        value = draft.memoContent,
+                        onValueChange = onMemoContentChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Memo") },
+                        minLines = 3,
+                        maxLines = 4
+                    )
+                }
+
+                TanksQuickLogType.ISSUE -> {
+                    OutlinedTextField(
+                        value = draft.issueTitle,
+                        onValueChange = onIssueTitleChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Issue title") },
+                        singleLine = true
+                    )
+                }
+
+                TanksQuickLogType.DOSING -> {
+                    OutlinedTextField(
+                        value = draft.dosingProduct,
+                        onValueChange = onDosingProductChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Product") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = draft.dosingAmountMl,
+                        onValueChange = onDosingAmountChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Amount (ml)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true
+                    )
+                }
+            }
+
+            FilledTonalButton(
+                onClick = onSave,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = draft.aquariumId != null && draft.canAttemptSave()
+            ) {
+                Text("Save")
+            }
+        }
+    }
+}
+
 private fun WaterType.label(): String =
     name.lowercase().replaceFirstChar { it.uppercaseChar() }
 
@@ -921,3 +1164,229 @@ private fun LivestockKind.label(): String =
 
 private fun AssetCategory.label(): String =
     name.lowercase().replaceFirstChar { it.uppercaseChar() }
+
+private val ANALYTIC_METRIC_COLORS: Map<AnalyticMetric, Color> = mapOf(
+    AnalyticMetric.AMMONIA to Color(0xFFEF4444),
+    AnalyticMetric.NITRITE to Color(0xFFF97316),
+    AnalyticMetric.NITRATE to Color(0xFF22C55E),
+    AnalyticMetric.PH to Color(0xFF0EA5E9),
+    AnalyticMetric.TEMPERATURE to Color(0xFF8B5CF6),
+    AnalyticMetric.GH to Color(0xFF14B8A6),
+    AnalyticMetric.KH to Color(0xFF06B6D4),
+    AnalyticMetric.SALINITY to Color(0xFF0D9488),
+    AnalyticMetric.CALCIUM to Color(0xFF2563EB),
+    AnalyticMetric.ALKALINITY to Color(0xFF9333EA)
+)
+
+@Composable
+private fun ParameterAnalyticsCard(
+    chartState: ParameterChartState,
+    onSelectMetric: (AnalyticMetric) -> Unit,
+    onSelectAquarium: (String?) -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Parameter analytics",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "Track recent chemistry shifts and compare trends across tanks.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AssistChip(
+                            onClick = {},
+                            label = {
+                                Text("${chartState.selectedMetric.label} trend")
+                            }
+                        )
+                        AssistChip(
+                            onClick = {},
+                            label = {
+                                Text("Last ${chartState.chartData.size} logs")
+                            }
+                        )
+                    }
+
+                    if (chartState.availableAquariums.size > 1) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(chartState.availableAquariums, key = { it.first }) { (id, name) ->
+                                FilterChip(
+                                    selected = chartState.selectedAquariumId == id,
+                                    onClick = { onSelectAquarium(id) },
+                                    label = { Text(name, maxLines = 1) }
+                                )
+                            }
+                        }
+                    }
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(AnalyticMetric.entries, key = { it.name }) { metric ->
+                            FilterChip(
+                                selected = chartState.selectedMetric == metric,
+                                onClick = { onSelectMetric(metric) },
+                                label = { Text(metric.label) }
+                            )
+                        }
+                    }
+
+                    if (chartState.chartData.size >= 2) {
+                        ParameterTrendChart(
+                            data = chartState.chartData,
+                            lineColor = ANALYTIC_METRIC_COLORS[chartState.selectedMetric]
+                                ?: MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Unit: ${chartState.selectedMetric.unit.ifBlank { "value" }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "Need at least 2 ${chartState.selectedMetric.label} logs for charting.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParameterTrendChart(
+    data: List<ParameterChartDataPoint>,
+    lineColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val textColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)
+    val surfaceColor = MaterialTheme.colorScheme.surface
+
+    val values = data.map { it.value }
+    val minValue = values.minOrNull() ?: 0.0
+    val maxValue = values.maxOrNull() ?: 0.0
+    val valueRange = if (maxValue == minValue) 1.0 else maxValue - minValue
+    val padding = valueRange * 0.1
+    val chartMin = minValue - padding
+    val chartMax = maxValue + padding
+    val chartRange = chartMax - chartMin
+
+    val textStyle = android.graphics.Paint().apply {
+        color = textColor.hashCode()
+        textSize = 28f
+        textAlign = android.graphics.Paint.Align.CENTER
+    }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(180.dp)
+    ) {
+        val leftPadding = 40.dp.toPx()
+        val bottomPadding = 28.dp.toPx()
+        val topPadding = 8.dp.toPx()
+        val rightPadding = 8.dp.toPx()
+        val chartWidth = size.width - leftPadding - rightPadding
+        val chartHeight = size.height - bottomPadding - topPadding
+
+        val ySteps = 4
+        for (i in 0..ySteps) {
+            val fraction = i.toFloat() / ySteps
+            val y = topPadding + chartHeight * (1f - fraction)
+            drawLine(
+                color = gridColor,
+                start = Offset(leftPadding, y),
+                end = Offset(size.width - rightPadding, y),
+                strokeWidth = 1.dp.toPx()
+            )
+            val yValue = chartMin + chartRange * fraction
+            drawContext.canvas.nativeCanvas.drawText(
+                String.format("%.1f", yValue),
+                leftPadding / 2f,
+                y + 4.dp.toPx(),
+                textStyle
+            )
+        }
+
+        val xStep = if (data.size > 1) chartWidth / (data.size - 1) else chartWidth
+        for (i in data.indices) {
+            val x = leftPadding + i * xStep
+            drawContext.canvas.nativeCanvas.drawText(
+                data[i].dayLabel,
+                x,
+                size.height - 4.dp.toPx(),
+                textStyle
+            )
+        }
+
+        val points = data.mapIndexed { index, point ->
+            val x = leftPadding + index * xStep
+            val normalizedValue = ((point.value - chartMin) / chartRange).toFloat()
+                .coerceIn(0f, 1f)
+            val y = topPadding + chartHeight * (1f - normalizedValue)
+            Offset(x, y)
+        }
+
+        val areaPath = Path().apply {
+            moveTo(points.first().x, topPadding + chartHeight)
+            points.forEach { offset ->
+                lineTo(offset.x, offset.y)
+            }
+            lineTo(points.last().x, topPadding + chartHeight)
+            close()
+        }
+        drawPath(
+            path = areaPath,
+            color = lineColor.copy(alpha = 0.12f)
+        )
+
+        val linePath = Path().apply {
+            moveTo(points.first().x, points.first().y)
+            for (i in 1 until points.size) {
+                lineTo(points[i].x, points[i].y)
+            }
+        }
+        drawPath(
+            path = linePath,
+            color = lineColor,
+            style = Stroke(width = 2.5.dp.toPx())
+        )
+
+        points.forEach { point ->
+            drawRoundRect(
+                color = lineColor,
+                topLeft = Offset(point.x - 3.dp.toPx(), point.y - 3.dp.toPx()),
+                size = Size(6.dp.toPx(), 6.dp.toPx()),
+                cornerRadius = CornerRadius(2.dp.toPx())
+            )
+        }
+    }
+}

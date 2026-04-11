@@ -13,15 +13,18 @@ import com.keepaside.aquapt.core.model.Consumable
 import com.keepaside.aquapt.core.model.ConsumableUnit
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.core.model.EntityRef
+import com.keepaside.aquapt.core.model.DosingLog
 import com.keepaside.aquapt.core.model.Issue
 import com.keepaside.aquapt.core.model.IssueStatus
 import com.keepaside.aquapt.core.model.Livestock
 import com.keepaside.aquapt.core.model.LivestockKind
+import com.keepaside.aquapt.core.model.Memo
 import com.keepaside.aquapt.core.model.TaskExecution
 import com.keepaside.aquapt.core.model.TaskTemplate
 import com.keepaside.aquapt.core.model.TimelineEvent
 import com.keepaside.aquapt.core.model.TimelineEventType
 import com.keepaside.aquapt.core.model.WaterParameterLog
+import com.keepaside.aquapt.core.model.WaterParameters
 import com.keepaside.aquapt.core.model.WaterType
 import com.keepaside.aquapt.core.repository.AssetRepository
 import com.keepaside.aquapt.core.repository.AquariumRepository
@@ -29,6 +32,7 @@ import com.keepaside.aquapt.core.repository.ConsumableRepository
 import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.IssueRepository
 import com.keepaside.aquapt.core.repository.LivestockRepository
+import com.keepaside.aquapt.core.repository.MemoRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
@@ -89,6 +93,44 @@ data class AquariumDashboardCard(
     val activeAlertCount: Int
 )
 
+enum class AnalyticMetric(val label: String, val unit: String) {
+    AMMONIA("NH3", "ppm"),
+    NITRITE("NO2", "ppm"),
+    NITRATE("NO3", "ppm"),
+    PH("pH", ""),
+    TEMPERATURE("Temp", "°C"),
+    GH("GH", ""),
+    KH("KH", ""),
+    SALINITY("Sal", ""),
+    CALCIUM("Ca", "ppm"),
+    ALKALINITY("Alk", "dKH");
+
+    fun extractFrom(params: WaterParameters): Double? = when (this) {
+        AMMONIA -> params.ammonia
+        NITRITE -> params.nitrite
+        NITRATE -> params.nitrate
+        PH -> params.ph
+        TEMPERATURE -> params.temperatureC
+        GH -> params.gh
+        KH -> params.kh
+        SALINITY -> params.salinity
+        CALCIUM -> params.calcium
+        ALKALINITY -> params.alkalinity
+    }
+}
+
+data class ParameterChartDataPoint(
+    val value: Double,
+    val dayLabel: String
+)
+
+data class ParameterChartState(
+    val selectedMetric: AnalyticMetric = AnalyticMetric.NITRATE,
+    val selectedAquariumId: String? = null,
+    val chartData: List<ParameterChartDataPoint> = emptyList(),
+    val availableAquariums: List<Pair<String, String>> = emptyList()
+)
+
 data class TanksDashboardUiState(
     val isLoading: Boolean = true,
     val isEmpty: Boolean = false,
@@ -97,6 +139,9 @@ data class TanksDashboardUiState(
     val alerts: List<AquariumAlertItem> = emptyList(),
     val dueTasks: List<DueTaskItem> = emptyList(),
     val aquariums: List<AquariumDashboardCard> = emptyList(),
+    val parameterChart: ParameterChartState = ParameterChartState(),
+    val quickLogDraft: TanksQuickLogDraft = TanksQuickLogDraft(),
+    val quickLogDueTaskOptions: List<TanksQuickLogDueTaskOption> = emptyList(),
     val statusMessage: String? = null
 )
 
@@ -135,8 +180,47 @@ data class TanksConsumableDraft(
     val updatedAtInput: String = ""
 )
 
+enum class TanksQuickLogType(val label: String) {
+    TASK("Task"),
+    PARAMETER("Parameters"),
+    MEMO("Memo"),
+    ISSUE("Issue"),
+    DOSING("Dosing")
+}
+
+data class TanksQuickLogDueTaskOption(
+    val taskTemplateId: String,
+    val title: String,
+    val aquariumName: String
+)
+
+data class TanksQuickLogDraft(
+    val type: TanksQuickLogType = TanksQuickLogType.PARAMETER,
+    val aquariumId: String? = null,
+    val taskTemplateId: String = "",
+    val taskNote: String = "",
+    val memoContent: String = "",
+    val photoUri: String? = null,
+    val issueTitle: String = "",
+    val dosingProduct: String = "",
+    val dosingAmountMl: String = "",
+    val ammonia: String = "",
+    val nitrite: String = "",
+    val nitrate: String = "",
+    val ph: String = "",
+    val temperatureC: String = "",
+    val gh: String = "",
+    val kh: String = "",
+    val salinity: String = "",
+    val calcium: String = "",
+    val alkalinity: String = ""
+)
+
 private data class TanksInteractionState(
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    val selectedMetric: AnalyticMetric = AnalyticMetric.NITRATE,
+    val selectedChartAquariumId: String? = null,
+    val quickLogDraft: TanksQuickLogDraft = TanksQuickLogDraft()
 )
 
 class TanksDashboardViewModel(
@@ -150,6 +234,7 @@ class TanksDashboardViewModel(
     private val assetRepository: AssetRepository,
     private val consumableRepository: ConsumableRepository,
     private val timelineEventRepository: TimelineEventRepository,
+    private val memoRepository: MemoRepository,
     private val nowProvider: () -> Instant = { Instant.now() },
     private val idProvider: () -> String = { UUID.randomUUID().toString() },
     private val zoneId: ZoneId = ZoneId.systemDefault()
@@ -186,6 +271,15 @@ class TanksDashboardViewModel(
                 dosingLogRepository.getAll(),
                 interactionState
             ) { base, issues, parameterLogs, dosingLogs, interaction ->
+                val quickLogDraft = interaction.quickLogDraft
+                val dueTaskOptions = buildQuickLogDueTaskOptions(
+                    quickLogDraft.aquariumId,
+                    base.taskTemplates,
+                    base.taskExecutions,
+                    base.aquariums,
+                    nowProvider(),
+                    zoneId
+                )
                 assembleTanksDashboardUiState(
                     aquariums = base.aquariums,
                     livestock = base.livestock,
@@ -195,8 +289,14 @@ class TanksDashboardViewModel(
                     parameterLogs = parameterLogs,
                     dosingLogCount = dosingLogs.size,
                     now = nowProvider(),
-                    zoneId = zoneId
-                ).copy(statusMessage = interaction.statusMessage)
+                    zoneId = zoneId,
+                    selectedMetric = interaction.selectedMetric,
+                    selectedChartAquariumId = interaction.selectedChartAquariumId
+                ).copy(
+                    statusMessage = interaction.statusMessage,
+                    quickLogDraft = quickLogDraft,
+                    quickLogDueTaskOptions = dueTaskOptions
+                )
             }.collect { next ->
                 _uiState.update {
                     next.copy(isLoading = false)
@@ -448,6 +548,251 @@ class TanksDashboardViewModel(
         interactionState.update { it.copy(statusMessage = message) }
     }
 
+    fun selectChartMetric(metric: AnalyticMetric) {
+        interactionState.update { it.copy(selectedMetric = metric) }
+    }
+
+    fun selectChartAquarium(aquariumId: String?) {
+        interactionState.update { it.copy(selectedChartAquariumId = aquariumId) }
+    }
+
+    fun prepareQuickLog() {
+        val state = _uiState.value
+        val preferredAquariumId = state.quickLogDraft.aquariumId
+            ?: state.aquariums.firstOrNull()?.aquariumId
+
+        interactionState.update { it.copy(quickLogDraft = TanksQuickLogDraft(aquariumId = preferredAquariumId)) }
+    }
+
+    fun onQuickLogTypeSelected(type: TanksQuickLogType) {
+        interactionState.update { it.copy(quickLogDraft = it.quickLogDraft.copy(type = type)) }
+    }
+
+    fun onQuickLogAquariumSelected(aquariumId: String) {
+        interactionState.update {
+            it.copy(quickLogDraft = it.quickLogDraft.copy(aquariumId = aquariumId, taskTemplateId = ""))
+        }
+    }
+
+    fun onQuickLogTaskTemplateSelected(taskTemplateId: String) {
+        interactionState.update { it.copy(quickLogDraft = it.quickLogDraft.copy(taskTemplateId = taskTemplateId)) }
+    }
+
+    fun onQuickLogTaskNoteChanged(taskNote: String) {
+        interactionState.update { it.copy(quickLogDraft = it.quickLogDraft.copy(taskNote = taskNote)) }
+    }
+
+    fun onQuickLogMemoContentChanged(content: String) {
+        interactionState.update { it.copy(quickLogDraft = it.quickLogDraft.copy(memoContent = content)) }
+    }
+
+    fun onQuickLogPhotoUriChanged(photoUri: String?) {
+        interactionState.update {
+            it.copy(quickLogDraft = it.quickLogDraft.copy(photoUri = photoUri?.trim()?.takeIf { s -> s.isNotEmpty() }))
+        }
+    }
+
+    fun onQuickLogIssueTitleChanged(title: String) {
+        interactionState.update { it.copy(quickLogDraft = it.quickLogDraft.copy(issueTitle = title)) }
+    }
+
+    fun onQuickLogDosingProductChanged(product: String) {
+        interactionState.update { it.copy(quickLogDraft = it.quickLogDraft.copy(dosingProduct = product)) }
+    }
+
+    fun onQuickLogDosingAmountChanged(amountMl: String) {
+        interactionState.update { it.copy(quickLogDraft = it.quickLogDraft.copy(dosingAmountMl = amountMl)) }
+    }
+
+    fun onQuickLogParameterChanged(field: AnalyticMetric, value: String) {
+        interactionState.update {
+            it.copy(quickLogDraft = it.quickLogDraft.copyParameterValue(field, value))
+        }
+    }
+
+    fun saveQuickLog() {
+        val draft = interactionState.value.quickLogDraft
+        val aquariumId = draft.aquariumId
+
+        if (aquariumId == null) {
+            setStatus("Add a tank before logging activity.")
+            return
+        }
+
+        val validationError = validateTanksQuickLogDraft(draft)
+        if (validationError != null) {
+            setStatus(validationError)
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                saveQuickLogRecord(draft, aquariumId)
+            }.onSuccess {
+                interactionState.update { state ->
+                    state.copy(quickLogDraft = state.quickLogDraft.clearedAfterSave())
+                }
+                val aquariumName = _uiState.value.aquariums
+                    .firstOrNull { it.aquariumId == aquariumId }?.aquariumName ?: "tank"
+                setStatus("${draft.type.label} added to $aquariumName.")
+            }.onFailure { error ->
+                setStatus(error.message ?: "Unable to save activity.")
+            }
+        }
+    }
+
+    private suspend fun saveQuickLogRecord(draft: TanksQuickLogDraft, aquariumId: String) {
+        val now = nowProvider()
+        when (draft.type) {
+            TanksQuickLogType.TASK -> saveQuickTaskLog(draft, aquariumId, now)
+            TanksQuickLogType.PARAMETER -> saveQuickParameterLog(draft, aquariumId, now)
+            TanksQuickLogType.MEMO -> saveQuickMemoLog(draft, aquariumId, now)
+            TanksQuickLogType.ISSUE -> saveQuickIssueLog(draft, aquariumId, now)
+            TanksQuickLogType.DOSING -> saveQuickDosingLog(draft, aquariumId, now)
+        }
+    }
+
+    private suspend fun saveQuickTaskLog(draft: TanksQuickLogDraft, aquariumId: String, now: Instant) {
+        val taskTemplateId = draft.taskTemplateId.trim()
+        val taskTemplate = taskTemplateRepository.getById(taskTemplateId)
+            ?: error("Selected task could not be found.")
+
+        val note = draft.taskNote.trim().takeIf { it.isNotEmpty() }
+        val executionId = idProvider()
+
+        taskExecutionRepository.upsert(
+            TaskExecution(
+                id = executionId,
+                taskTemplateId = taskTemplate.id,
+                aquariumId = aquariumId,
+                completedAt = now.toString(),
+                note = note
+            )
+        )
+        timelineEventRepository.upsert(
+            TimelineEvent(
+                id = idProvider(),
+                aquariumId = aquariumId,
+                type = TimelineEventType.TASK,
+                createdAt = now.toString(),
+                title = "${taskTemplate.title} completed",
+                description = note,
+                source = EntityRef(EntityKind.TASK, taskTemplate.id, aquariumId),
+                related = buildList {
+                    taskTemplate.livestockId?.let { lid ->
+                        add(EntityRef(EntityKind.LIVESTOCK, lid, aquariumId))
+                    }
+                }
+            )
+        )
+    }
+
+    private suspend fun saveQuickParameterLog(draft: TanksQuickLogDraft, aquariumId: String, now: Instant) {
+        val values = draft.toWaterParameters()
+        val parameterLogId = idProvider()
+
+        waterParameterLogRepository.upsert(
+            WaterParameterLog(
+                id = parameterLogId,
+                aquariumId = aquariumId,
+                createdAt = now.toString(),
+                values = values
+            )
+        )
+        timelineEventRepository.upsert(
+            TimelineEvent(
+                id = idProvider(),
+                aquariumId = aquariumId,
+                type = TimelineEventType.PARAMETER,
+                createdAt = now.toString(),
+                title = "Water parameters",
+                description = values.summaryLabel(),
+                source = EntityRef(EntityKind.PARAMETER_LOG, parameterLogId, aquariumId)
+            )
+        )
+    }
+
+    private suspend fun saveQuickMemoLog(draft: TanksQuickLogDraft, aquariumId: String, now: Instant) {
+        val content = draft.memoContent.trim()
+        val memoId = idProvider()
+
+        memoRepository.upsert(
+            Memo(
+                id = memoId,
+                aquariumId = aquariumId,
+                content = content,
+                createdAt = now.toString(),
+                photoUri = draft.photoUri
+            )
+        )
+        timelineEventRepository.upsert(
+            TimelineEvent(
+                id = idProvider(),
+                aquariumId = aquariumId,
+                type = TimelineEventType.MEMO,
+                createdAt = now.toString(),
+                title = "Memo",
+                description = content,
+                photoUri = draft.photoUri,
+                source = EntityRef(EntityKind.MEMO, memoId, aquariumId)
+            )
+        )
+    }
+
+    private suspend fun saveQuickIssueLog(draft: TanksQuickLogDraft, aquariumId: String, now: Instant) {
+        val title = draft.issueTitle.trim()
+        val issueId = idProvider()
+
+        issueRepository.upsert(
+            Issue(
+                id = issueId,
+                aquariumId = aquariumId,
+                title = title,
+                status = IssueStatus.OPEN,
+                createdAt = now.toString()
+            )
+        )
+        timelineEventRepository.upsert(
+            TimelineEvent(
+                id = idProvider(),
+                aquariumId = aquariumId,
+                type = TimelineEventType.ISSUE,
+                createdAt = now.toString(),
+                title = title,
+                description = "Open issue",
+                source = EntityRef(EntityKind.ISSUE, issueId, aquariumId)
+            )
+        )
+    }
+
+    private suspend fun saveQuickDosingLog(draft: TanksQuickLogDraft, aquariumId: String, now: Instant) {
+        val amountMl = parseTanksQuickPositiveAmount(draft.dosingAmountMl)
+            ?: error("Amount must be a positive number.")
+        val product = draft.dosingProduct.trim()
+        val dosingLogId = idProvider()
+
+        dosingLogRepository.upsert(
+            DosingLog(
+                id = dosingLogId,
+                aquariumId = aquariumId,
+                product = product,
+                amountMl = amountMl,
+                createdAt = now.toString()
+            )
+        )
+        timelineEventRepository.upsert(
+            TimelineEvent(
+                id = idProvider(),
+                aquariumId = aquariumId,
+                type = TimelineEventType.DOSING,
+                createdAt = now.toString(),
+                title = "Dosed $product",
+                description = "${formatQuickAmount(amountMl)} ml",
+                source = EntityRef(EntityKind.DOSING, dosingLogId, aquariumId)
+            )
+        )
+    }
+
     private data class BaseDashboardData(
         val aquariums: List<Aquarium>,
         val livestock: List<Livestock>,
@@ -466,7 +811,8 @@ class TanksDashboardViewModel(
             dosingLogRepository: DosingLogRepository,
             assetRepository: AssetRepository,
             consumableRepository: ConsumableRepository,
-            timelineEventRepository: TimelineEventRepository
+            timelineEventRepository: TimelineEventRepository,
+            memoRepository: MemoRepository
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -482,7 +828,8 @@ class TanksDashboardViewModel(
                             dosingLogRepository = dosingLogRepository,
                             assetRepository = assetRepository,
                             consumableRepository = consumableRepository,
-                            timelineEventRepository = timelineEventRepository
+                            timelineEventRepository = timelineEventRepository,
+                            memoRepository = memoRepository
                         ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -500,7 +847,9 @@ internal fun assembleTanksDashboardUiState(
     parameterLogs: List<WaterParameterLog>,
     dosingLogCount: Int,
     now: Instant,
-    zoneId: ZoneId
+    zoneId: ZoneId,
+    selectedMetric: AnalyticMetric = AnalyticMetric.NITRATE,
+    selectedChartAquariumId: String? = null
 ): TanksDashboardUiState {
     if (aquariums.isEmpty()) {
         return TanksDashboardUiState(
@@ -514,6 +863,11 @@ internal fun assembleTanksDashboardUiState(
                 parameterAlertCount = 0,
                 dosingLogCount = dosingLogCount,
                 parameterLogCount = parameterLogs.size
+            ),
+            parameterChart = ParameterChartState(
+                selectedMetric = selectedMetric,
+                chartData = emptyList(),
+                availableAquariums = emptyList()
             )
         )
     }
@@ -598,6 +952,32 @@ internal fun assembleTanksDashboardUiState(
         else -> "Everything looks steady across ${aquariums.size} tank${if (aquariums.size == 1) "" else "s"}."
     }
 
+    val chartAquariumId = selectedChartAquariumId ?: aquariums.firstOrNull()?.id
+    val chartData = if (chartAquariumId != null) {
+        parameterLogs
+            .filter { it.aquariumId == chartAquariumId }
+            .sortedBy { parseToInstant(it.createdAt, zoneId)?.toEpochMilli() ?: Long.MIN_VALUE }
+            .mapNotNull { log ->
+                selectedMetric.extractFrom(log.values)?.let { value ->
+                    ParameterChartDataPoint(
+                        value = value,
+                        dayLabel = parseToInstant(log.createdAt, zoneId)
+                            ?.atZone(zoneId)?.dayOfMonth?.toString() ?: "?"
+                    )
+                }
+            }
+            .takeLast(8)
+    } else {
+        emptyList()
+    }
+
+    val parameterChart = ParameterChartState(
+        selectedMetric = selectedMetric,
+        selectedAquariumId = chartAquariumId,
+        chartData = chartData,
+        availableAquariums = aquariums.map { it.id to it.name }
+    )
+
     return TanksDashboardUiState(
         isEmpty = false,
         headline = headline,
@@ -615,7 +995,8 @@ internal fun assembleTanksDashboardUiState(
                 .thenBy { abs(it.value) }
         ),
         dueTasks = dueTaskItems,
-        aquariums = aquariumCards
+        aquariums = aquariumCards,
+        parameterChart = parameterChart
     )
 }
 
@@ -800,4 +1181,138 @@ private fun formatMoneyValue(value: Double): String =
         "$${value.toInt()}"
     } else {
         String.format("$%.2f", value)
+    }
+
+private fun formatQuickAmount(value: Double): String =
+    if (value % 1.0 == 0.0) {
+        value.toLong().toString()
+    } else {
+        value.toString()
+    }
+
+internal fun buildQuickLogDueTaskOptions(
+    selectedAquariumId: String?,
+    taskTemplates: List<TaskTemplate>,
+    taskExecutions: List<TaskExecution>,
+    aquariums: List<Aquarium>,
+    now: Instant,
+    zoneId: ZoneId
+): List<TanksQuickLogDueTaskOption> {
+    val aquariumNameById = aquariums.associate { it.id to it.name }
+    val targetAquariumId = selectedAquariumId ?: return emptyList()
+
+    return taskTemplates
+        .filter { it.aquariumIds.contains(targetAquariumId) }
+        .filter { isTaskDue(it, targetAquariumId, taskExecutions, now, zoneId) }
+        .map { task ->
+            TanksQuickLogDueTaskOption(
+                taskTemplateId = task.id,
+                title = task.title,
+                aquariumName = aquariumNameById[targetAquariumId] ?: "Unknown tank"
+            )
+        }
+}
+
+internal fun validateTanksQuickLogDraft(draft: TanksQuickLogDraft): String? = when (draft.type) {
+    TanksQuickLogType.TASK ->
+        if (draft.taskTemplateId.isBlank()) "Choose a due task before saving." else null
+    TanksQuickLogType.MEMO ->
+        if (draft.memoContent.isBlank()) "Write a memo before saving." else null
+    TanksQuickLogType.ISSUE ->
+        if (draft.issueTitle.isBlank()) "Name the issue before saving." else null
+    TanksQuickLogType.PARAMETER ->
+        if (!draft.hasAnyParameterInput()) "Enter at least one parameter value." else null
+    TanksQuickLogType.DOSING -> when {
+        draft.dosingProduct.isBlank() -> "Name the dosing product before saving."
+        parseTanksQuickPositiveAmount(draft.dosingAmountMl) == null -> "Amount must be a positive number."
+        else -> null
+    }
+}
+
+internal fun parseTanksQuickPositiveAmount(raw: String): Double? {
+    val number = raw.trim().toDoubleOrNull() ?: return null
+    return number.takeIf { it.isFinite() && it > 0.0 }
+}
+
+internal fun TanksQuickLogDraft.hasAnyParameterInput(): Boolean =
+    listOf(ammonia, nitrite, nitrate, ph, temperatureC, gh, kh, salinity, calcium, alkalinity)
+        .any { it.isNotBlank() }
+
+internal fun TanksQuickLogDraft.toWaterParameters(): WaterParameters {
+    fun value(raw: String): Double? {
+        if (raw.isBlank()) return null
+        val number = raw.trim().toDoubleOrNull() ?: return null
+        return number.takeIf { it.isFinite() }
+    }
+
+    return WaterParameters(
+        ammonia = value(ammonia),
+        nitrite = value(nitrite),
+        nitrate = value(nitrate),
+        ph = value(ph),
+        temperatureC = value(temperatureC),
+        gh = value(gh),
+        kh = value(kh),
+        salinity = value(salinity),
+        calcium = value(calcium),
+        alkalinity = value(alkalinity)
+    )
+}
+
+private fun WaterParameters.summaryLabel(): String =
+    listOfNotNull(
+        ammonia?.let { "Ammonia ${formatQuickAmount(it)}" },
+        nitrite?.let { "Nitrite ${formatQuickAmount(it)}" },
+        nitrate?.let { "Nitrate ${formatQuickAmount(it)}" },
+        ph?.let { "pH ${formatQuickAmount(it)}" },
+        temperatureC?.let { "Temp ${formatQuickAmount(it)} C" },
+        gh?.let { "GH ${formatQuickAmount(it)}" },
+        kh?.let { "KH ${formatQuickAmount(it)}" },
+        salinity?.let { "Salinity ${formatQuickAmount(it)}" },
+        calcium?.let { "Calcium ${formatQuickAmount(it)}" },
+        alkalinity?.let { "Alkalinity ${formatQuickAmount(it)}" }
+    ).joinToString(", ")
+
+internal fun TanksQuickLogDraft.canAttemptSave(): Boolean =
+    aquariumId != null && when (type) {
+        TanksQuickLogType.TASK -> taskTemplateId.isNotBlank()
+        TanksQuickLogType.MEMO -> memoContent.isNotBlank()
+        TanksQuickLogType.ISSUE -> issueTitle.isNotBlank()
+        TanksQuickLogType.PARAMETER -> hasAnyParameterInput()
+        TanksQuickLogType.DOSING -> dosingProduct.isNotBlank() && dosingAmountMl.isNotBlank()
+    }
+
+private fun TanksQuickLogDraft.clearedAfterSave(): TanksQuickLogDraft =
+    copy(
+        taskTemplateId = "",
+        taskNote = "",
+        memoContent = "",
+        photoUri = null,
+        issueTitle = "",
+        dosingProduct = "",
+        dosingAmountMl = "",
+        ammonia = "",
+        nitrite = "",
+        nitrate = "",
+        ph = "",
+        temperatureC = "",
+        gh = "",
+        kh = "",
+        salinity = "",
+        calcium = "",
+        alkalinity = ""
+    )
+
+private fun TanksQuickLogDraft.copyParameterValue(field: AnalyticMetric, value: String): TanksQuickLogDraft =
+    when (field) {
+        AnalyticMetric.AMMONIA -> copy(ammonia = value)
+        AnalyticMetric.NITRITE -> copy(nitrite = value)
+        AnalyticMetric.NITRATE -> copy(nitrate = value)
+        AnalyticMetric.PH -> copy(ph = value)
+        AnalyticMetric.TEMPERATURE -> copy(temperatureC = value)
+        AnalyticMetric.GH -> copy(gh = value)
+        AnalyticMetric.KH -> copy(kh = value)
+        AnalyticMetric.SALINITY -> copy(salinity = value)
+        AnalyticMetric.CALCIUM -> copy(calcium = value)
+        AnalyticMetric.ALKALINITY -> copy(alkalinity = value)
     }
