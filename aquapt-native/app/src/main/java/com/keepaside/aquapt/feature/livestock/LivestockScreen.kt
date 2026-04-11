@@ -1,5 +1,8 @@
 package com.keepaside.aquapt.feature.livestock
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +39,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.keepaside.aquapt.core.model.EntityKind
+import com.keepaside.aquapt.core.model.LivestockKind
 import com.keepaside.aquapt.core.model.LivestockStatus
 import com.keepaside.aquapt.core.model.TaskFrequency
 import com.keepaside.aquapt.core.model.TaskFrequencyKind
@@ -46,6 +52,7 @@ import org.koin.java.KoinJavaComponent
 
 @Composable
 fun LivestockScreen(
+    onOpenEntityDeepLink: (EntityKind, String, String?) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp)
 ) {
@@ -80,6 +87,12 @@ fun LivestockScreen(
 
     val uiState by viewModel.uiState.collectAsState()
 
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        viewModel.onResidentDraftPhotoUriChanged(uri?.toString())
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -95,7 +108,10 @@ fun LivestockScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                LivestockOverviewCard(uiState)
+                LivestockOverviewCard(
+                    uiState = uiState,
+                    onAddResident = viewModel::startCreateResident
+                )
             }
 
             item {
@@ -147,6 +163,8 @@ fun LivestockScreen(
                     LivestockDetailCard(
                         uiState = uiState,
                         resident = resident,
+                        onStartEditResident = viewModel::startEditSelectedResident,
+                        onOpenEntity = onOpenEntityDeepLink,
                         onFeedingNoteChanged = viewModel::onFeedingNoteChanged,
                         onSaveFeedingNotes = viewModel::saveFeedingNotes,
                         onStatusSelected = viewModel::onStatusSelected,
@@ -182,6 +200,35 @@ fun LivestockScreen(
                 }
             }
 
+            uiState.residentEditorDraft?.let { draft ->
+                item {
+                    ResidentEditorCard(
+                        uiState = uiState,
+                        draft = draft,
+                        onAquariumSelected = viewModel::onResidentDraftAquariumSelected,
+                        onParentSelected = viewModel::onResidentDraftParentSelected,
+                        onNameChanged = viewModel::onResidentDraftNameChanged,
+                        onSpeciesChanged = viewModel::onResidentDraftSpeciesChanged,
+                        onQuantityChanged = viewModel::onResidentDraftQuantityChanged,
+                        onKindSelected = viewModel::onResidentDraftKindSelected,
+                        onStatusSelected = viewModel::onResidentDraftStatusSelected,
+                        onAcquiredAtChanged = viewModel::onResidentDraftAcquiredAtChanged,
+                        onPurchasePriceChanged = viewModel::onResidentDraftPurchasePriceChanged,
+                        onDietaryNotesChanged = viewModel::onResidentDraftDietaryNotesChanged,
+                        onPickPhoto = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest.Builder()
+                                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    .build()
+                            )
+                        },
+                        onRemovePhoto = { viewModel.onResidentDraftPhotoUriChanged(null) },
+                        onSave = viewModel::saveResidentDraft,
+                        onCancel = viewModel::cancelResidentDraft
+                    )
+                }
+            }
+
             uiState.statusMessage?.let { message ->
                 item {
                     Card(
@@ -203,7 +250,10 @@ fun LivestockScreen(
 }
 
 @Composable
-private fun LivestockOverviewCard(uiState: LivestockUiState) {
+private fun LivestockOverviewCard(
+    uiState: LivestockUiState,
+    onAddResident: () -> Unit
+) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -245,6 +295,13 @@ private fun LivestockOverviewCard(uiState: LivestockUiState) {
                     title = "Feeding",
                     value = uiState.summary.feedingTaskCount.toString()
                 )
+            }
+
+            FilledTonalButton(
+                onClick = onAddResident,
+                enabled = uiState.aquariumFilters.isNotEmpty()
+            ) {
+                Text("Add resident")
             }
         }
     }
@@ -362,6 +419,8 @@ private fun ResidentCard(
 private fun LivestockDetailCard(
     uiState: LivestockUiState,
     resident: LivestockDetailItem,
+    onStartEditResident: () -> Unit,
+    onOpenEntity: (EntityKind, String, String?) -> Unit,
     onFeedingNoteChanged: (String) -> Unit,
     onSaveFeedingNotes: () -> Unit,
     onStatusSelected: (LivestockStatus) -> Unit,
@@ -405,9 +464,27 @@ private fun LivestockDetailCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = onStartEditResident) {
+                        Text("Edit profile")
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            onOpenEntity(EntityKind.LIVESTOCK, resident.id, resident.aquariumId)
+                        }
+                    ) {
+                        Text("Open details")
+                    }
+                }
             }
 
-            FamilyAndTaskChips(resident)
+            FamilyAndTaskChips(
+                resident = resident,
+                onOpenEntity = onOpenEntity
+            )
 
             DetailSection(title = "Feeding notes") {
                 OutlinedTextField(
@@ -517,22 +594,51 @@ private fun LivestockDetailCard(
 }
 
 @Composable
-private fun FamilyAndTaskChips(resident: LivestockDetailItem) {
+private fun FamilyAndTaskChips(
+    resident: LivestockDetailItem,
+    onOpenEntity: (EntityKind, String, String?) -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                AssistChip(onClick = {}, label = { Text(resident.statusLabel) })
+                AssistChip(
+                    onClick = {},
+                    label = { Text(resident.statusLabel) }
+                )
+            }
+            item {
+                AssistChip(
+                    onClick = {
+                        onOpenEntity(EntityKind.AQUARIUM, resident.aquariumId, resident.aquariumId)
+                    },
+                    label = { Text("Tank: ${resident.aquariumName}") }
+                )
             }
             resident.parent?.let { parent ->
                 item {
-                    AssistChip(onClick = {}, label = { Text("Parent: ${parent.name}") })
+                    AssistChip(
+                        onClick = {
+                            onOpenEntity(EntityKind.LIVESTOCK, parent.id, parent.aquariumId)
+                        },
+                        label = { Text("Parent: ${parent.name}") }
+                    )
                 }
             }
             items(resident.offspring, key = { it.id }) { offspring ->
-                AssistChip(onClick = {}, label = { Text("Offspring: ${offspring.name}") })
+                AssistChip(
+                    onClick = {
+                        onOpenEntity(EntityKind.LIVESTOCK, offspring.id, offspring.aquariumId)
+                    },
+                    label = { Text("Offspring: ${offspring.name}") }
+                )
             }
             items(resident.feedingTasks, key = { it.id }) { task ->
-                AssistChip(onClick = {}, label = { Text(task.title) })
+                AssistChip(
+                    onClick = {
+                        onOpenEntity(EntityKind.TASK, task.id, resident.aquariumId)
+                    },
+                    label = { Text(task.title) }
+                )
             }
         }
 
@@ -543,6 +649,212 @@ private fun FamilyAndTaskChips(resident: LivestockDetailItem) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResidentEditorCard(
+    uiState: LivestockUiState,
+    draft: LivestockResidentDraft,
+    onAquariumSelected: (String) -> Unit,
+    onParentSelected: (String?) -> Unit,
+    onNameChanged: (String) -> Unit,
+    onSpeciesChanged: (String) -> Unit,
+    onQuantityChanged: (String) -> Unit,
+    onKindSelected: (LivestockKind) -> Unit,
+    onStatusSelected: (LivestockStatus) -> Unit,
+    onAcquiredAtChanged: (String) -> Unit,
+    onPurchasePriceChanged: (String) -> Unit,
+    onDietaryNotesChanged: (String) -> Unit,
+    onPickPhoto: () -> Unit,
+    onRemovePhoto: () -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = if (draft.isEditing) "Edit resident" else "Add resident",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+
+            Text(
+                text = "Profile fields match the native resident model and write directly to Room.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(uiState.aquariumFilters, key = { it.aquariumId }) { aquarium ->
+                    FilterChip(
+                        selected = draft.aquariumId == aquarium.aquariumId,
+                        onClick = { onAquariumSelected(aquarium.aquariumId) },
+                        label = { Text(aquarium.aquariumName, maxLines = 1) }
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = draft.name,
+                onValueChange = onNameChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Name") },
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = draft.species,
+                onValueChange = onSpeciesChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Species") },
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = draft.quantity,
+                onValueChange = onQuantityChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Quantity") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true
+            )
+
+            Text(
+                text = "Kind",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(LivestockKind.entries, key = { it.name }) { kind ->
+                    FilterChip(
+                        selected = draft.kind == kind,
+                        onClick = { onKindSelected(kind) },
+                        label = { Text(kind.label()) }
+                    )
+                }
+            }
+
+            Text(
+                text = "Status",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(LivestockStatus.entries, key = { it.name }) { status ->
+                    FilterChip(
+                        selected = draft.status == status,
+                        onClick = { onStatusSelected(status) },
+                        label = { Text(status.label()) }
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = draft.acquiredAtInput,
+                onValueChange = onAcquiredAtChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Acquired at") },
+                supportingText = { Text("Use yyyy-MM-dd HH:mm") },
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = draft.purchasePriceInput,
+                onValueChange = onPurchasePriceChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Purchase price") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true
+            )
+
+            if (uiState.residentParentOptions.isNotEmpty()) {
+                Text(
+                    text = "Parent link",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        FilterChip(
+                            selected = draft.parentId == null,
+                            onClick = { onParentSelected(null) },
+                            label = { Text("None") }
+                        )
+                    }
+                    items(uiState.residentParentOptions, key = { it.id }) { parent ->
+                        FilterChip(
+                            selected = draft.parentId == parent.id,
+                            onClick = { onParentSelected(parent.id) },
+                            label = {
+                                Text(
+                                    text = "${parent.label} (${parent.aquariumName})",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = draft.dietaryNotes,
+                onValueChange = onDietaryNotesChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Dietary notes") },
+                minLines = 3
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = onPickPhoto) {
+                    Text(if (draft.photoUri == null) "Attach photo" else "Change photo")
+                }
+                draft.photoUri?.let {
+                    TextButton(onClick = onRemovePhoto) {
+                        Text("Remove")
+                    }
+                }
+            }
+
+            draft.photoUri?.let {
+                Text(
+                    text = "Photo selected",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+            ) {
+                OutlinedButton(onClick = onCancel) {
+                    Text("Cancel")
+                }
+                FilledTonalButton(
+                    onClick = onSave,
+                    enabled = draft.name.isNotBlank() && draft.aquariumId != null
+                ) {
+                    Text(if (draft.isEditing) "Save changes" else "Create resident")
+                }
             }
         }
     }
@@ -667,3 +979,9 @@ private fun SummaryTile(
         }
     }
 }
+
+private fun LivestockKind.label(): String =
+    name.lowercase().replaceFirstChar { it.uppercaseChar() }
+
+private fun LivestockStatus.label(): String =
+    name.lowercase().replaceFirstChar { it.uppercaseChar() }

@@ -10,6 +10,7 @@ import com.keepaside.aquapt.core.model.TaskTemplate
 import com.keepaside.aquapt.core.model.WaterType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -173,5 +174,105 @@ class LivestockViewModelTest {
         assertEquals("Target feed Ember", detail.feedingTasks.single().title)
         assertEquals(quarantine.id, detail.transferTargets.single().aquariumId)
         assertEquals("Frozen food only", state.feedingNoteDraft)
+    }
+
+    @Test
+    fun `resident editor draft builds parent options and excludes self`() {
+        val display = Aquarium(
+            id = "a-display",
+            name = "Display",
+            volumeLiters = 120.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val breeder = Aquarium(
+            id = "a-breeder",
+            name = "Breeder",
+            volumeLiters = 45.0,
+            waterType = WaterType.FRESHWATER
+        )
+        val ember = Livestock(
+            id = "l-ember",
+            aquariumId = display.id,
+            name = "Ember",
+            species = "Betta"
+        )
+        val spark = Livestock(
+            id = "l-spark",
+            aquariumId = breeder.id,
+            name = "Spark",
+            species = "Betta"
+        )
+
+        val state = assembleLivestockUiState(
+            aquariums = listOf(display, breeder),
+            livestock = listOf(ember, spark),
+            taskTemplates = emptyList(),
+            interaction = LivestockInteractionState(
+                residentDraft = LivestockResidentDraft(
+                    id = ember.id,
+                    aquariumId = display.id,
+                    parentId = ember.id,
+                    name = ember.name
+                )
+            ),
+            now = now,
+            zoneId = ZoneOffset.UTC
+        )
+
+        assertEquals(1, state.residentParentOptions.size)
+        assertEquals("l-spark", state.residentParentOptions.single().id)
+        assertNull(state.residentEditorDraft?.parentId)
+    }
+
+    @Test
+    fun `resident draft validation catches missing and invalid values`() {
+        val aquariumFilters = listOf(
+            LivestockAquariumFilter(aquariumId = "a-1", aquariumName = "Display")
+        )
+        val parentOptions = listOf(
+            LivestockParentOption(
+                id = "l-parent",
+                label = "Ember",
+                aquariumId = "a-1",
+                aquariumName = "Display"
+            )
+        )
+
+        val missingName = LivestockResidentDraft(aquariumId = "a-1", name = "   ")
+        val invalidQuantity = LivestockResidentDraft(aquariumId = "a-1", name = "Ember", quantity = "0")
+        val invalidAcquiredAt = LivestockResidentDraft(
+            aquariumId = "a-1",
+            name = "Ember",
+            acquiredAtInput = "tomorrow"
+        )
+        val invalidPrice = LivestockResidentDraft(
+            aquariumId = "a-1",
+            name = "Ember",
+            purchasePriceInput = "-10"
+        )
+
+        assertEquals(
+            "Name the resident before saving.",
+            validateResidentDraft(missingName, aquariumFilters, parentOptions, ZoneOffset.UTC)
+        )
+        assertEquals(
+            "Quantity must be at least 1.",
+            validateResidentDraft(invalidQuantity, aquariumFilters, parentOptions, ZoneOffset.UTC)
+        )
+        assertEquals(
+            "Use a valid acquired date/time like 2026-04-11 18:30.",
+            validateResidentDraft(invalidAcquiredAt, aquariumFilters, parentOptions, ZoneOffset.UTC)
+        )
+        assertEquals(
+            "Purchase price must be a valid non-negative number.",
+            validateResidentDraft(invalidPrice, aquariumFilters, parentOptions, ZoneOffset.UTC)
+        )
+    }
+
+    @Test
+    fun `livestock date time input accepts friendly local value`() {
+        val parsed = parseLivestockDateTimeInput("2026-04-11 18:30", ZoneOffset.UTC)
+
+        assertEquals(Instant.parse("2026-04-11T18:30:00Z"), parsed)
     }
 }

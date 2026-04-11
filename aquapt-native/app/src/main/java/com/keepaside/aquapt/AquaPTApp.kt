@@ -181,7 +181,19 @@ fun AquaPTApp() {
                 SettingsBackupScreen()
             }
             composable(AquaPTRoute.Livestock) {
-                LivestockScreen()
+                LivestockScreen(
+                    onOpenEntityDeepLink = { kind, entityId, aquariumId ->
+                        navController.navigate(
+                            AquaPTRoute.entityDetailRoute(
+                                kind = kind,
+                                id = entityId,
+                                aquariumId = aquariumId
+                            )
+                        ) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
             }
             composable(AquaPTRoute.Insights) {
                 PlaceholderScreen(

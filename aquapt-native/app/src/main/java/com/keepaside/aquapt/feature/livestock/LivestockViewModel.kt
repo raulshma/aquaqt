@@ -90,6 +90,7 @@ data class LivestockDetailItem(
     val status: LivestockStatus,
     val statusLabel: String,
     val ageLabel: String,
+    val photoUri: String?,
     val dietaryNotes: String?,
     val parent: LivestockFamilyLink?,
     val offspring: List<LivestockFamilyLink>,
@@ -116,6 +117,31 @@ data class LivestockFeedingTaskDraft(
     val timesPerDay: String = "1"
 )
 
+data class LivestockParentOption(
+    val id: String,
+    val label: String,
+    val aquariumId: String,
+    val aquariumName: String
+)
+
+data class LivestockResidentDraft(
+    val id: String? = null,
+    val aquariumId: String? = null,
+    val parentId: String? = null,
+    val name: String = "",
+    val species: String = "",
+    val quantity: String = "1",
+    val kind: LivestockKind = LivestockKind.FISH,
+    val status: LivestockStatus = LivestockStatus.ACTIVE,
+    val acquiredAtInput: String = "",
+    val purchasePriceInput: String = "",
+    val dietaryNotes: String = "",
+    val photoUri: String? = null
+) {
+    val isEditing: Boolean
+        get() = id != null
+}
+
 data class LivestockUiState(
     val isLoading: Boolean = true,
     val isEmpty: Boolean = false,
@@ -132,6 +158,8 @@ data class LivestockUiState(
     val transferDraft: LivestockTransferDraft = LivestockTransferDraft(),
     val offspringDraft: LivestockOffspringDraft = LivestockOffspringDraft(),
     val feedingTaskDraft: LivestockFeedingTaskDraft = LivestockFeedingTaskDraft(),
+    val residentEditorDraft: LivestockResidentDraft? = null,
+    val residentParentOptions: List<LivestockParentOption> = emptyList(),
     val statusMessage: String? = null
 )
 
@@ -145,6 +173,7 @@ internal data class LivestockInteractionState(
     val transferNoteDraft: String = "",
     val offspringDraft: LivestockOffspringDraft = LivestockOffspringDraft(),
     val feedingTaskDraft: LivestockFeedingTaskDraft = LivestockFeedingTaskDraft(),
+    val residentDraft: LivestockResidentDraft? = null,
     val statusMessage: String? = null
 )
 
@@ -189,8 +218,231 @@ class LivestockViewModel(
                         ?.aquariumId,
                     transferNoteDraft = "",
                     offspringDraft = LivestockOffspringDraft(),
-                    feedingTaskDraft = LivestockFeedingTaskDraft()
+                    feedingTaskDraft = LivestockFeedingTaskDraft(),
+                    residentDraft = null
                 )
+            }
+        }
+    }
+
+    fun startCreateResident() {
+        val aquariumOptions = _uiState.value.aquariumFilters
+        if (aquariumOptions.isEmpty()) {
+            setStatus("Add a tank before creating residents.")
+            return
+        }
+
+        val aquariumId = _uiState.value.selectedAquariumId
+            ?.takeIf { selectedId -> aquariumOptions.any { it.aquariumId == selectedId } }
+            ?: aquariumOptions.first().aquariumId
+
+        interactionState.update { state ->
+            state.copy(
+                residentDraft = LivestockResidentDraft(
+                    aquariumId = aquariumId,
+                    acquiredAtInput = formatLivestockDateTimeInput(nowProvider(), zoneId)
+                )
+            )
+        }
+    }
+
+    fun startEditSelectedResident() {
+        val selected = _uiState.value.selectedResident ?: return setStatus("Select a resident first.")
+
+        viewModelScope.launch {
+            runCatching {
+                livestockRepository.getById(selected.id)
+                    ?: error("Resident no longer exists.")
+            }.onSuccess { resident ->
+                interactionState.update { state ->
+                    state.copy(
+                        selectedAquariumId = resident.aquariumId,
+                        selectedLivestockId = resident.id,
+                        residentDraft = resident.toDraft(zoneId)
+                    )
+                }
+            }.onFailure { error ->
+                setStatus(error.message ?: "Unable to load resident profile.")
+            }
+        }
+    }
+
+    fun cancelResidentDraft() {
+        interactionState.update { it.copy(residentDraft = null) }
+    }
+
+    fun onResidentDraftAquariumSelected(aquariumId: String) {
+        updateResidentDraft { draft ->
+            draft.copy(
+                aquariumId = aquariumId,
+                parentId = draft.parentId
+            )
+        }
+    }
+
+    fun onResidentDraftParentSelected(parentId: String?) {
+        updateResidentDraft { draft ->
+            draft.copy(parentId = parentId?.takeIf { it.isNotBlank() })
+        }
+    }
+
+    fun onResidentDraftNameChanged(name: String) {
+        updateResidentDraft { draft -> draft.copy(name = name) }
+    }
+
+    fun onResidentDraftSpeciesChanged(species: String) {
+        updateResidentDraft { draft -> draft.copy(species = species) }
+    }
+
+    fun onResidentDraftQuantityChanged(quantity: String) {
+        updateResidentDraft { draft -> draft.copy(quantity = quantity) }
+    }
+
+    fun onResidentDraftKindSelected(kind: LivestockKind) {
+        updateResidentDraft { draft -> draft.copy(kind = kind) }
+    }
+
+    fun onResidentDraftStatusSelected(status: LivestockStatus) {
+        updateResidentDraft { draft -> draft.copy(status = status) }
+    }
+
+    fun onResidentDraftAcquiredAtChanged(value: String) {
+        updateResidentDraft { draft -> draft.copy(acquiredAtInput = value) }
+    }
+
+    fun onResidentDraftPurchasePriceChanged(value: String) {
+        updateResidentDraft { draft -> draft.copy(purchasePriceInput = value) }
+    }
+
+    fun onResidentDraftDietaryNotesChanged(value: String) {
+        updateResidentDraft { draft -> draft.copy(dietaryNotes = value) }
+    }
+
+    fun onResidentDraftPhotoUriChanged(photoUri: String?) {
+        updateResidentDraft { draft ->
+            draft.copy(photoUri = photoUri?.trim()?.takeIf { it.isNotEmpty() })
+        }
+    }
+
+    fun saveResidentDraft() {
+        val currentState = _uiState.value
+        val draft = currentState.residentEditorDraft ?: return setStatus("Start a resident draft first.")
+
+        validateResidentDraft(
+            draft = draft,
+            aquariumFilters = currentState.aquariumFilters,
+            parentOptions = currentState.residentParentOptions,
+            zoneId = zoneId
+        )?.let { message ->
+            setStatus(message)
+            return
+        }
+
+        val aquariumId = draft.aquariumId ?: return setStatus("Choose a tank before saving.")
+        val quantity = draft.quantity.trim().toInt().coerceAtLeast(1)
+        val acquiredAtInput = draft.acquiredAtInput.trim()
+        val parsedAcquiredAt = parseLivestockDateTimeInput(acquiredAtInput, zoneId)
+        val purchasePrice = parseLivestockPurchasePrice(draft.purchasePriceInput)
+        val parentId = draft.parentId?.takeIf { parent ->
+            currentState.residentParentOptions.any { option -> option.id == parent }
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                val existing = draft.id?.let { livestockRepository.getById(it) }
+                if (draft.id != null && existing == null) {
+                    error("Resident no longer exists.")
+                }
+
+                val acquiredAt = when {
+                    acquiredAtInput.isBlank() -> existing?.acquiredAt?.takeIf { it.isNotBlank() } ?: nowProvider().toString()
+                    parsedAcquiredAt != null -> parsedAcquiredAt.toString()
+                    else -> error("Acquired date/time is invalid.")
+                }
+
+                val resident = Livestock(
+                    id = existing?.id ?: draft.id ?: idProvider(),
+                    aquariumId = aquariumId,
+                    kind = draft.kind,
+                    name = draft.name.trim(),
+                    species = draft.species.trim(),
+                    quantity = quantity,
+                    acquiredAt = acquiredAt,
+                    purchasePrice = purchasePrice,
+                    photoUri = draft.photoUri,
+                    dietaryNotes = draft.dietaryNotes.trim().ifBlank { null },
+                    parentId = parentId,
+                    status = draft.status
+                )
+
+                livestockRepository.upsert(resident)
+
+                val related = buildList {
+                    parentId?.let {
+                        add(EntityRef(EntityKind.LIVESTOCK, it, resident.aquariumId))
+                    }
+                    existing
+                        ?.aquariumId
+                        ?.takeIf { it != resident.aquariumId }
+                        ?.let { previousAquariumId ->
+                            add(EntityRef(EntityKind.AQUARIUM, previousAquariumId, previousAquariumId))
+                        }
+                }
+
+                timelineEventRepository.upsert(
+                    TimelineEvent(
+                        id = idProvider(),
+                        aquariumId = resident.aquariumId,
+                        type = TimelineEventType.LIVESTOCK,
+                        createdAt = nowProvider().toString(),
+                        title = if (existing == null) {
+                            "Added ${resident.name}"
+                        } else {
+                            "Updated ${resident.name}"
+                        },
+                        description = buildResidentProfileSummary(
+                            existing = existing,
+                            updated = resident,
+                            aquariumNameById = _uiState.value.aquariumFilters.associate {
+                                it.aquariumId to it.aquariumName
+                            }
+                        ),
+                        photoUri = resident.photoUri,
+                        source = EntityRef(EntityKind.LIVESTOCK, resident.id, resident.aquariumId),
+                        related = aquariumRelatedRefs(resident.aquariumId, *related.toTypedArray())
+                    )
+                )
+
+                resident
+            }.onSuccess { resident ->
+                interactionState.update { state ->
+                    state.copy(
+                        selectedAquariumId = resident.aquariumId,
+                        selectedLivestockId = resident.id,
+                        feedingNoteDraft = resident.dietaryNotes.orEmpty(),
+                        statusDraft = resident.status,
+                        statusNoteDraft = "",
+                        transferTargetAquariumId = _uiState.value.aquariumFilters
+                            .firstOrNull { it.aquariumId != resident.aquariumId }
+                            ?.aquariumId,
+                        transferNoteDraft = "",
+                        residentDraft = null
+                    )
+                }
+
+                val aquariumName = _uiState.value.aquariumFilters
+                    .firstOrNull { it.aquariumId == resident.aquariumId }
+                    ?.aquariumName
+                    ?: "tank"
+                setStatus(
+                    if (draft.isEditing) {
+                        "${resident.name} profile updated."
+                    } else {
+                        "${resident.name} added to $aquariumName."
+                    }
+                )
+            }.onFailure { error ->
+                setStatus(error.message ?: "Unable to save resident profile.")
             }
         }
     }
@@ -487,6 +739,15 @@ class LivestockViewModel(
         }
     }
 
+    private inline fun updateResidentDraft(
+        transform: (LivestockResidentDraft) -> LivestockResidentDraft
+    ) {
+        interactionState.update { state ->
+            val current = state.residentDraft ?: return@update state
+            state.copy(residentDraft = transform(current))
+        }
+    }
+
     private fun setStatus(message: String) {
         interactionState.update { it.copy(statusMessage = message) }
     }
@@ -591,11 +852,47 @@ internal fun assembleLivestockUiState(
             status = item.status,
             statusLabel = item.status.label(),
             ageLabel = formatAge(item.acquiredAt, now, zoneId),
+            photoUri = item.photoUri,
             dietaryNotes = item.dietaryNotes,
             parent = parent,
             offspring = offspring,
             feedingTasks = feedingTasks,
             transferTargets = transferTargets
+        )
+    }
+
+    val residentParentOptions = interaction.residentDraft
+        ?.let { draft ->
+            livestock
+                .asSequence()
+                .filter { candidate -> candidate.id != draft.id }
+                .sortedWith(compareBy<Livestock> {
+                    aquariumNameById[it.aquariumId] ?: "Unknown tank"
+                }.thenBy { it.name.lowercase() })
+                .map { candidate ->
+                    LivestockParentOption(
+                        id = candidate.id,
+                        label = candidate.name.ifBlank {
+                            candidate.species.ifBlank { "Unnamed resident" }
+                        },
+                        aquariumId = candidate.aquariumId,
+                        aquariumName = aquariumNameById[candidate.aquariumId] ?: "Unknown tank"
+                    )
+                }
+                .toList()
+        }
+        .orEmpty()
+
+    val residentEditorDraft = interaction.residentDraft?.let { draft ->
+        val normalizedAquariumId = draft.aquariumId
+            ?.takeIf { aquariumId -> aquariumFilters.any { it.aquariumId == aquariumId } }
+            ?: aquariumFilters.firstOrNull()?.aquariumId
+        val normalizedParentId = draft.parentId
+            ?.takeIf { parentId -> residentParentOptions.any { it.id == parentId } }
+
+        draft.copy(
+            aquariumId = normalizedAquariumId,
+            parentId = normalizedParentId
         )
     }
 
@@ -637,6 +934,8 @@ internal fun assembleLivestockUiState(
         ),
         offspringDraft = interaction.offspringDraft,
         feedingTaskDraft = interaction.feedingTaskDraft,
+        residentEditorDraft = residentEditorDraft,
+        residentParentOptions = residentParentOptions,
         statusMessage = interaction.statusMessage
     )
 }
@@ -720,3 +1019,121 @@ private fun aquariumRelatedRefs(aquariumId: String, vararg extras: EntityRef): L
 
 private fun buildTransferDescription(prefix: String, note: String?): String =
     if (note.isNullOrBlank()) prefix else "$prefix - $note"
+
+private fun Livestock.toDraft(zoneId: ZoneId): LivestockResidentDraft =
+    LivestockResidentDraft(
+        id = id,
+        aquariumId = aquariumId,
+        parentId = parentId,
+        name = name,
+        species = species,
+        quantity = quantity.toString(),
+        kind = kind,
+        status = status,
+        acquiredAtInput = parseToInstant(acquiredAt, zoneId)
+            ?.let { formatLivestockDateTimeInput(it, zoneId) }
+            ?: acquiredAt,
+        purchasePriceInput = purchasePrice?.toString().orEmpty(),
+        dietaryNotes = dietaryNotes.orEmpty(),
+        photoUri = photoUri
+    )
+
+private fun buildResidentProfileSummary(
+    existing: Livestock?,
+    updated: Livestock,
+    aquariumNameById: Map<String, String>
+): String? {
+    if (existing == null) {
+        return listOfNotNull(
+            updated.kind.label(),
+            updated.species.takeIf { it.isNotBlank() },
+            "Qty ${updated.quantity}",
+            aquariumNameById[updated.aquariumId]?.let { "Tank: $it" }
+        ).joinToString(" • ").takeIf { it.isNotBlank() }
+    }
+
+    val changes = mutableListOf<String>()
+    if (existing.name != updated.name) changes += "Name updated"
+    if (existing.species != updated.species) changes += "Species updated"
+    if (existing.quantity != updated.quantity) changes += "Qty ${existing.quantity} → ${updated.quantity}"
+    if (existing.status != updated.status) {
+        changes += "Status ${existing.status.label()} → ${updated.status.label()}"
+    }
+    if (existing.kind != updated.kind) {
+        changes += "Kind ${existing.kind.label()} → ${updated.kind.label()}"
+    }
+    if (existing.aquariumId != updated.aquariumId) {
+        val previousTank = aquariumNameById[existing.aquariumId] ?: "previous tank"
+        val nextTank = aquariumNameById[updated.aquariumId] ?: "new tank"
+        changes += "Moved $previousTank → $nextTank"
+    }
+    if (existing.parentId != updated.parentId) changes += "Parent link updated"
+    if (existing.photoUri != updated.photoUri) changes += "Photo updated"
+    if (existing.dietaryNotes != updated.dietaryNotes) changes += "Dietary notes updated"
+    if (existing.purchasePrice != updated.purchasePrice) changes += "Purchase price updated"
+    if (existing.acquiredAt != updated.acquiredAt) changes += "Acquired date/time updated"
+
+    return changes.joinToString(" • ").ifBlank { "Resident profile refreshed." }
+}
+
+internal fun validateResidentDraft(
+    draft: LivestockResidentDraft,
+    aquariumFilters: List<LivestockAquariumFilter>,
+    parentOptions: List<LivestockParentOption>,
+    zoneId: ZoneId
+): String? {
+    if (draft.aquariumId == null || aquariumFilters.none { it.aquariumId == draft.aquariumId }) {
+        return "Choose a tank for this resident."
+    }
+    if (draft.name.trim().isBlank()) {
+        return "Name the resident before saving."
+    }
+    val quantity = draft.quantity.trim().toIntOrNull()
+    if (quantity == null || quantity < 1) {
+        return "Quantity must be at least 1."
+    }
+    if (draft.parentId != null && parentOptions.none { it.id == draft.parentId }) {
+        return "Choose a valid parent resident."
+    }
+    if (draft.id != null && draft.parentId == draft.id) {
+        return "A resident cannot be its own parent."
+    }
+    if (draft.acquiredAtInput.isNotBlank() && parseLivestockDateTimeInput(draft.acquiredAtInput, zoneId) == null) {
+        return "Use a valid acquired date/time like 2026-04-11 18:30."
+    }
+    if (draft.purchasePriceInput.isNotBlank() && parseLivestockPurchasePrice(draft.purchasePriceInput) == null) {
+        return "Purchase price must be a valid non-negative number."
+    }
+    return null
+}
+
+internal fun parseLivestockPurchasePrice(raw: String): Double? {
+    val value = raw.trim()
+    if (value.isEmpty()) return null
+
+    val parsed = value.toDoubleOrNull() ?: return null
+    return parsed.takeIf { it.isFinite() && it >= 0.0 }
+}
+
+internal fun parseLivestockDateTimeInput(raw: String, zoneId: ZoneId): Instant? {
+    val value = raw.trim()
+    if (value.isEmpty()) return null
+
+    val localDateTimeFormatters = listOf(
+        DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    )
+
+    return runCatching { Instant.parse(value) }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+        ?: localDateTimeFormatters.firstNotNullOfOrNull { formatter ->
+            runCatching { LocalDateTime.parse(value, formatter).atZone(zoneId).toInstant() }.getOrNull()
+        }
+        ?: runCatching { LocalDate.parse(value).atStartOfDay(zoneId).toInstant() }.getOrNull()
+}
+
+internal fun formatLivestockDateTimeInput(instant: Instant, zoneId: ZoneId): String {
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    return formatter.format(instant.atZone(zoneId))
+}
