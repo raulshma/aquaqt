@@ -1,6 +1,5 @@
 package com.keepaside.aquapt
 
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,6 +54,9 @@ import com.keepaside.aquapt.feature.livestock.LivestockScreen
 import com.keepaside.aquapt.feature.tasks.TasksDashboardScreen
 import com.keepaside.aquapt.feature.tanks.TanksDashboardScreen
 import com.keepaside.aquapt.feature.timeline.TimelineScreen
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 private data class TopLevelDestination(
     val route: String,
@@ -91,17 +93,17 @@ private object AquaPTRoute {
     const val ModelBrowserPattern = "$ModelBrowser/{$ModelBrowserTargetArg}?$ModelBrowserSelectedIdArg={$ModelBrowserSelectedIdArg}"
 
     fun modelBrowserRoute(target: ModelBrowserTarget, selectedModelId: String? = null): String {
-        val encodedTarget = Uri.encode(target.name)
+        val encodedTarget = encodeForRoute(target.name)
         val base = "$ModelBrowser/$encodedTarget"
-        val encodedId = selectedModelId?.trim()?.takeIf { it.isNotEmpty() }?.let(Uri::encode)
+        val encodedId = selectedModelId?.trim()?.takeIf { it.isNotEmpty() }?.let(::encodeForRoute)
         return if (encodedId == null) base else "$base?$ModelBrowserSelectedIdArg=$encodedId"
     }
 
     fun parseModelBrowserTarget(value: String?): ModelBrowserTarget? =
-        runCatching { value?.let { ModelBrowserTarget.valueOf(Uri.decode(it)) } }.getOrNull()
+        runCatching { value?.let { ModelBrowserTarget.valueOf(decodeForRoute(it)) } }.getOrNull()
 
     fun parseModelBrowserSelectedId(value: String?): String? =
-        value?.let(Uri::decode)?.takeIf { it.isNotBlank() }
+        value?.let(::decodeForRoute)?.takeIf { it.isNotBlank() }
 
     const val EntityDetailPattern = "$Entity/{$EntityKindArg}/{$EntityIdArg}/{$EntityAquariumIdArg}"
     const val EntityFormPattern =
@@ -109,9 +111,9 @@ private object AquaPTRoute {
     const val EntityEditPattern = "$EntityEdit/{$EntityEditKindArg}/{$EntityEditIdArg}"
 
     fun entityDetailRoute(kind: EntityKind, id: String, aquariumId: String?): String {
-        val encodedKind = Uri.encode(kind.name)
-        val encodedId = Uri.encode(id)
-        val encodedAquariumId = Uri.encode(aquariumId ?: MissingAquariumIdToken)
+        val encodedKind = encodeForRoute(kind.name)
+        val encodedId = encodeForRoute(id)
+        val encodedAquariumId = encodeForRoute(aquariumId ?: MissingAquariumIdToken)
         return "$Entity/$encodedKind/$encodedId/$encodedAquariumId"
     }
 
@@ -120,10 +122,10 @@ private object AquaPTRoute {
         aquariumId: String?,
         targetEntityId: String? = null
     ): String {
-        val encodedKind = Uri.encode(kind.name)
-        val encodedAquariumId = Uri.encode(aquariumId ?: MissingAquariumIdToken)
+        val encodedKind = encodeForRoute(kind.name)
+        val encodedAquariumId = encodeForRoute(aquariumId ?: MissingAquariumIdToken)
         val baseRoute = "$EntityForm/$encodedKind/$encodedAquariumId"
-        val encodedTargetId = targetEntityId?.trim()?.takeIf { it.isNotEmpty() }?.let(Uri::encode)
+        val encodedTargetId = targetEntityId?.trim()?.takeIf { it.isNotEmpty() }?.let(::encodeForRoute)
         return if (encodedTargetId == null) {
             baseRoute
         } else {
@@ -132,28 +134,28 @@ private object AquaPTRoute {
     }
 
     fun entityEditRoute(kind: EntityEditKind, id: String): String {
-        val encodedKind = Uri.encode(kind.routeToken)
-        val encodedId = Uri.encode(id)
+        val encodedKind = encodeForRoute(kind.routeToken)
+        val encodedId = encodeForRoute(id)
         return "$EntityEdit/$encodedKind/$encodedId"
     }
 
     fun parseEntityKind(value: String?): EntityKind? =
-        runCatching { value?.let { EntityKind.valueOf(Uri.decode(it)) } }.getOrNull()
+        runCatching { value?.let { EntityKind.valueOf(decodeForRoute(it)) } }.getOrNull()
 
-    fun parseEntityId(value: String?): String = value?.let(Uri::decode).orEmpty()
+    fun parseEntityId(value: String?): String = value?.let(::decodeForRoute).orEmpty()
 
     fun parseEntityAquariumId(value: String?): String? {
-        val decoded = value?.let(Uri::decode)
+        val decoded = value?.let(::decodeForRoute)
         return decoded?.takeUnless { it == MissingAquariumIdToken }
     }
 
     fun parseEntityTargetId(value: String?): String? =
-        value?.let(Uri::decode)?.takeIf { it.isNotBlank() }
+        value?.let(::decodeForRoute)?.takeIf { it.isNotBlank() }
 
     fun parseEntityEditKind(value: String?): EntityEditKind? =
-        EntityEditKind.fromRouteToken(value?.let(Uri::decode))
+        EntityEditKind.fromRouteToken(value?.let(::decodeForRoute))
 
-    fun parseEntityEditId(value: String?): String = value?.let(Uri::decode).orEmpty()
+    fun parseEntityEditId(value: String?): String = value?.let(::decodeForRoute).orEmpty()
 }
 
 private val topLevelDestinations = listOf(
@@ -484,23 +486,225 @@ private fun topBarTitleForRoute(route: String?): String = when {
     else -> "AquaPT"
 }
 
-private fun mapExternalRouteToNativeRoute(route: String): String? {
-    val decoded = Uri.decode(route.trim())
-    val withoutScheme = decoded.removePrefix("aquapt://")
+internal fun mapExternalRouteToNativeRoute(route: String): String? {
+    val normalizedInput = route
+        .trim()
+        .takeIf { value -> value.isNotEmpty() }
+        ?.let(::decodeForRoute)
+        ?.removePrefix("aquapt://")
+        ?.removePrefix("aquapt:")
+        ?.trim()
+        ?.trimStart('/')
+        ?: return null
 
-    return when (withoutScheme) {
-        "/(tabs)/tanks", "/tanks", "tanks" -> AquaPTRoute.Tanks
-        "/(tabs)/tasks", "/tasks", "tasks" -> AquaPTRoute.Tasks
-        "/(tabs)/timeline", "/timeline", "timeline" -> AquaPTRoute.Timeline
-        "/(tabs)/assistant", "/assistant", "assistant" -> AquaPTRoute.Assistant
-        "/(tabs)/settings", "/settings", "settings" -> AquaPTRoute.Settings
-        "/livestock", "livestock" -> AquaPTRoute.Livestock
-        "/insights", "insights" -> AquaPTRoute.Insights
-        "/settings/workflows", "/workflows", "workflows" -> AquaPTRoute.Workflows
-        "/settings/models", "/models", "models" -> AquaPTRoute.modelBrowserRoute(ModelBrowserTarget.ASSISTANT)
+    val parsedExternalRoute = parseExternalRoute(normalizedInput)
+    val segments = parsedExternalRoute.segments
+    val queryParams = parsedExternalRoute.queryParameters
+
+    if (segments.isEmpty()) {
+        return AquaPTRoute.Tanks
+    }
+
+    val first = segments.getOrNull(0)?.trim()?.lowercase().orEmpty()
+    val second = segments.getOrNull(1)?.trim()?.lowercase().orEmpty()
+
+    return when (first) {
+        "(tabs)" -> when (second) {
+            "tanks", "index", "" -> AquaPTRoute.Tanks
+            "tasks" -> AquaPTRoute.Tasks
+            "timeline" -> AquaPTRoute.Timeline
+            "assistant" -> AquaPTRoute.Assistant
+            "settings" -> AquaPTRoute.Settings
+            "livestock" -> AquaPTRoute.Livestock
+            else -> null
+        }
+
+        "", "tanks", "index" -> AquaPTRoute.Tanks
+        "tasks" -> AquaPTRoute.Tasks
+        "timeline" -> AquaPTRoute.Timeline
+        "assistant" -> AquaPTRoute.Assistant
+        "livestock" -> AquaPTRoute.Livestock
+        "modal", "insights" -> AquaPTRoute.Insights
+        "workflows" -> AquaPTRoute.Workflows
+
+        "settings" -> when (second) {
+            "", "index", "assistant", "backup", "reminders", "reminder-groups" -> AquaPTRoute.Settings
+            "workflows" -> AquaPTRoute.Workflows
+            "models" -> {
+                val target = parseExternalModelBrowserTarget(
+                    pathTarget = segments.getOrNull(2),
+                    queryTarget = queryParams["target"]
+                ) ?: ModelBrowserTarget.ASSISTANT
+                AquaPTRoute.modelBrowserRoute(
+                    target = target,
+                    selectedModelId = queryParams["selectedId"]?.trim()?.takeIf { it.isNotEmpty() }
+                )
+            }
+            else -> AquaPTRoute.Settings
+        }
+
+        "models", "model-browser" -> {
+            val target = parseExternalModelBrowserTarget(
+                pathTarget = segments.getOrNull(1),
+                queryTarget = queryParams["target"]
+            ) ?: ModelBrowserTarget.ASSISTANT
+            AquaPTRoute.modelBrowserRoute(
+                target = target,
+                selectedModelId = queryParams["selectedId"]?.trim()?.takeIf { it.isNotEmpty() }
+            )
+        }
+
+        "entity" -> {
+            val kind = parseExternalEntityKindToken(segments.getOrNull(1)) ?: return null
+            val entityId = segments.getOrNull(2)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val aquariumId = segments.getOrNull(3)
+                ?.trim()
+                ?.takeIf { value -> value.isNotEmpty() }
+                ?: queryParams["aquariumId"]
+                    ?.trim()
+                    ?.takeIf { value -> value.isNotEmpty() }
+
+            AquaPTRoute.entityDetailRoute(
+                kind = kind,
+                id = entityId,
+                aquariumId = aquariumId
+            )
+        }
+
+        "entity-form" -> {
+            val kindToken = segments.getOrNull(1)?.trim()?.lowercase().orEmpty()
+            val aquariumId = segments.getOrNull(2)
+                ?.trim()
+                ?.takeIf { value -> value.isNotEmpty() }
+                ?: queryParams["aquariumId"]
+                    ?.trim()
+                    ?.takeIf { value -> value.isNotEmpty() }
+
+            val targetEntityId = queryParams["targetId"]
+                ?.trim()
+                ?.takeIf { value -> value.isNotEmpty() }
+                ?: queryParams["id"]
+                    ?.trim()
+                    ?.takeIf { value -> value.isNotEmpty() }
+
+            when (kindToken) {
+                "issue" -> AquaPTRoute.entityFormRoute(EntityKind.ISSUE, aquariumId, targetEntityId)
+                "memo" -> AquaPTRoute.entityFormRoute(EntityKind.MEMO, aquariumId, targetEntityId)
+                "dosing" -> AquaPTRoute.entityFormRoute(EntityKind.DOSING, aquariumId, targetEntityId)
+                "parameter-log", "parameter_log", "parameterlog", "parameter" ->
+                    AquaPTRoute.entityFormRoute(EntityKind.PARAMETER_LOG, aquariumId, targetEntityId)
+                "consumable" -> AquaPTRoute.entityFormRoute(EntityKind.CONSUMABLE, aquariumId, targetEntityId)
+                "task-execution" -> AquaPTRoute.Tasks
+                "livestock" -> AquaPTRoute.Livestock
+                else -> null
+            }
+        }
+
+        "entity-edit" -> {
+            val kind = EntityEditKind.fromRouteToken(segments.getOrNull(1)) ?: return null
+            val entityId = segments.getOrNull(2)
+                ?.trim()
+                ?.takeIf { value -> value.isNotEmpty() }
+                ?: queryParams["id"]
+                    ?.trim()
+                    ?.takeIf { value -> value.isNotEmpty() }
+                ?: return null
+
+            AquaPTRoute.entityEditRoute(kind = kind, id = entityId)
+        }
+
         else -> null
     }
 }
+
+private fun parseExternalModelBrowserTarget(
+    pathTarget: String?,
+    queryTarget: String?
+): ModelBrowserTarget? {
+    val token = pathTarget
+        ?.trim()
+        ?.takeIf { value -> value.isNotEmpty() }
+        ?: queryTarget
+            ?.trim()
+            ?.takeIf { value -> value.isNotEmpty() }
+        ?: return null
+
+    return when (token.lowercase()) {
+        "assistant" -> ModelBrowserTarget.ASSISTANT
+        "memory" -> ModelBrowserTarget.MEMORY
+        else -> runCatching { ModelBrowserTarget.valueOf(token.uppercase()) }.getOrNull()
+    }
+}
+
+private fun parseExternalEntityKindToken(value: String?): EntityKind? {
+    val token = value?.trim()?.lowercase().orEmpty()
+    return when (token) {
+        "aquarium" -> EntityKind.AQUARIUM
+        "task" -> EntityKind.TASK
+        "livestock" -> EntityKind.LIVESTOCK
+        "asset" -> EntityKind.ASSET
+        "consumable" -> EntityKind.CONSUMABLE
+        "issue" -> EntityKind.ISSUE
+        "memo" -> EntityKind.MEMO
+        "dosing" -> EntityKind.DOSING
+        "parameter-log", "parameter_log", "parameterlog", "parameter" -> EntityKind.PARAMETER_LOG
+        else -> runCatching {
+            value
+                ?.trim()
+                ?.takeIf { raw -> raw.isNotEmpty() }
+                ?.uppercase()
+                ?.let(EntityKind::valueOf)
+        }.getOrNull()
+    }
+}
+
+private data class ParsedExternalRoute(
+    val segments: List<String>,
+    val queryParameters: Map<String, String>
+)
+
+private fun parseExternalRoute(route: String): ParsedExternalRoute {
+    val parts = route.split('?', limit = 2)
+    val pathPart = parts[0]
+    val queryPart = parts.getOrNull(1)
+
+    val segments = pathPart
+        .split('/')
+        .map { segment -> segment.trim() }
+        .filter { segment -> segment.isNotEmpty() }
+        .map(::decodeForRoute)
+
+    val queryParameters = parseRouteQueryParameters(queryPart)
+    return ParsedExternalRoute(segments = segments, queryParameters = queryParameters)
+}
+
+private fun parseRouteQueryParameters(queryPart: String?): Map<String, String> {
+    if (queryPart.isNullOrBlank()) {
+        return emptyMap()
+    }
+
+    return queryPart
+        .split('&')
+        .mapNotNull { rawPair ->
+            val trimmedPair = rawPair.trim()
+            if (trimmedPair.isEmpty()) {
+                return@mapNotNull null
+            }
+
+            val keyValue = trimmedPair.split('=', limit = 2)
+            val key = keyValue[0].trim().takeIf { value -> value.isNotEmpty() }?.let(::decodeForRoute)
+                ?: return@mapNotNull null
+            val value = keyValue.getOrNull(1)?.let(::decodeForRoute).orEmpty()
+            key to value
+        }
+        .toMap()
+}
+
+private fun encodeForRoute(value: String): String =
+    URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
+
+private fun decodeForRoute(value: String): String =
+    URLDecoder.decode(value, StandardCharsets.UTF_8)
 
 private fun NavDestination?.isOnRoute(route: String): Boolean {
     return this?.hierarchy?.any { it.route == route } == true
