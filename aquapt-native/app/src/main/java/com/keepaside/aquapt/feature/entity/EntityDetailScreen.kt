@@ -58,6 +58,7 @@ fun EntityDetailScreen(
     kind: EntityKind?,
     entityId: String,
     aquariumId: String?,
+    onOpenEntityForm: (EntityKind, String?) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp)
 ) {
@@ -263,6 +264,20 @@ fun EntityDetailScreen(
                             }
                         }
                     }
+                }
+            }
+
+            if (!uiState.isNotFound && uiState.aquariumId != null) {
+                item {
+                    EntityCreateActionsCard(
+                        isBusy = uiState.isActionInProgress,
+                        onCreateIssue = {
+                            onOpenEntityForm(EntityKind.ISSUE, uiState.aquariumId)
+                        },
+                        onCreateMemo = {
+                            onOpenEntityForm(EntityKind.MEMO, uiState.aquariumId)
+                        }
+                    )
                 }
             }
 
@@ -507,6 +522,50 @@ private fun IssueActionsCard(
                     enabled = !isBusy
                 ) {
                     Text("Delete")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EntityCreateActionsCard(
+    isBusy: Boolean,
+    onCreateIssue: () -> Unit,
+    onCreateMemo: () -> Unit
+) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Create linked activity",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = "Open native forms to add an issue or memo for this tank.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onCreateIssue,
+                    enabled = !isBusy
+                ) {
+                    Text("New issue")
+                }
+
+                OutlinedButton(
+                    onClick = onCreateMemo,
+                    enabled = !isBusy
+                ) {
+                    Text("New memo")
                 }
             }
         }

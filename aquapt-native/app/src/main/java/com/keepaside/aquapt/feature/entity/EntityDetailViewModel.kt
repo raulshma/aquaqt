@@ -89,6 +89,7 @@ data class EntityDetailUiState(
     val headline: String = "Loading entity details...",
     val kindLabel: String = "Entity",
     val entityId: String = "",
+    val aquariumId: String? = null,
     val title: String = "",
     val subtitle: String? = null,
     val aquariumName: String? = null,
@@ -479,6 +480,7 @@ internal fun assembleEntityDetailUiState(
             headline = "This deep link is missing entity details.",
             kindLabel = kind?.label() ?: "Entity",
             entityId = trimmedEntityId,
+            aquariumId = routeAquariumId,
             statusMessage = "Open an entity from the timeline details to continue."
         )
     }
@@ -847,6 +849,7 @@ internal fun assembleEntityDetailUiState(
         headline = "${kind.label()} details",
         kindLabel = kind.label(),
         entityId = trimmedEntityId,
+        aquariumId = aquariumId,
         title = resolved.title,
         subtitle = resolved.subtitle,
         aquariumName = aquariumName,
@@ -1020,6 +1023,7 @@ private fun missingEntityState(
         headline = "${kind.label()} not found.",
         kindLabel = kind.label(),
         entityId = entityId,
+        aquariumId = routeAquariumId,
         aquariumName = aquariumName,
         statusMessage = "The linked ${kind.label().lowercase()} may have been deleted."
     )

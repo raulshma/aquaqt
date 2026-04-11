@@ -39,6 +39,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.feature.entity.EntityDetailScreen
+import com.keepaside.aquapt.feature.entity.EntityFormScreen
 import com.keepaside.aquapt.feature.insights.GlobalInsightsScreen
 import com.keepaside.aquapt.feature.settings.SettingsBackupScreen
 import com.keepaside.aquapt.feature.livestock.LivestockScreen
@@ -62,6 +63,7 @@ private object AquaPTRoute {
     const val Livestock = "livestock"
     const val Insights = "insights"
     const val Entity = "entity"
+    const val EntityForm = "entity-form"
 
     private const val EntityKindArg = "kind"
     private const val EntityIdArg = "id"
@@ -69,12 +71,19 @@ private object AquaPTRoute {
     private const val MissingAquariumIdToken = "_"
 
     const val EntityDetailPattern = "$Entity/{$EntityKindArg}/{$EntityIdArg}/{$EntityAquariumIdArg}"
+    const val EntityFormPattern = "$EntityForm/{$EntityKindArg}/{$EntityAquariumIdArg}"
 
     fun entityDetailRoute(kind: EntityKind, id: String, aquariumId: String?): String {
         val encodedKind = Uri.encode(kind.name)
         val encodedId = Uri.encode(id)
         val encodedAquariumId = Uri.encode(aquariumId ?: MissingAquariumIdToken)
         return "$Entity/$encodedKind/$encodedId/$encodedAquariumId"
+    }
+
+    fun entityFormRoute(kind: EntityKind, aquariumId: String?): String {
+        val encodedKind = Uri.encode(kind.name)
+        val encodedAquariumId = Uri.encode(aquariumId ?: MissingAquariumIdToken)
+        return "$EntityForm/$encodedKind/$encodedAquariumId"
     }
 
     fun parseEntityKind(value: String?): EntityKind? =
@@ -234,7 +243,29 @@ fun AquaPTApp() {
                 EntityDetailScreen(
                     kind = kind,
                     entityId = entityId,
-                    aquariumId = aquariumId
+                    aquariumId = aquariumId,
+                    onOpenEntityForm = { formKind, formAquariumId ->
+                        navController.navigate(
+                            AquaPTRoute.entityFormRoute(
+                                kind = formKind,
+                                aquariumId = formAquariumId
+                            )
+                        ) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+            composable(AquaPTRoute.EntityFormPattern) { backStackEntry ->
+                val kind = AquaPTRoute.parseEntityKind(backStackEntry.arguments?.getString("kind"))
+                val aquariumId = AquaPTRoute.parseEntityAquariumId(backStackEntry.arguments?.getString("aquariumId"))
+
+                EntityFormScreen(
+                    kind = kind,
+                    aquariumId = aquariumId,
+                    onDone = {
+                        navController.popBackStack()
+                    }
                 )
             }
         }
@@ -249,6 +280,7 @@ private fun topBarTitleForRoute(route: String?): String = when {
     route == AquaPTRoute.Settings -> "Settings"
     route == AquaPTRoute.Livestock -> "Livestock"
     route == AquaPTRoute.Insights -> "Global insights"
+    route?.startsWith(AquaPTRoute.EntityForm) == true -> "New activity"
     route?.startsWith(AquaPTRoute.Entity) == true -> "Entity details"
     else -> "AquaPT"
 }
