@@ -533,6 +533,97 @@ class SettingsBackupViewModel(
         }
     }
 
+    fun deleteAllHistoryCloudBackupObjects() {
+        val current = _uiState.value
+        if (current.isBusy) return
+
+        launchWork {
+            _uiState.update { it.copy(isBusy = true) }
+
+            runCatching {
+                val prereq = resolveCloudListPrerequisites()
+                val currentCloudObjects = prereq.cloudGateway.listAvailableCloudBackups(
+                    settings = prereq.settings,
+                    credentials = prereq.credentials
+                )
+
+                val historyObjectKeys = currentCloudObjects
+                    .map { cloudObject -> cloudObject.objectKey.trim() }
+                    .filter { objectKey -> isHistoryBackupObjectKey(objectKey) }
+                    .distinct()
+
+                if (historyObjectKeys.isEmpty()) {
+                    val selectedWhenNoop = resolveSelectedCloudObjectKey(
+                        objects = currentCloudObjects,
+                        preferredObjectKey = prereq.settings.backupS3ObjectKey,
+                        currentSelectedObjectKey = _uiState.value.selectedCloudObjectKey
+                    )
+
+                    BulkHistoryDeleteOutcome(
+                        deletedCount = 0,
+                        latestPointerRemoved = false,
+                        cloudObjects = currentCloudObjects,
+                        selectedObjectKey = selectedWhenNoop
+                    )
+                } else {
+                    var latestPointerRemoved = false
+                    historyObjectKeys.forEach { objectKey ->
+                        val outcome = prereq.cloudGateway.deleteCloudBackupObject(
+                            settings = prereq.settings,
+                            credentials = prereq.credentials,
+                            objectKey = objectKey
+                        )
+                        latestPointerRemoved = latestPointerRemoved || outcome.wasLatestObject
+                    }
+
+                    val refreshedSettings = prereq.settingsStore.settings.value
+                    val refreshedCloudObjects = prereq.cloudGateway.listAvailableCloudBackups(
+                        settings = refreshedSettings,
+                        credentials = prereq.credentials
+                    )
+                    val refreshedSelected = resolveSelectedCloudObjectKey(
+                        objects = refreshedCloudObjects,
+                        preferredObjectKey = refreshedSettings.backupS3ObjectKey,
+                        currentSelectedObjectKey = _uiState.value.selectedCloudObjectKey
+                    )
+
+                    BulkHistoryDeleteOutcome(
+                        deletedCount = historyObjectKeys.size,
+                        latestPointerRemoved = latestPointerRemoved,
+                        cloudObjects = refreshedCloudObjects,
+                        selectedObjectKey = refreshedSelected
+                    )
+                }
+            }.onSuccess { bulkDeleteOutcome ->
+                val statusMessage = if (bulkDeleteOutcome.deletedCount == 0) {
+                    "No history backup objects found to delete."
+                } else {
+                    buildString {
+                        append("Deleted ${bulkDeleteOutcome.deletedCount} history backup object(s).")
+                        if (bulkDeleteOutcome.latestPointerRemoved) {
+                            append(" The latest backup pointer was removed; run Sync to cloud to recreate it.")
+                        }
+                    }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        cloudBackups = bulkDeleteOutcome.cloudObjects,
+                        selectedCloudObjectKey = bulkDeleteOutcome.selectedObjectKey,
+                        restorePreview = null,
+                        statusMessage = statusMessage
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(statusMessage = error.message ?: "Cloud history delete failed.")
+                }
+            }
+
+            _uiState.update { it.copy(isBusy = false) }
+        }
+    }
+
     fun pruneCloudBackupHistory() {
         val current = _uiState.value
         if (current.isBusy) return
@@ -747,6 +838,10 @@ class SettingsBackupViewModel(
         ?.trim()
         ?.takeIf { text -> text.isNotEmpty() }
 
+    private fun isHistoryBackupObjectKey(objectKey: String): Boolean = objectKey
+        .trim()
+        .contains("/history/")
+
     private fun launchWork(block: suspend () -> Unit) {
         (externalScope ?: viewModelScope).launch {
             block()
@@ -789,5 +884,12 @@ class SettingsBackupViewModel(
         val credentials: BackupS3Credentials,
         val cloudGateway: BackupCloudSyncGateway,
         val masterKey: String
+    )
+
+    private data class BulkHistoryDeleteOutcome(
+        val deletedCount: Int,
+        val latestPointerRemoved: Boolean,
+        val cloudObjects: List<BackupCloudObject>,
+        val selectedObjectKey: String
     )
 }

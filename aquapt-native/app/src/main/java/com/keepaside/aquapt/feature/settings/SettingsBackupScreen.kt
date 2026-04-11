@@ -97,6 +97,12 @@ fun SettingsBackupScreen(
     val latestRestorePreview = uiState.restorePreview?.takeIf { preview ->
         preview.sourceObjectKey == latestCloudObjectKey
     }
+    val historyCloudObjectCount = uiState.cloudBackups.count { cloudObject ->
+        isHistoryBackupObjectKey(cloudObject.objectKey)
+    }
+    val historyIncludesLatestObject = uiState.cloudBackups.any { cloudObject ->
+        cloudObject.isLatestObject && isHistoryBackupObjectKey(cloudObject.objectKey)
+    }
 
     val settingsPreferencesViewModel: SettingsPreferencesViewModel = viewModel(
         factory = remember(appSettingsStore, backupSecretsStore) {
@@ -146,6 +152,7 @@ fun SettingsBackupScreen(
     var showRestoreSelectedConfirmation by remember { mutableStateOf(false) }
     var showRestoreLatestConfirmation by remember { mutableStateOf(false) }
     var showDeleteSelectedConfirmation by remember { mutableStateOf(false) }
+    var showDeleteHistoryConfirmation by remember { mutableStateOf(false) }
 
     LaunchedEffect(context) {
         refreshNotificationPermissionStatus()
@@ -515,6 +522,19 @@ fun SettingsBackupScreen(
                 }
             }
 
+            OutlinedButton(
+                onClick = {
+                    if (historyCloudObjectCount == 0) {
+                        viewModel.deleteAllHistoryCloudBackupObjects()
+                    } else {
+                        showDeleteHistoryConfirmation = true
+                    }
+                },
+                enabled = !uiState.isBusy
+            ) {
+                Text("Delete all history objects")
+            }
+
             OutlinedTextField(
                 value = uiState.payload,
                 onValueChange = viewModel::onPayloadChanged,
@@ -776,6 +796,51 @@ fun SettingsBackupScreen(
                     TextButton(
                         onClick = {
                             showDeleteSelectedConfirmation = false
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        if (showDeleteHistoryConfirmation) {
+            AlertDialog(
+                onDismissRequest = {
+                    showDeleteHistoryConfirmation = false
+                },
+                title = {
+                    Text("Delete all history cloud objects?")
+                },
+                text = {
+                    Text(
+                        if (historyCloudObjectCount == 0) {
+                            "No history objects are currently loaded."
+                        } else {
+                            "Delete $historyCloudObjectCount history backup object(s). " +
+                                "This cannot be undone." +
+                                if (historyIncludesLatestObject) {
+                                    " A history object is currently marked latest; sync again to recreate latest pointer metadata if needed."
+                                } else {
+                                    ""
+                                }
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteHistoryConfirmation = false
+                            viewModel.deleteAllHistoryCloudBackupObjects()
+                        }
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteHistoryConfirmation = false
                         }
                     ) {
                         Text("Cancel")
@@ -1352,3 +1417,7 @@ private fun buildRestorePreviewSummaryText(preview: CloudRestorePreviewUiState?)
         "${preview.changedCollectionCount} collection group(s) differ. " +
         settingsSummary
 }
+
+private fun isHistoryBackupObjectKey(objectKey: String): Boolean = objectKey
+    .trim()
+    .contains("/history/")
