@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Analytics
 import androidx.compose.material.icons.rounded.Assistant
@@ -38,6 +37,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.keepaside.aquapt.core.model.EntityKind
+import com.keepaside.aquapt.feature.assistant.AssistantScreen
 import com.keepaside.aquapt.feature.entity.EntityDetailScreen
 import com.keepaside.aquapt.feature.entity.EntityEditKind
 import com.keepaside.aquapt.feature.entity.EntityEditScreen
@@ -230,11 +230,7 @@ fun AquaPTApp() {
                 )
             }
             composable(AquaPTRoute.Assistant) {
-                PlaceholderScreen(
-                    title = "Assistant",
-                    subtitle = "Streaming chat, action review, and memory controls are planned for Phase 3.",
-                    icon = { Icon(Icons.Outlined.Psychology, contentDescription = null) }
-                )
+                AssistantScreen()
             }
             composable(AquaPTRoute.Settings) {
                 SettingsBackupScreen()

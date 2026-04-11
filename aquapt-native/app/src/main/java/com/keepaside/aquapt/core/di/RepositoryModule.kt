@@ -9,6 +9,7 @@ import org.koin.dsl.module
 
 val repositoryModule = module {
     single<AppSettingsStore> { AppSettingsRepository(androidContext()) }
+    single<AssistantConversationsStore> { AssistantConversationsRepository(androidContext()) }
 
     single { AquariumRepository(get()) }
     single { LivestockRepository(get()) }
