@@ -270,6 +270,54 @@ class LivestockViewModelTest {
     }
 
     @Test
+    fun `delete impact detaches offspring parent links and feeding-task bindings`() {
+        val deleteTarget = Livestock(
+            id = "l-delete",
+            aquariumId = "a-1",
+            name = "Retired resident"
+        )
+        val offspring = Livestock(
+            id = "l-child",
+            aquariumId = "a-1",
+            name = "Fry",
+            parentId = deleteTarget.id
+        )
+        val unrelated = Livestock(
+            id = "l-other",
+            aquariumId = "a-2",
+            name = "Unrelated"
+        )
+        val linkedTask = TaskTemplate(
+            id = "t-linked",
+            title = "Feed retired resident",
+            livestockId = deleteTarget.id,
+            frequency = TaskFrequency.DAILY,
+            aquariumIds = listOf("a-1")
+        )
+        val unrelatedTask = TaskTemplate(
+            id = "t-other",
+            title = "Clean filter",
+            frequency = TaskFrequency.WEEKLY,
+            aquariumIds = listOf("a-2")
+        )
+
+        val impact = computeLivestockDeleteImpact(
+            livestock = listOf(deleteTarget, offspring, unrelated),
+            taskTemplates = listOf(linkedTask, unrelatedTask),
+            deletedLivestockId = deleteTarget.id
+        )
+
+        assertEquals(1, impact.orphanedOffspringCount)
+        assertEquals(1, impact.detachedTaskCount)
+        assertEquals(1, impact.childUpdates.size)
+        assertEquals("l-child", impact.childUpdates.single().id)
+        assertNull(impact.childUpdates.single().parentId)
+        assertEquals(1, impact.taskTemplateUpdates.size)
+        assertEquals("t-linked", impact.taskTemplateUpdates.single().id)
+        assertNull(impact.taskTemplateUpdates.single().livestockId)
+    }
+
+    @Test
     fun `livestock date time input accepts friendly local value`() {
         val parsed = parseLivestockDateTimeInput("2026-04-11 18:30", ZoneOffset.UTC)
 

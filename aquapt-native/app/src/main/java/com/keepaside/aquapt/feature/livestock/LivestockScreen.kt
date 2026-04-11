@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,7 +32,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -164,6 +167,8 @@ fun LivestockScreen(
                         uiState = uiState,
                         resident = resident,
                         onStartEditResident = viewModel::startEditSelectedResident,
+                        onArchiveResident = viewModel::archiveSelectedResident,
+                        onDeleteResident = viewModel::deleteSelectedResident,
                         onOpenEntity = onOpenEntityDeepLink,
                         onFeedingNoteChanged = viewModel::onFeedingNoteChanged,
                         onSaveFeedingNotes = viewModel::saveFeedingNotes,
@@ -420,6 +425,8 @@ private fun LivestockDetailCard(
     uiState: LivestockUiState,
     resident: LivestockDetailItem,
     onStartEditResident: () -> Unit,
+    onArchiveResident: () -> Unit,
+    onDeleteResident: () -> Unit,
     onOpenEntity: (EntityKind, String, String?) -> Unit,
     onFeedingNoteChanged: (String) -> Unit,
     onSaveFeedingNotes: () -> Unit,
@@ -440,6 +447,8 @@ private fun LivestockDetailCard(
     onFeedingTaskTimesPerDayChanged: (String) -> Unit,
     onCreateFeedingTask: () -> Unit
 ) {
+    var showDeleteConfirmation by remember(resident.id) { mutableStateOf(false) }
+
     Card {
         Column(
             modifier = Modifier
@@ -520,6 +529,34 @@ private fun LivestockDetailCard(
                 }
             }
 
+            DetailSection(title = "Archive / delete") {
+                Text(
+                    text = "Archive keeps the resident in history (deceased status). Delete permanently removes the resident profile.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onArchiveResident,
+                        enabled = resident.status != LivestockStatus.DECEASED
+                    ) {
+                        Text(
+                            if (resident.status == LivestockStatus.DECEASED) {
+                                "Archived"
+                            } else {
+                                "Archive resident"
+                            }
+                        )
+                    }
+                    TextButton(onClick = { showDeleteConfirmation = true }) {
+                        Text(
+                            text = "Delete resident",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
             DetailSection(title = "Transfer") {
                 if (resident.transferTargets.isEmpty()) {
                     Text(
@@ -590,6 +627,33 @@ private fun LivestockDetailCard(
                 onCreateFeedingTask = onCreateFeedingTask
             )
         }
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete resident?") },
+            text = {
+                Text(
+                    "This permanently removes ${resident.name}. Offspring parent links and linked feeding-task targets will be detached automatically."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        onDeleteResident()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

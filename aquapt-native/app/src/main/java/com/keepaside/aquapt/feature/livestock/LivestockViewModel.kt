@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -141,6 +142,13 @@ data class LivestockResidentDraft(
     val isEditing: Boolean
         get() = id != null
 }
+
+internal data class LivestockDeleteImpact(
+    val childUpdates: List<Livestock>,
+    val taskTemplateUpdates: List<TaskTemplate>,
+    val orphanedOffspringCount: Int,
+    val detachedTaskCount: Int
+)
 
 data class LivestockUiState(
     val isLoading: Boolean = true,
@@ -503,6 +511,128 @@ class LivestockViewModel(
                 setStatus("${selected.name} marked ${status.label()}.")
             }.onFailure { error ->
                 setStatus(error.message ?: "Unable to update status.")
+            }
+        }
+    }
+
+    fun archiveSelectedResident() {
+        val selected = _uiState.value.selectedResident ?: return setStatus("Select a resident first.")
+        val note = interactionState.value.statusNoteDraft.trim().ifBlank { null }
+        val createdAt = nowProvider().toString()
+
+        viewModelScope.launch {
+            var alreadyArchived = false
+
+            runCatching {
+                val current = livestockRepository.getById(selected.id)
+                    ?: error("Resident no longer exists.")
+
+                if (current.status == LivestockStatus.DECEASED) {
+                    alreadyArchived = true
+                    return@runCatching current
+                }
+
+                val archived = current.copy(status = LivestockStatus.DECEASED)
+                livestockRepository.upsert(archived)
+                timelineEventRepository.upsert(
+                    TimelineEvent(
+                        id = idProvider(),
+                        aquariumId = archived.aquariumId,
+                        type = TimelineEventType.LIVESTOCK,
+                        createdAt = createdAt,
+                        title = "Archived ${archived.name}",
+                        description = note ?: "Resident moved to archived/deceased status.",
+                        photoUri = archived.photoUri,
+                        source = EntityRef(EntityKind.LIVESTOCK, archived.id, archived.aquariumId),
+                        related = aquariumRelatedRefs(archived.aquariumId)
+                    )
+                )
+
+                archived
+            }.onSuccess { archived ->
+                interactionState.update { state ->
+                    state.copy(
+                        statusDraft = LivestockStatus.DECEASED,
+                        statusNoteDraft = "",
+                        feedingNoteDraft = archived.dietaryNotes.orEmpty()
+                    )
+                }
+
+                setStatus(
+                    if (alreadyArchived) {
+                        "${archived.name} is already archived."
+                    } else {
+                        "${archived.name} archived."
+                    }
+                )
+            }.onFailure { error ->
+                setStatus(error.message ?: "Unable to archive resident.")
+            }
+        }
+    }
+
+    fun deleteSelectedResident() {
+        val selected = _uiState.value.selectedResident ?: return setStatus("Select a resident first.")
+        val createdAt = nowProvider().toString()
+
+        viewModelScope.launch {
+            runCatching {
+                val current = livestockRepository.getById(selected.id)
+                    ?: error("Resident no longer exists.")
+
+                val allLivestock = livestockRepository.getAll().first()
+                val allTaskTemplates = taskTemplateRepository.getAll().first()
+                val impact = computeLivestockDeleteImpact(
+                    livestock = allLivestock,
+                    taskTemplates = allTaskTemplates,
+                    deletedLivestockId = current.id
+                )
+
+                impact.childUpdates.forEach { offspring ->
+                    livestockRepository.upsert(offspring)
+                }
+
+                impact.taskTemplateUpdates.forEach { template ->
+                    val primaryAquariumId = template.aquariumIds.firstOrNull()
+                        ?: current.aquariumId
+                    taskTemplateRepository.upsert(template, primaryAquariumId)
+                }
+
+                livestockRepository.deleteById(current.id)
+
+                timelineEventRepository.upsert(
+                    TimelineEvent(
+                        id = idProvider(),
+                        aquariumId = current.aquariumId,
+                        type = TimelineEventType.LIVESTOCK,
+                        createdAt = createdAt,
+                        title = "Deleted ${current.name}",
+                        description = buildResidentDeleteDescription(impact),
+                        photoUri = current.photoUri,
+                        source = EntityRef(EntityKind.LIVESTOCK, current.id, current.aquariumId),
+                        related = aquariumRelatedRefs(current.aquariumId)
+                    )
+                )
+
+                current to impact
+            }.onSuccess { (deleted, impact) ->
+                interactionState.update { state ->
+                    state.copy(
+                        selectedLivestockId = null,
+                        feedingNoteDraft = "",
+                        statusDraft = LivestockStatus.ACTIVE,
+                        statusNoteDraft = "",
+                        transferTargetAquariumId = null,
+                        transferNoteDraft = "",
+                        offspringDraft = LivestockOffspringDraft(),
+                        feedingTaskDraft = LivestockFeedingTaskDraft(),
+                        residentDraft = null
+                    )
+                }
+
+                setStatus(buildResidentDeleteStatusMessage(deleted.name, impact))
+            }.onFailure { error ->
+                setStatus(error.message ?: "Unable to delete resident.")
             }
         }
     }
@@ -1020,6 +1150,29 @@ private fun aquariumRelatedRefs(aquariumId: String, vararg extras: EntityRef): L
 private fun buildTransferDescription(prefix: String, note: String?): String =
     if (note.isNullOrBlank()) prefix else "$prefix - $note"
 
+private fun buildResidentDeleteDescription(impact: LivestockDeleteImpact): String? {
+    val parts = mutableListOf<String>()
+    if (impact.orphanedOffspringCount > 0) {
+        parts += "${impact.orphanedOffspringCount} offspring link${impact.orphanedOffspringCount.plural()} removed"
+    }
+    if (impact.detachedTaskCount > 0) {
+        parts += "${impact.detachedTaskCount} feeding task link${impact.detachedTaskCount.plural()} detached"
+    }
+    return parts.joinToString(" • ").ifBlank { null }
+}
+
+private fun buildResidentDeleteStatusMessage(
+    residentName: String,
+    impact: LivestockDeleteImpact
+): String {
+    val details = buildResidentDeleteDescription(impact)
+    return if (details.isNullOrBlank()) {
+        "$residentName removed."
+    } else {
+        "$residentName removed. $details."
+    }
+}
+
 private fun Livestock.toDraft(zoneId: ZoneId): LivestockResidentDraft =
     LivestockResidentDraft(
         id = id,
@@ -1113,6 +1266,27 @@ internal fun parseLivestockPurchasePrice(raw: String): Double? {
 
     val parsed = value.toDoubleOrNull() ?: return null
     return parsed.takeIf { it.isFinite() && it >= 0.0 }
+}
+
+internal fun computeLivestockDeleteImpact(
+    livestock: List<Livestock>,
+    taskTemplates: List<TaskTemplate>,
+    deletedLivestockId: String
+): LivestockDeleteImpact {
+    val childUpdates = livestock
+        .filter { item -> item.parentId == deletedLivestockId }
+        .map { item -> item.copy(parentId = null) }
+
+    val taskTemplateUpdates = taskTemplates
+        .filter { template -> template.livestockId == deletedLivestockId }
+        .map { template -> template.copy(livestockId = null) }
+
+    return LivestockDeleteImpact(
+        childUpdates = childUpdates,
+        taskTemplateUpdates = taskTemplateUpdates,
+        orphanedOffspringCount = childUpdates.size,
+        detachedTaskCount = taskTemplateUpdates.size
+    )
 }
 
 internal fun parseLivestockDateTimeInput(raw: String, zoneId: ZoneId): Instant? {
