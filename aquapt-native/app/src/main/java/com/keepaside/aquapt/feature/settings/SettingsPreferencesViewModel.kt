@@ -4,6 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.keepaside.aquapt.core.backup.backupAutoSyncDefaultHour
+import com.keepaside.aquapt.core.localization.ManualRegionalSettingsInput
+import com.keepaside.aquapt.core.localization.ManualRegionalSettingsResult
+import com.keepaside.aquapt.core.localization.applyRegionalDefaults
+import com.keepaside.aquapt.core.localization.resolveManualRegionalSettings
+import com.keepaside.aquapt.core.localization.resolveRegionalDefaults
 import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.model.RegionalPreferencesMode
@@ -275,6 +280,28 @@ class SettingsPreferencesViewModel(
         }
 
         val backupMasterKeyInput = current.draft.backupMasterKeyInput.trim()
+        val regionalDefaults = resolveRegionalDefaults()
+        val manualRegionalResolution = if (
+            current.draft.regionalPreferencesMode == RegionalPreferencesMode.MANUAL
+        ) {
+            val countryInput = current.draft.defaultCountryCode
+                .trim()
+                .ifEmpty { current.draft.defaultCountryName.trim() }
+            resolveManualRegionalSettings(
+                input = ManualRegionalSettingsInput(
+                    country = countryInput,
+                    currency = current.draft.defaultCurrency,
+                    fallbackCountryCode = regionalDefaults.defaultCountryCode
+                ),
+                detectedDefaults = regionalDefaults
+            )
+        } else {
+            null
+        }
+        if (manualRegionalResolution is ManualRegionalSettingsResult.Error) {
+            _uiState.update { it.copy(statusMessage = manualRegionalResolution.message) }
+            return
+        }
 
         launchWork {
             _uiState.update { it.copy(isSaving = true) }
@@ -282,6 +309,8 @@ class SettingsPreferencesViewModel(
             runCatching {
                 val existing = appSettingsStore.settings.value
                 val isManualMode = current.draft.regionalPreferencesMode == RegionalPreferencesMode.MANUAL
+                val manualRegionalValue =
+                    (manualRegionalResolution as? ManualRegionalSettingsResult.Success)?.value
                 val normalizedBackupHour = backupSyncHour
                     ?: existing.backupSyncHour
                     ?: backupAutoSyncDefaultHour
@@ -304,8 +333,8 @@ class SettingsPreferencesViewModel(
                 val hasS3Credentials = backupSecretsStore?.hasBackupS3Credentials()
                     ?: existing.backupS3CredentialsSet
 
-                appSettingsStore.setSettings(
-                    existing.copy(
+                val normalizedSettings = applyRegionalDefaults(
+                    settings = existing.copy(
                         openRouterApiKey = current.draft.openRouterApiKey.trim(),
                         aiModel = current.draft.aiModel.trim(),
                         assistantMemoryModel = current.draft.assistantMemoryModel
@@ -339,28 +368,25 @@ class SettingsPreferencesViewModel(
                             null
                         },
                         defaultCountryCode = if (isManualMode) {
-                            current.draft.defaultCountryCode
-                                .trim()
-                                .uppercase()
-                                .takeIf { it.isNotEmpty() }
+                            manualRegionalValue?.defaultCountryCode
                         } else {
                             null
                         },
                         defaultCountryName = if (isManualMode) {
-                            current.draft.defaultCountryName.trim().takeIf { it.isNotEmpty() }
+                            manualRegionalValue?.defaultCountryName
                         } else {
                             null
                         },
                         defaultCurrency = if (isManualMode) {
-                            current.draft.defaultCurrency
-                                .trim()
-                                .uppercase()
-                                .takeIf { it.isNotEmpty() }
+                            manualRegionalValue?.defaultCurrency
                         } else {
                             null
                         }
-                    )
+                    ),
+                    detectedDefaults = regionalDefaults
                 )
+
+                appSettingsStore.setSettings(normalizedSettings)
 
                 hasMasterKey to hasS3Credentials
             }.onSuccess { (hasMasterKey, hasS3Credentials) ->

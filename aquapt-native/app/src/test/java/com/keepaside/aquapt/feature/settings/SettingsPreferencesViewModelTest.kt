@@ -1,5 +1,6 @@
 package com.keepaside.aquapt.feature.settings
 
+import com.keepaside.aquapt.core.localization.resolveRegionalDefaults
 import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.model.RegionalPreferencesMode
@@ -14,7 +15,6 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -114,7 +114,7 @@ class SettingsPreferencesViewModelTest {
     }
 
     @Test
-    fun `auto regional mode clears manual overrides on save`() = runTest {
+    fun `auto regional mode reapplies detected defaults on save`() = runTest {
         val fakeStore = FakePreferencesAppSettingsStore(
             AppSettings(
                 regionalPreferencesMode = RegionalPreferencesMode.MANUAL,
@@ -138,12 +138,66 @@ class SettingsPreferencesViewModelTest {
             advanceUntilIdle()
 
             val saved = fakeStore.settings.value
+            val detectedDefaults = resolveRegionalDefaults()
             assertEquals(RegionalPreferencesMode.AUTO, saved.regionalPreferencesMode)
-            assertNull(saved.defaultLocale)
-            assertNull(saved.defaultTimezone)
-            assertNull(saved.defaultCountryCode)
-            assertNull(saved.defaultCountryName)
-            assertNull(saved.defaultCurrency)
+            assertEquals(detectedDefaults.defaultLocale, saved.defaultLocale)
+            assertEquals(detectedDefaults.defaultTimezone, saved.defaultTimezone)
+            assertEquals(detectedDefaults.defaultCountryCode, saved.defaultCountryCode)
+            assertEquals(detectedDefaults.defaultCountryName, saved.defaultCountryName)
+            assertEquals(detectedDefaults.defaultCurrency, saved.defaultCurrency)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `invalid manual country blocks save`() = runTest {
+        val fakeStore = FakePreferencesAppSettingsStore()
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            externalScope = this
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onRegionalPreferencesModeChanged(RegionalPreferencesMode.MANUAL)
+            viewModel.onDefaultCountryCodeChanged("Atlantis")
+            viewModel.savePreferences()
+            advanceUntilIdle()
+
+            assertEquals(
+                "Enter a valid country name or 2-letter country code.",
+                viewModel.uiState.value.statusMessage
+            )
+            assertEquals(0, fakeStore.setCalls)
+        } finally {
+            viewModel.disposeForTests()
+        }
+    }
+
+    @Test
+    fun `invalid manual currency blocks save`() = runTest {
+        val fakeStore = FakePreferencesAppSettingsStore()
+        val viewModel = SettingsPreferencesViewModel(
+            appSettingsStore = fakeStore,
+            externalScope = this
+        )
+
+        try {
+            advanceUntilIdle()
+
+            viewModel.onRegionalPreferencesModeChanged(RegionalPreferencesMode.MANUAL)
+            viewModel.onDefaultCountryCodeChanged("IN")
+            viewModel.onDefaultCurrencyChanged("rupees")
+            viewModel.savePreferences()
+            advanceUntilIdle()
+
+            assertEquals(
+                "Enter a valid 3-letter currency code.",
+                viewModel.uiState.value.statusMessage
+            )
+            assertEquals(0, fakeStore.setCalls)
         } finally {
             viewModel.disposeForTests()
         }

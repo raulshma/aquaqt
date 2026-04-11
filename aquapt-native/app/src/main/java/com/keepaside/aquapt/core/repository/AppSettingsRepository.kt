@@ -2,6 +2,7 @@ package com.keepaside.aquapt.core.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.keepaside.aquapt.core.localization.applyRegionalDefaults
 import com.keepaside.aquapt.core.model.AppSettings
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.model.RegionalPreferencesMode
@@ -29,39 +30,41 @@ class AppSettingsRepository(
     override val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
     override suspend fun setSettings(settings: AppSettings) {
+        val normalizedSettings = applyRegionalDefaults(settings)
+
         preferences.edit().apply {
-            putString(keyOpenRouterApiKey, settings.openRouterApiKey)
-            putString(keyAiModel, settings.aiModel)
-            putString(keyAssistantMemoryModel, settings.assistantMemoryModel)
+            putString(keyOpenRouterApiKey, normalizedSettings.openRouterApiKey)
+            putString(keyAiModel, normalizedSettings.aiModel)
+            putString(keyAssistantMemoryModel, normalizedSettings.assistantMemoryModel)
 
-            putBoolean(keyNotificationsEnabled, settings.notificationsEnabled)
-            putString(keyReminderHours, settings.reminderHours.joinToString(","))
-            putBoolean(keyAssistantMemoryEnabled, settings.assistantMemoryEnabled)
+            putBoolean(keyNotificationsEnabled, normalizedSettings.notificationsEnabled)
+            putString(keyReminderHours, normalizedSettings.reminderHours.joinToString(","))
+            putBoolean(keyAssistantMemoryEnabled, normalizedSettings.assistantMemoryEnabled)
 
-            putBoolean(keyBackupSyncEnabled, settings.backupSyncEnabled)
-            putIntOrRemove(keyBackupSyncHour, settings.backupSyncHour)
+            putBoolean(keyBackupSyncEnabled, normalizedSettings.backupSyncEnabled)
+            putIntOrRemove(keyBackupSyncHour, normalizedSettings.backupSyncHour)
 
-            putString(keyBackupS3Endpoint, settings.backupS3Endpoint)
-            putString(keyBackupS3Region, settings.backupS3Region)
-            putString(keyBackupS3Bucket, settings.backupS3Bucket)
-            putString(keyBackupS3ObjectKey, settings.backupS3ObjectKey)
-            putBoolean(keyBackupS3ForcePathStyle, settings.backupS3ForcePathStyle)
-            putBoolean(keyBackupUseVersionedKeys, settings.backupUseVersionedKeys)
-            putIntOrRemove(keyBackupRetentionDays, settings.backupRetentionDays)
-            putBoolean(keyBackupMasterKeySet, settings.backupMasterKeySet)
-            putBoolean(keyBackupS3CredentialsSet, settings.backupS3CredentialsSet)
-            putString(keyBackupLastSyncedAt, settings.backupLastSyncedAt)
-            putString(keyBackupLastRestoredAt, settings.backupLastRestoredAt)
-            putString(keyBackupLastAutoSyncDate, settings.backupLastAutoSyncDate)
-            putString(keyBackupLastError, settings.backupLastError)
+            putString(keyBackupS3Endpoint, normalizedSettings.backupS3Endpoint)
+            putString(keyBackupS3Region, normalizedSettings.backupS3Region)
+            putString(keyBackupS3Bucket, normalizedSettings.backupS3Bucket)
+            putString(keyBackupS3ObjectKey, normalizedSettings.backupS3ObjectKey)
+            putBoolean(keyBackupS3ForcePathStyle, normalizedSettings.backupS3ForcePathStyle)
+            putBoolean(keyBackupUseVersionedKeys, normalizedSettings.backupUseVersionedKeys)
+            putIntOrRemove(keyBackupRetentionDays, normalizedSettings.backupRetentionDays)
+            putBoolean(keyBackupMasterKeySet, normalizedSettings.backupMasterKeySet)
+            putBoolean(keyBackupS3CredentialsSet, normalizedSettings.backupS3CredentialsSet)
+            putString(keyBackupLastSyncedAt, normalizedSettings.backupLastSyncedAt)
+            putString(keyBackupLastRestoredAt, normalizedSettings.backupLastRestoredAt)
+            putString(keyBackupLastAutoSyncDate, normalizedSettings.backupLastAutoSyncDate)
+            putString(keyBackupLastError, normalizedSettings.backupLastError)
 
-            putString(keyThemePreference, settings.themePreference.name)
-            putString(keyRegionalPreferencesMode, settings.regionalPreferencesMode.name)
-            putString(keyDefaultLocale, settings.defaultLocale)
-            putString(keyDefaultTimezone, settings.defaultTimezone)
-            putString(keyDefaultCountryCode, settings.defaultCountryCode)
-            putString(keyDefaultCountryName, settings.defaultCountryName)
-            putString(keyDefaultCurrency, settings.defaultCurrency)
+            putString(keyThemePreference, normalizedSettings.themePreference.name)
+            putString(keyRegionalPreferencesMode, normalizedSettings.regionalPreferencesMode.name)
+            putString(keyDefaultLocale, normalizedSettings.defaultLocale)
+            putString(keyDefaultTimezone, normalizedSettings.defaultTimezone)
+            putString(keyDefaultCountryCode, normalizedSettings.defaultCountryCode)
+            putString(keyDefaultCountryName, normalizedSettings.defaultCountryName)
+            putString(keyDefaultCurrency, normalizedSettings.defaultCurrency)
         }.apply()
 
         _settings.update { readSettings() }
@@ -71,7 +74,7 @@ class AppSettingsRepository(
         val reminderHours = preferences.getString(keyReminderHours, null)
             .toReminderHoursList()
 
-        return AppSettings(
+        val rawSettings = AppSettings(
             openRouterApiKey = preferences.getString(keyOpenRouterApiKey, "").orEmpty(),
             aiModel = preferences.getString(keyAiModel, "").orEmpty(),
             assistantMemoryModel = preferences.getString(keyAssistantMemoryModel, null),
@@ -103,6 +106,8 @@ class AppSettingsRepository(
             defaultCountryName = preferences.getString(keyDefaultCountryName, null),
             defaultCurrency = preferences.getString(keyDefaultCurrency, null)
         )
+
+        return applyRegionalDefaults(rawSettings)
     }
 
     private fun SharedPreferences.getOptionalInt(key: String): Int? =
