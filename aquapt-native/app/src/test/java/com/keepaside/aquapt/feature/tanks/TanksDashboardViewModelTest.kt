@@ -11,6 +11,7 @@ import com.keepaside.aquapt.core.model.WaterParameterLog
 import com.keepaside.aquapt.core.model.WaterParameters
 import com.keepaside.aquapt.core.model.WaterType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -187,5 +188,75 @@ class TanksDashboardViewModelTest {
 
         assertEquals(0, state.summary.dueTaskCount)
         assertTrue(state.dueTasks.isEmpty())
+    }
+
+    @Test
+    fun `aquarium draft validation rejects invalid numeric inputs`() {
+        val invalidVolume = validateTanksAquariumDraft(
+            TanksAquariumDraft(
+                name = "Display",
+                volumeLitersInput = "0"
+            )
+        )
+        assertEquals("Volume must be a positive number.", invalidVolume)
+
+        val invalidCost = validateTanksAquariumDraft(
+            TanksAquariumDraft(
+                name = "Display",
+                volumeLitersInput = "120",
+                investmentCostInput = "-5"
+            )
+        )
+        assertEquals("Investment cost must be a valid non-negative number.", invalidCost)
+    }
+
+    @Test
+    fun `livestock draft validation checks aquarium quantity and datetime`() {
+        val invalidAquarium = validateTanksLivestockDraft(
+            draft = TanksLivestockDraft(
+                aquariumId = "missing",
+                name = "Neon tetra",
+                quantityInput = "3"
+            ),
+            aquariumIds = listOf("a-1"),
+            zoneId = ZoneOffset.UTC
+        )
+        assertEquals("Choose a valid tank for this resident.", invalidAquarium)
+
+        val invalidQuantity = validateTanksLivestockDraft(
+            draft = TanksLivestockDraft(
+                aquariumId = "a-1",
+                name = "Neon tetra",
+                quantityInput = "0"
+            ),
+            aquariumIds = listOf("a-1"),
+            zoneId = ZoneOffset.UTC
+        )
+        assertEquals("Quantity must be at least 1.", invalidQuantity)
+
+        val invalidDateTime = validateTanksLivestockDraft(
+            draft = TanksLivestockDraft(
+                aquariumId = "a-1",
+                name = "Neon tetra",
+                quantityInput = "2",
+                acquiredAtInput = "not-a-date"
+            ),
+            aquariumIds = listOf("a-1"),
+            zoneId = ZoneOffset.UTC
+        )
+        assertEquals("Use a valid acquired date/time like 2026-04-11 18:30.", invalidDateTime)
+    }
+
+    @Test
+    fun `tanks datetime and numeric parsers handle supported formats`() {
+        val parsedLocalDateTime = parseTanksDateTimeInput("2026-04-11 18:30", ZoneOffset.UTC)
+        assertEquals(Instant.parse("2026-04-11T18:30:00Z"), parsedLocalDateTime)
+
+        val parsedDate = parseTanksDateTimeInput("2026-04-11", ZoneOffset.UTC)
+        assertEquals(Instant.parse("2026-04-11T00:00:00Z"), parsedDate)
+
+        assertEquals(1.25, parseTanksNonNegativeDouble("1.25") ?: 0.0, 0.0)
+        assertNull(parseTanksNonNegativeDouble(""))
+        assertNull(parseTanksPositiveDouble("0"))
     }
 }
