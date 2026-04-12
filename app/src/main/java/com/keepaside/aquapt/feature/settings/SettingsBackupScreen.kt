@@ -72,8 +72,7 @@ import com.keepaside.aquapt.core.repository.AppSettingsStore
 import com.keepaside.aquapt.core.repository.BackupSecretsStore
 import com.keepaside.aquapt.core.repository.ReminderGroupRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
-import com.keepaside.aquapt.ui.theme.NeoHeroContainer
-import com.keepaside.aquapt.ui.theme.NeoHeroOnContainer
+
 import org.koin.java.KoinJavaComponent
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -280,7 +279,7 @@ fun SettingsBackupScreen(
             Card(
                 shape = MaterialTheme.shapes.large,
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Column(
@@ -343,7 +342,7 @@ fun SettingsBackupScreen(
 
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Column(
@@ -692,7 +691,7 @@ fun SettingsBackupScreen(
 
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Column(
@@ -727,7 +726,7 @@ fun SettingsBackupScreen(
             Card(
                 shape = MaterialTheme.shapes.large,
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Column(
@@ -1088,6 +1087,34 @@ fun SettingsBackupScreen(
     }
 }
 
+@Composable
+private fun SettingsGroupCard(
+    title: String,
+    content: @Composable () -> Unit
+) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 6.dp)
+    )
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            content()
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SettingsPreferencesSection(
@@ -1129,350 +1156,550 @@ private fun SettingsPreferencesSection(
     onSave: () -> Unit,
     onReset: () -> Unit
 ) {
-    Text(
-        text = "App preferences",
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 6.dp)
-    )
-
-    Card(
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+    if (uiState.statusMessage.isNotBlank()) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
         ) {
-            if (uiState.statusMessage.isNotBlank()) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+            Text(
+                text = uiState.statusMessage,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    SettingsGroupCard(title = "Assistant runtime") {
+        OutlinedTextField(
+            value = uiState.draft.openRouterApiKey,
+            onValueChange = onOpenRouterApiKeyChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("OpenRouter API key") },
+            supportingText = { Text("Required for streaming assistant replies.") },
+            enabled = !uiState.isSaving,
+            singleLine = true
+        )
+
+        OutlinedTextField(
+            value = uiState.draft.aiModel,
+            onValueChange = onAiModelChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("OpenRouter model") },
+            supportingText = { Text("Example: openai/gpt-4o-mini") },
+            enabled = !uiState.isSaving,
+            singleLine = true
+        )
+
+        OutlinedButton(
+            onClick = {
+                onOpenModelBrowser(
+                    ModelBrowserTarget.ASSISTANT,
+                    uiState.draft.aiModel.takeIf { it.isNotBlank() }
+                )
+            },
+            enabled = !uiState.isSaving,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Browse assistant models")
+        }
+
+        OutlinedTextField(
+            value = uiState.draft.assistantMemoryModel,
+            onValueChange = onAssistantMemoryModelChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Assistant memory model") },
+            supportingText = { Text("Optional. Used for future memory summarization/compaction passes.") },
+            enabled = !uiState.isSaving,
+            singleLine = true
+        )
+
+        OutlinedButton(
+            onClick = {
+                onOpenModelBrowser(
+                    ModelBrowserTarget.MEMORY,
+                    uiState.draft.assistantMemoryModel.takeIf { it.isNotBlank() }
+                )
+            },
+            enabled = !uiState.isSaving,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Browse memory models")
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Checkbox(
+                checked = uiState.draft.assistantMemoryEnabled,
+                onCheckedChange = { value -> onAssistantMemoryEnabledChanged(value) },
+                enabled = !uiState.isSaving
+            )
+            Text(
+                text = "Enable assistant memory",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+
+    SettingsGroupCard(title = "Appearance") {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AppThemePreference.entries.forEach { preference ->
+                FilterChip(
+                    selected = uiState.draft.themePreference == preference,
+                    onClick = { onThemePreferenceChanged(preference) },
+                    enabled = !uiState.isSaving,
+                    label = { Text(preference.toReadableLabel()) }
+                )
+            }
+        }
+    }
+
+    SettingsGroupCard(title = "Notifications & reminders") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Checkbox(
+                checked = uiState.draft.notificationsEnabled,
+                onCheckedChange = { value -> onNotificationsEnabledChanged(value) },
+                enabled = !uiState.isSaving
+            )
+            Text(
+                text = "Enable notifications",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        if (
+            uiState.draft.notificationsEnabled &&
+            !notificationPermissionStatus.canPostNotifications
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = uiState.statusMessage,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
+                        text = "Reminder notifications need Android permission and app-level notification access.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onErrorContainer
                     )
-                }
-            }
 
-            Text(
-                text = "Assistant runtime",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            OutlinedTextField(
-                value = uiState.draft.openRouterApiKey,
-                onValueChange = onOpenRouterApiKeyChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("OpenRouter API key") },
-                supportingText = { Text("Required for streaming assistant replies.") },
-                enabled = !uiState.isSaving,
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = uiState.draft.aiModel,
-                onValueChange = onAiModelChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("OpenRouter model") },
-                supportingText = { Text("Example: openai/gpt-4o-mini") },
-                enabled = !uiState.isSaving,
-                singleLine = true
-            )
-
-            OutlinedButton(
-                onClick = {
-                    onOpenModelBrowser(
-                        ModelBrowserTarget.ASSISTANT,
-                        uiState.draft.aiModel.takeIf { it.isNotBlank() }
-                    )
-                },
-                enabled = !uiState.isSaving,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Browse assistant models")
-            }
-
-            OutlinedTextField(
-                value = uiState.draft.assistantMemoryModel,
-                onValueChange = onAssistantMemoryModelChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Assistant memory model") },
-                supportingText = { Text("Optional. Used for future memory summarization/compaction passes.") },
-                enabled = !uiState.isSaving,
-                singleLine = true
-            )
-
-            OutlinedButton(
-                onClick = {
-                    onOpenModelBrowser(
-                        ModelBrowserTarget.MEMORY,
-                        uiState.draft.assistantMemoryModel.takeIf { it.isNotBlank() }
-                    )
-                },
-                enabled = !uiState.isSaving,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Browse memory models")
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Checkbox(
-                    checked = uiState.draft.assistantMemoryEnabled,
-                    onCheckedChange = { value -> onAssistantMemoryEnabledChanged(value) },
-                    enabled = !uiState.isSaving
-                )
-                Text(
-                    text = "Enable assistant memory",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-            )
-
-            Text(
-                text = "Appearance",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                AppThemePreference.entries.forEach { preference ->
-                    FilterChip(
-                        selected = uiState.draft.themePreference == preference,
-                        onClick = { onThemePreferenceChanged(preference) },
-                        enabled = !uiState.isSaving,
-                        label = { Text(preference.toReadableLabel()) }
-                    )
-                }
-            }
-
-            Text(
-                text = "Regional defaults",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                RegionalPreferencesMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = uiState.draft.regionalPreferencesMode == mode,
-                        onClick = { onRegionalModeChanged(mode) },
-                        enabled = !uiState.isSaving,
-                        label = { Text(mode.toReadableLabel()) }
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Checkbox(
-                    checked = uiState.draft.notificationsEnabled,
-                    onCheckedChange = { value -> onNotificationsEnabledChanged(value) },
-                    enabled = !uiState.isSaving
-                )
-                Text(
-                    text = "Enable notifications",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            if (
-                uiState.draft.notificationsEnabled &&
-                !notificationPermissionStatus.canPostNotifications
-            ) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    if (
+                        notificationPermissionStatus.runtimePermissionRequired &&
+                        !notificationPermissionStatus.runtimePermissionGranted
                     ) {
-                        Text(
-                            text = "Reminder notifications need Android permission and app-level notification access.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-
-                        if (
-                            notificationPermissionStatus.runtimePermissionRequired &&
-                            !notificationPermissionStatus.runtimePermissionGranted
+                        OutlinedButton(
+                            onClick = onRequestNotificationPermission,
+                            enabled = !uiState.isSaving
                         ) {
-                            OutlinedButton(
-                                onClick = onRequestNotificationPermission,
-                                enabled = !uiState.isSaving
-                            ) {
-                                Text("Grant notification permission")
-                            }
+                            Text("Grant notification permission")
                         }
+                    }
 
-                        if (!notificationPermissionStatus.appNotificationsEnabled) {
-                            OutlinedButton(
-                                onClick = onOpenSystemNotificationSettings,
-                                enabled = !uiState.isSaving
-                            ) {
-                                Text("Open notification settings")
-                            }
+                    if (!notificationPermissionStatus.appNotificationsEnabled) {
+                        OutlinedButton(
+                            onClick = onOpenSystemNotificationSettings,
+                            enabled = !uiState.isSaving
+                        ) {
+                            Text("Open notification settings")
                         }
                     }
                 }
             }
+        }
 
-            OutlinedTextField(
-                value = uiState.draft.reminderHoursInput,
-                onValueChange = onReminderHoursChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Reminder hours") },
-                supportingText = {
-                    Text("Optional. Use 24h values like 8, 18.")
-                },
+        OutlinedTextField(
+            value = uiState.draft.reminderHoursInput,
+            onValueChange = onReminderHoursChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Reminder hours") },
+            supportingText = {
+                Text("Optional. Use 24h values like 8, 18.")
+            },
+            enabled = !uiState.isSaving
+        )
+    }
+
+    SettingsGroupCard(title = "Backup automation") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Checkbox(
+                checked = uiState.draft.backupSyncEnabled,
+                onCheckedChange = { value -> onBackupSyncEnabledChanged(value) },
                 enabled = !uiState.isSaving
             )
+            Text(
+                text = "Enable automatic backup sync",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
 
+        OutlinedTextField(
+            value = uiState.draft.backupSyncHourInput,
+            onValueChange = onBackupSyncHourChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Backup sync hour") },
+            supportingText = {
+                Text("Runs once per day at/after this local 24h hour (default 3).")
+            },
+            enabled = !uiState.isSaving
+        )
+
+        OutlinedTextField(
+            value = uiState.draft.backupS3Endpoint,
+            onValueChange = onBackupS3EndpointChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("S3 endpoint") },
+            supportingText = { Text("Example: https://s3.amazonaws.com") },
+            enabled = !uiState.isSaving,
+            singleLine = true
+        )
+
+        OutlinedTextField(
+            value = uiState.draft.backupS3Region,
+            onValueChange = onBackupS3RegionChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("S3 region") },
+            supportingText = { Text("Example: us-east-1") },
+            enabled = !uiState.isSaving,
+            singleLine = true
+        )
+
+        OutlinedTextField(
+            value = uiState.draft.backupS3Bucket,
+            onValueChange = onBackupS3BucketChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("S3 bucket") },
+            enabled = !uiState.isSaving,
+            singleLine = true
+        )
+
+        OutlinedTextField(
+            value = uiState.draft.backupS3ObjectKey,
+            onValueChange = onBackupS3ObjectKeyChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("S3 object key") },
+            supportingText = { Text("Example: aquapt/backups/latest.enc.json") },
+            enabled = !uiState.isSaving,
+            singleLine = true
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Checkbox(
+                checked = uiState.draft.backupS3ForcePathStyle,
+                onCheckedChange = { value -> onBackupS3ForcePathStyleChanged(value) },
+                enabled = !uiState.isSaving
+            )
+            Text(
+                text = "Force path-style S3 URLs",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Checkbox(
+                checked = uiState.draft.backupUseVersionedKeys,
+                onCheckedChange = { value -> onBackupUseVersionedKeysChanged(value) },
+                enabled = !uiState.isSaving
+            )
+            Text(
+                text = "Upload daily versioned backups",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        OutlinedTextField(
+            value = uiState.draft.backupRetentionDaysInput,
+            onValueChange = onBackupRetentionDaysChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Backup retention days") },
+            supportingText = { Text("Optional. Applies to versioned backups (1-3650).") },
+            enabled = !uiState.isSaving,
+            singleLine = true
+        )
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Secure backup credentials",
+                    style = MaterialTheme.typography.titleSmall
+                )
+
+                Text(
+                    text = "Master key: ${if (uiState.draft.backupMasterKeyConfigured) "Configured" else "Not configured"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Text(
+                    text = "S3 credentials: ${if (uiState.draft.backupS3CredentialsConfigured) "Configured" else "Not configured"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = uiState.draft.backupMasterKeyInput,
+                    onValueChange = onBackupMasterKeyInputChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Update backup master key") },
+                    supportingText = {
+                        Text("Leave blank to keep current key. Saves to encrypted device storage.")
+                    },
+                    enabled = !uiState.isSaving,
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation()
+                )
+
+                OutlinedTextField(
+                    value = uiState.draft.backupS3AccessKeyIdInput,
+                    onValueChange = onBackupS3AccessKeyIdInputChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Update S3 access key ID") },
+                    supportingText = { Text("Leave blank to keep current credentials.") },
+                    enabled = !uiState.isSaving,
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = uiState.draft.backupS3SecretAccessKeyInput,
+                    onValueChange = onBackupS3SecretAccessKeyInputChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Update S3 secret access key") },
+                    supportingText = { Text("Provide together with access key ID.") },
+                    enabled = !uiState.isSaving,
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onClearBackupMasterKey,
+                        enabled = !uiState.isSaving
+                    ) {
+                        Text("Clear master key")
+                    }
+
+                    OutlinedButton(
+                        onClick = onClearBackupS3Credentials,
+                        enabled = !uiState.isSaving
+                    ) {
+                        Text("Clear S3 credentials")
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = "Last auto-sync date: ${uiState.draft.backupLastAutoSyncDate.ifBlank { "Never" }}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Text(
+            text = "Last successful sync: ${uiState.draft.backupLastSyncedAt.ifBlank { "Never" }}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        if (uiState.draft.backupLastError.isNotBlank()) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Text(
+                    text = uiState.draft.backupLastError,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+    }
+
+    SettingsRegionalConfigGroup(
+        uiState = uiState,
+        onRegionalModeChanged = onRegionalModeChanged,
+        onDefaultLocaleChanged = onDefaultLocaleChanged,
+        onDefaultTimezoneChanged = onDefaultTimezoneChanged,
+        onDefaultCountryCodeChanged = onDefaultCountryCodeChanged,
+        onDefaultCountryNameChanged = onDefaultCountryNameChanged,
+        onDefaultCurrencyChanged = onDefaultCurrencyChanged,
+        onRegionalConversionAmountChanged = onRegionalConversionAmountChanged,
+        onRegionalConversionBaseCurrencyChanged = onRegionalConversionBaseCurrencyChanged,
+        onRefreshRegionalConversionPreview = onRefreshRegionalConversionPreview
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Button(
+            onClick = onSave,
+            enabled = !uiState.isLoading && !uiState.isSaving,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("Save preferences")
+        }
+
+        OutlinedButton(
+            onClick = onReset,
+            enabled = !uiState.isLoading && !uiState.isSaving,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("Reset")
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SettingsRegionalConfigGroup(
+    uiState: SettingsPreferencesUiState,
+    onRegionalModeChanged: (RegionalPreferencesMode) -> Unit,
+    onDefaultLocaleChanged: (String) -> Unit,
+    onDefaultTimezoneChanged: (String) -> Unit,
+    onDefaultCountryCodeChanged: (String) -> Unit,
+    onDefaultCountryNameChanged: (String) -> Unit,
+    onDefaultCurrencyChanged: (String) -> Unit,
+    onRegionalConversionAmountChanged: (String) -> Unit,
+    onRegionalConversionBaseCurrencyChanged: (String) -> Unit,
+    onRefreshRegionalConversionPreview: () -> Unit
+) {
+    SettingsGroupCard(title = "Regional configuration") {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            RegionalPreferencesMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = uiState.draft.regionalPreferencesMode == mode,
+                    onClick = { onRegionalModeChanged(mode) },
+                    enabled = !uiState.isSaving,
+                    label = { Text(mode.toReadableLabel()) }
+                )
+            }
+        }
+
+        if (uiState.draft.regionalPreferencesMode == RegionalPreferencesMode.MANUAL) {
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
             )
 
             Text(
-                text = "Backup automation",
-                style = MaterialTheme.typography.titleMedium,
+                text = "Manual configuration",
+                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Checkbox(
-                    checked = uiState.draft.backupSyncEnabled,
-                    onCheckedChange = { value -> onBackupSyncEnabledChanged(value) },
-                    enabled = !uiState.isSaving
-                )
-                Text(
-                    text = "Enable automatic backup sync",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
+            var showCountryPicker by remember { mutableStateOf(false) }
+            var showDefaultCurrencyPicker by remember { mutableStateOf(false) }
+            var showBaseCurrencyPicker by remember { mutableStateOf(false) }
 
             OutlinedTextField(
-                value = uiState.draft.backupSyncHourInput,
-                onValueChange = onBackupSyncHourChanged,
+                value = uiState.draft.defaultLocale,
+                onValueChange = onDefaultLocaleChanged,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Backup sync hour") },
-                supportingText = {
-                    Text("Runs once per day at/after this local 24h hour (default 3).")
-                },
+                label = { Text("Default locale") },
+                supportingText = { Text("Example: en-US") },
                 enabled = !uiState.isSaving
             )
 
             OutlinedTextField(
-                value = uiState.draft.backupS3Endpoint,
-                onValueChange = onBackupS3EndpointChanged,
+                value = uiState.draft.defaultTimezone,
+                onValueChange = onDefaultTimezoneChanged,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("S3 endpoint") },
-                supportingText = { Text("Example: https://s3.amazonaws.com") },
-                enabled = !uiState.isSaving,
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = uiState.draft.backupS3Region,
-                onValueChange = onBackupS3RegionChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("S3 region") },
-                supportingText = { Text("Example: us-east-1") },
-                enabled = !uiState.isSaving,
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = uiState.draft.backupS3Bucket,
-                onValueChange = onBackupS3BucketChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("S3 bucket") },
-                enabled = !uiState.isSaving,
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = uiState.draft.backupS3ObjectKey,
-                onValueChange = onBackupS3ObjectKeyChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("S3 object key") },
-                supportingText = { Text("Example: aquapt/backups/latest.enc.json") },
-                enabled = !uiState.isSaving,
-                singleLine = true
+                label = { Text("Default timezone") },
+                supportingText = { Text("Example: America/New_York") },
+                enabled = !uiState.isSaving
             )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Checkbox(
-                    checked = uiState.draft.backupS3ForcePathStyle,
-                    onCheckedChange = { value -> onBackupS3ForcePathStyleChanged(value) },
+                OutlinedButton(
+                    onClick = { showCountryPicker = true },
                     enabled = !uiState.isSaving
-                )
-                Text(
-                    text = "Force path-style S3 URLs",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
+                ) {
+                    Text("Pick country")
+                }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Checkbox(
-                    checked = uiState.draft.backupUseVersionedKeys,
-                    onCheckedChange = { value -> onBackupUseVersionedKeysChanged(value) },
+                OutlinedButton(
+                    onClick = { showDefaultCurrencyPicker = true },
                     enabled = !uiState.isSaving
-                )
-                Text(
-                    text = "Upload daily versioned backups",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                ) {
+                    Text("Pick currency")
+                }
             }
 
             OutlinedTextField(
-                value = uiState.draft.backupRetentionDaysInput,
-                onValueChange = onBackupRetentionDaysChanged,
+                value = uiState.draft.defaultCountryCode,
+                onValueChange = onDefaultCountryCodeChanged,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Backup retention days") },
-                supportingText = { Text("Optional. Applies to versioned backups (1-3650).") },
-                enabled = !uiState.isSaving,
-                singleLine = true
+                label = { Text("Country code") },
+                supportingText = { Text("Example: US") },
+                enabled = !uiState.isSaving
+            )
+
+            OutlinedTextField(
+                value = uiState.draft.defaultCountryName,
+                onValueChange = onDefaultCountryNameChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Country name") },
+                supportingText = { Text("Example: United States") },
+                enabled = !uiState.isSaving
+            )
+
+            OutlinedTextField(
+                value = uiState.draft.defaultCurrency,
+                onValueChange = onDefaultCurrencyChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Currency") },
+                supportingText = { Text("Example: USD") },
+                enabled = !uiState.isSaving
             )
 
             Card(
@@ -1487,54 +1714,34 @@ private fun SettingsPreferencesSection(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Secure backup credentials",
+                        text = "Live currency preview",
                         style = MaterialTheme.typography.titleSmall
                     )
 
                     Text(
-                        text = "Master key: ${if (uiState.draft.backupMasterKeyConfigured) "Configured" else "Not configured"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Text(
-                        text = "S3 credentials: ${if (uiState.draft.backupS3CredentialsConfigured) "Configured" else "Not configured"}",
+                        text = "Preview conversion into ${uiState.draft.defaultCurrency.ifBlank { "the selected target currency" }}.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     OutlinedTextField(
-                        value = uiState.draft.backupMasterKeyInput,
-                        onValueChange = onBackupMasterKeyInputChanged,
+                        value = uiState.regionalConversionAmountInput,
+                        onValueChange = onRegionalConversionAmountChanged,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Update backup master key") },
-                        supportingText = {
-                            Text("Leave blank to keep current key. Saves to encrypted device storage.")
-                        },
-                        enabled = !uiState.isSaving,
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.draft.backupS3AccessKeyIdInput,
-                        onValueChange = onBackupS3AccessKeyIdInputChanged,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Update S3 access key ID") },
-                        supportingText = { Text("Leave blank to keep current credentials.") },
+                        label = { Text("Preview amount") },
+                        supportingText = { Text("Use a non-negative numeric value.") },
                         enabled = !uiState.isSaving,
                         singleLine = true
                     )
 
                     OutlinedTextField(
-                        value = uiState.draft.backupS3SecretAccessKeyInput,
-                        onValueChange = onBackupS3SecretAccessKeyInputChanged,
+                        value = uiState.regionalConversionBaseCurrency,
+                        onValueChange = onRegionalConversionBaseCurrencyChanged,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Update S3 secret access key") },
-                        supportingText = { Text("Provide together with access key ID.") },
+                        label = { Text("Base currency") },
+                        supportingText = { Text("Example: USD") },
                         enabled = !uiState.isSaving,
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
+                        singleLine = true
                     )
 
                     Row(
@@ -1542,281 +1749,84 @@ private fun SettingsPreferencesSection(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
-                            onClick = onClearBackupMasterKey,
+                            onClick = { showBaseCurrencyPicker = true },
                             enabled = !uiState.isSaving
                         ) {
-                            Text("Clear master key")
+                            Text("Pick base currency")
                         }
 
-                        OutlinedButton(
-                            onClick = onClearBackupS3Credentials,
-                            enabled = !uiState.isSaving
+                        Button(
+                            onClick = onRefreshRegionalConversionPreview,
+                            enabled =
+                                !uiState.isSaving &&
+                                    !uiState.isRegionalConversionLoading
                         ) {
-                            Text("Clear S3 credentials")
+                            Text(
+                                if (uiState.isRegionalConversionLoading) {
+                                    "Refreshing..."
+                                } else {
+                                    "Refresh preview"
+                                }
+                            )
                         }
                     }
-                }
-            }
 
-            Text(
-                text = "Last auto-sync date: ${uiState.draft.backupLastAutoSyncDate.ifBlank { "Never" }}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Text(
-                text = "Last successful sync: ${uiState.draft.backupLastSyncedAt.ifBlank { "Never" }}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (uiState.draft.backupLastError.isNotBlank()) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Text(
-                        text = uiState.draft.backupLastError,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                }
-            }
-
-            if (uiState.draft.regionalPreferencesMode == RegionalPreferencesMode.MANUAL) {
-                var showCountryPicker by remember { mutableStateOf(false) }
-                var showDefaultCurrencyPicker by remember { mutableStateOf(false) }
-                var showBaseCurrencyPicker by remember { mutableStateOf(false) }
-
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-                )
-
-                Text(
-                    text = "Manual regional configuration",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                OutlinedTextField(
-                    value = uiState.draft.defaultLocale,
-                    onValueChange = onDefaultLocaleChanged,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Default locale") },
-                    supportingText = { Text("Example: en-US") },
-                    enabled = !uiState.isSaving
-                )
-
-                OutlinedTextField(
-                    value = uiState.draft.defaultTimezone,
-                    onValueChange = onDefaultTimezoneChanged,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Default timezone") },
-                    supportingText = { Text("Example: America/New_York") },
-                    enabled = !uiState.isSaving
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { showCountryPicker = true },
-                        enabled = !uiState.isSaving
-                    ) {
-                        Text("Pick country")
-                    }
-
-                    OutlinedButton(
-                        onClick = { showDefaultCurrencyPicker = true },
-                        enabled = !uiState.isSaving
-                    ) {
-                        Text("Pick currency")
-                    }
-                }
-
-                OutlinedTextField(
-                    value = uiState.draft.defaultCountryCode,
-                    onValueChange = onDefaultCountryCodeChanged,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Country code") },
-                    supportingText = { Text("Example: US") },
-                    enabled = !uiState.isSaving
-                )
-
-                OutlinedTextField(
-                    value = uiState.draft.defaultCountryName,
-                    onValueChange = onDefaultCountryNameChanged,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Country name") },
-                    supportingText = { Text("Example: United States") },
-                    enabled = !uiState.isSaving
-                )
-
-                OutlinedTextField(
-                    value = uiState.draft.defaultCurrency,
-                    onValueChange = onDefaultCurrencyChanged,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Currency") },
-                    supportingText = { Text("Example: USD") },
-                    enabled = !uiState.isSaving
-                )
-
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    if (uiState.regionalConversionPreviewLabel.isNotBlank()) {
                         Text(
-                            text = "Live currency preview",
-                            style = MaterialTheme.typography.titleSmall
+                            text = uiState.regionalConversionPreviewLabel,
+                            style = MaterialTheme.typography.bodyMedium
                         )
+                    }
 
+                    uiState.regionalConversionErrorMessage?.takeIf { message ->
+                        message.isNotBlank()
+                    }?.let { message ->
                         Text(
-                            text = "Preview conversion into ${uiState.draft.defaultCurrency.ifBlank { "the selected target currency" }}.",
+                            text = message,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.error
                         )
-
-                        OutlinedTextField(
-                            value = uiState.regionalConversionAmountInput,
-                            onValueChange = onRegionalConversionAmountChanged,
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Preview amount") },
-                            supportingText = { Text("Use a non-negative numeric value.") },
-                            enabled = !uiState.isSaving,
-                            singleLine = true
-                        )
-
-                        OutlinedTextField(
-                            value = uiState.regionalConversionBaseCurrency,
-                            onValueChange = onRegionalConversionBaseCurrencyChanged,
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Base currency") },
-                            supportingText = { Text("Example: USD") },
-                            enabled = !uiState.isSaving,
-                            singleLine = true
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { showBaseCurrencyPicker = true },
-                                enabled = !uiState.isSaving
-                            ) {
-                                Text("Pick base currency")
-                            }
-
-                            Button(
-                                onClick = onRefreshRegionalConversionPreview,
-                                enabled =
-                                    !uiState.isSaving &&
-                                        !uiState.isRegionalConversionLoading
-                            ) {
-                                Text(
-                                    if (uiState.isRegionalConversionLoading) {
-                                        "Refreshing..."
-                                    } else {
-                                        "Refresh preview"
-                                    }
-                                )
-                            }
-                        }
-
-                        if (uiState.regionalConversionPreviewLabel.isNotBlank()) {
-                            Text(
-                                text = uiState.regionalConversionPreviewLabel,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-
-                        uiState.regionalConversionErrorMessage?.takeIf { message ->
-                            message.isNotBlank()
-                        }?.let { message ->
-                            Text(
-                                text = message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
                     }
-                }
-
-                if (showCountryPicker) {
-                    CountryPickerDialog(
-                        selectedCountryCode = uiState.draft.defaultCountryCode,
-                        onDismiss = { showCountryPicker = false },
-                        onSelectCountry = { option ->
-                            onDefaultCountryCodeChanged(option.code)
-                            onDefaultCountryNameChanged(option.name)
-                            if (uiState.draft.defaultCurrency.isBlank()) {
-                                onDefaultCurrencyChanged(option.currency)
-                            }
-                            showCountryPicker = false
-                        }
-                    )
-                }
-
-                if (showDefaultCurrencyPicker) {
-                    CurrencyPickerDialog(
-                        title = "Pick default currency",
-                        selectedCurrency = uiState.draft.defaultCurrency,
-                        onDismiss = { showDefaultCurrencyPicker = false },
-                        onSelectCurrency = { currency ->
-                            onDefaultCurrencyChanged(currency)
-                            showDefaultCurrencyPicker = false
-                        }
-                    )
-                }
-
-                if (showBaseCurrencyPicker) {
-                    CurrencyPickerDialog(
-                        title = "Pick base currency",
-                        selectedCurrency = uiState.regionalConversionBaseCurrency,
-                        onDismiss = { showBaseCurrencyPicker = false },
-                        onSelectCurrency = { currency ->
-                            onRegionalConversionBaseCurrencyChanged(currency)
-                            showBaseCurrencyPicker = false
-                        }
-                    )
                 }
             }
 
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-            )
+            if (showCountryPicker) {
+                CountryPickerDialog(
+                    selectedCountryCode = uiState.draft.defaultCountryCode,
+                    onDismiss = { showCountryPicker = false },
+                    onSelectCountry = { option ->
+                        onDefaultCountryCodeChanged(option.code)
+                        onDefaultCountryNameChanged(option.name)
+                        if (uiState.draft.defaultCurrency.isBlank()) {
+                            onDefaultCurrencyChanged(option.currency)
+                        }
+                        showCountryPicker = false
+                    }
+                )
+            }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = onSave,
-                    enabled = !uiState.isLoading && !uiState.isSaving,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Save preferences")
-                }
+            if (showDefaultCurrencyPicker) {
+                CurrencyPickerDialog(
+                    title = "Pick default currency",
+                    selectedCurrency = uiState.draft.defaultCurrency,
+                    onDismiss = { showDefaultCurrencyPicker = false },
+                    onSelectCurrency = { currency ->
+                        onDefaultCurrencyChanged(currency)
+                        showDefaultCurrencyPicker = false
+                    }
+                )
+            }
 
-                OutlinedButton(
-                    onClick = onReset,
-                    enabled = !uiState.isLoading && !uiState.isSaving,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Reset")
-                }
+            if (showBaseCurrencyPicker) {
+                CurrencyPickerDialog(
+                    title = "Pick base currency",
+                    selectedCurrency = uiState.regionalConversionBaseCurrency,
+                    onDismiss = { showBaseCurrencyPicker = false },
+                    onSelectCurrency = { currency ->
+                        onRegionalConversionBaseCurrencyChanged(currency)
+                        showBaseCurrencyPicker = false
+                    }
+                )
             }
         }
     }
@@ -1838,8 +1848,8 @@ private fun CoreSettingsHeroCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = NeoHeroContainer,
-            contentColor = NeoHeroOnContainer
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         )
     ) {
         Column(
@@ -1852,12 +1862,12 @@ private fun CoreSettingsHeroCard(
                 text = "Core settings",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = NeoHeroOnContainer
+                color = MaterialTheme.colorScheme.onPrimaryContainer
             )
             Text(
                 text = "Tune app preferences, backup strategy, and reminders with one cohesive control center.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = NeoHeroOnContainer.copy(alpha = 0.76f)
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
             )
 
             FlowRow(
@@ -1889,7 +1899,7 @@ private fun CoreSettingsToolsCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {

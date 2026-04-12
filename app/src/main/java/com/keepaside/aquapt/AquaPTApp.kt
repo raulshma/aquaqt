@@ -1,6 +1,5 @@
 package com.keepaside.aquapt
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +13,6 @@ import androidx.compose.material.icons.rounded.Assistant
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.Timeline
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,6 +22,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -42,8 +42,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import com.keepaside.aquapt.core.model.EntityKind
 import com.keepaside.aquapt.feature.assistant.AssistantScreen
 import com.keepaside.aquapt.feature.entity.EntityDetailScreen
@@ -219,102 +217,92 @@ fun AquaPTApp(
         onExternalRouteConsumed(pendingRoute)
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.26f),
-                        MaterialTheme.colorScheme.background
-                    )
-                )
-            )
-    ) {
-        Scaffold(
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onBackground,
-            topBar = {
-                CenterAlignedTopAppBar(
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    title = {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                title = {
+                    Column {
+                        Text(
+                            text = topBarTitleForRoute(currentRoute),
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        topBarSubtitleForRoute(currentRoute)?.let { subtitle ->
                             Text(
-                                text = topBarTitleForRoute(currentRoute),
-                                style = MaterialTheme.typography.titleLarge
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            topBarSubtitleForRoute(currentRoute)?.let { subtitle ->
-                                Text(
-                                    text = subtitle,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    },
-                    actions = {
-                        if (currentRoute != AquaPTRoute.Insights) {
-                            IconButton(
-                                onClick = {
-                                    navController.navigate(AquaPTRoute.Insights) {
-                                        launchSingleTop = true
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Analytics,
-                                    contentDescription = "Open global insights"
-                                )
-                            }
                         }
                     }
-                )
-            },
-            bottomBar = {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                ) {
-                    topLevelDestinations.forEach { destination ->
-                        NavigationBarItem(
-                            selected = currentDestination.isOnRoute(destination.route),
+                },
+                actions = {
+                    if (currentRoute != AquaPTRoute.Insights) {
+                        IconButton(
                             onClick = {
-                                navController.navigate(destination.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
+                                navController.navigate(AquaPTRoute.Insights) {
                                     launchSingleTop = true
-                                    restoreState = true
                                 }
-                            },
-                            label = { Text(destination.label) },
-                            icon = destination.icon,
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                indicatorColor = MaterialTheme.colorScheme.primary,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Analytics,
+                                contentDescription = "Open global insights"
                             )
-                        )
+                        }
                     }
                 }
-            }
-        ) { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = AquaPTRoute.Tanks,
-                modifier = Modifier.padding(innerPadding)
+            )
+        },
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
             ) {
+                topLevelDestinations.forEach { destination ->
+                    NavigationBarItem(
+                        selected = currentDestination.isOnRoute(destination.route),
+                        onClick = {
+                            navController.navigate(destination.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        label = {
+                            Text(
+                                text = destination.label,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        },
+                        icon = destination.icon,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+            }
+        }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = AquaPTRoute.Tanks,
+            modifier = Modifier.padding(innerPadding)
+        ) {
             composable(AquaPTRoute.Tanks) {
                 TanksDashboardScreen()
             }
@@ -549,7 +537,6 @@ fun AquaPTApp(
                     }
                 )
             }
-            }
         }
     }
 }
@@ -560,15 +547,15 @@ private fun topBarTitleForRoute(route: String?): String = when {
     route == AquaPTRoute.Timeline -> "Timeline"
     route == AquaPTRoute.Assistant -> "Assistant"
     route == AquaPTRoute.Settings -> "Settings"
-    route == AquaPTRoute.SettingsCore -> "Core settings"
+    route == AquaPTRoute.SettingsCore -> "Settings"
     route == AquaPTRoute.Livestock -> "Livestock"
-    route == AquaPTRoute.Insights -> "Global insights"
-    route == AquaPTRoute.Workflows -> "AI workflows"
-    route == AquaPTRoute.MemoryTools -> "Assistant memory"
-    route?.startsWith(AquaPTRoute.ModelBrowser) == true -> "Browse models"
-    route?.startsWith(AquaPTRoute.EntityForm) == true -> "New activity"
-    route?.startsWith(AquaPTRoute.EntityEdit) == true -> "Edit activity"
-    route?.startsWith(AquaPTRoute.Entity) == true -> "Entity details"
+    route == AquaPTRoute.Insights -> "Insights"
+    route == AquaPTRoute.Workflows -> "AI Workflows"
+    route == AquaPTRoute.MemoryTools -> "Memory"
+    route?.startsWith(AquaPTRoute.ModelBrowser) == true -> "Browse Models"
+    route?.startsWith(AquaPTRoute.EntityForm) == true -> "New Activity"
+    route?.startsWith(AquaPTRoute.EntityEdit) == true -> "Edit"
+    route?.startsWith(AquaPTRoute.Entity) == true -> "Details"
     else -> "AquaPT"
 }
 

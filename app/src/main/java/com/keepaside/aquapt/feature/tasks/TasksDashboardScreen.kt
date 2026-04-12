@@ -54,8 +54,6 @@ import com.keepaside.aquapt.core.repository.DosingLogRepository
 import com.keepaside.aquapt.core.repository.ReminderGroupRepository
 import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
-import com.keepaside.aquapt.ui.theme.NeoHeroContainer
-import com.keepaside.aquapt.ui.theme.NeoHeroOnContainer
 import org.koin.java.KoinJavaComponent
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -128,8 +126,8 @@ fun TasksDashboardScreen(
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = NeoHeroContainer,
-                        contentColor = NeoHeroOnContainer
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     ),
                     shape = MaterialTheme.shapes.large,
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -143,12 +141,12 @@ fun TasksDashboardScreen(
                         Text(
                             text = "Tasks overview",
                             style = MaterialTheme.typography.titleMedium,
-                            color = NeoHeroOnContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
                             text = uiState.headline,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = NeoHeroOnContainer.copy(alpha = 0.78f)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
 
                         Row(
@@ -185,7 +183,7 @@ fun TasksDashboardScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -218,7 +216,7 @@ fun TasksDashboardScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -289,7 +287,7 @@ fun TasksDashboardScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -330,7 +328,7 @@ fun TasksDashboardScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -486,7 +484,7 @@ private fun TaskTemplateManagementCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)

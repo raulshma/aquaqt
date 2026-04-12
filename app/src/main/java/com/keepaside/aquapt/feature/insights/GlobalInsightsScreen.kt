@@ -3,8 +3,9 @@ package com.keepaside.aquapt.feature.insights
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,9 +13,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -32,11 +34,12 @@ import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
 import org.koin.java.KoinJavaComponent
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GlobalInsightsScreen(
     onBackToDashboard: () -> Unit,
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(16.dp)
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp)
 ) {
     val aquariumRepository: AquariumRepository = remember {
         KoinJavaComponent.get(AquariumRepository::class.java)
@@ -80,72 +83,47 @@ fun GlobalInsightsScreen(
             .padding(contentPadding)
     ) {
         if (uiState.isLoading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             return@Box
         }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 8.dp)
         ) {
             item {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                ElevatedCard(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Global insights",
+                            text = "Portfolio overview",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = "Quick portfolio health across all tanks, using the same dashboard language.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             text = uiState.headline,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontWeight = FontWeight.SemiBold
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            InsightMetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Tanks",
-                                value = uiState.summary.aquariumCount.toString()
-                            )
-                            InsightMetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Due tasks",
-                                value = uiState.summary.dueTaskCount.toString()
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            InsightMetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Active issues",
-                                value = uiState.summary.activeIssueCount.toString()
-                            )
-                            InsightMetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Safety alerts",
-                                value = uiState.summary.safetyAlertCount.toString()
-                            )
+                            InsightMetricPill(title = "Tanks", value = uiState.summary.aquariumCount.toString())
+                            InsightMetricPill(title = "Due tasks", value = uiState.summary.dueTaskCount.toString())
+                            InsightMetricPill(title = "Active issues", value = uiState.summary.activeIssueCount.toString())
+                            InsightMetricPill(title = "Safety alerts", value = uiState.summary.safetyAlertCount.toString())
                         }
                     }
                 }
@@ -153,8 +131,9 @@ fun GlobalInsightsScreen(
 
             item {
                 Card(
+                    shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 ) {
                     Column(
@@ -185,21 +164,24 @@ fun GlobalInsightsScreen(
 
             if (uiState.isEmpty) {
                 item {
-                    Card {
+                    ElevatedCard(
+                        shape = MaterialTheme.shapes.large
+                    ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                                .padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "No tanks in this portfolio yet.",
+                                text = "No tanks yet",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 text = "Import a backup from Settings or create your first tank to unlock portfolio recommendations.",
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -211,12 +193,15 @@ fun GlobalInsightsScreen(
                     Text(
                         text = "Tank focus",
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
                     )
                 }
 
                 items(uiState.aquariumFocus, key = { it.aquariumId }) { focus ->
-                    Card {
+                    ElevatedCard(
+                        shape = MaterialTheme.shapes.large
+                    ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -230,7 +215,8 @@ fun GlobalInsightsScreen(
                             )
                             Text(
                                 text = "Due tasks ${focus.dueTaskCount} • Active issues ${focus.activeIssueCount} • Safety alerts ${focus.safetyAlertCount}",
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -250,20 +236,18 @@ fun GlobalInsightsScreen(
 }
 
 @Composable
-private fun InsightMetricCard(
+private fun InsightMetricPill(
     title: String,
-    value: String,
-    modifier: Modifier = Modifier
+    value: String
 ) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
             Text(
                 text = title,

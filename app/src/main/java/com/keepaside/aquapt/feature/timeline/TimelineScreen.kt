@@ -60,8 +60,7 @@ import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
 import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
-import com.keepaside.aquapt.ui.theme.NeoHeroContainer
-import com.keepaside.aquapt.ui.theme.NeoHeroOnContainer
+
 import org.koin.java.KoinJavaComponent
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -177,8 +176,8 @@ fun TimelineScreen(
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = NeoHeroContainer,
-                        contentColor = NeoHeroOnContainer
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     ),
                     shape = MaterialTheme.shapes.large,
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -192,12 +191,12 @@ fun TimelineScreen(
                         Text(
                             text = "Activity timeline",
                             style = MaterialTheme.typography.titleMedium,
-                            color = NeoHeroOnContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
                             text = uiState.headline,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = NeoHeroOnContainer.copy(alpha = 0.78f)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
 
                         Row(
@@ -251,7 +250,7 @@ fun TimelineScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -274,7 +273,7 @@ fun TimelineScreen(
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -392,7 +391,7 @@ private fun TimelineFilters(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -454,7 +453,7 @@ private fun TimelineDayGroupCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)

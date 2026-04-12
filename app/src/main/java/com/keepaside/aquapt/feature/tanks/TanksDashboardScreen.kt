@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,10 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -23,6 +27,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
@@ -32,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -74,14 +80,15 @@ import com.keepaside.aquapt.core.repository.TaskExecutionRepository
 import com.keepaside.aquapt.core.repository.TaskTemplateRepository
 import com.keepaside.aquapt.core.repository.TimelineEventRepository
 import com.keepaside.aquapt.core.repository.WaterParameterLogRepository
-import com.keepaside.aquapt.ui.theme.NeoHeroContainer
-import com.keepaside.aquapt.ui.theme.NeoHeroOnContainer
+import com.keepaside.aquapt.ui.theme.AquaHeroOnSurface
+import com.keepaside.aquapt.ui.theme.AquaHeroSurface
 import org.koin.java.KoinJavaComponent
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TanksDashboardScreen(
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(16.dp)
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp)
 ) {
     val aquariumRepository: AquariumRepository = remember {
         KoinJavaComponent.get(AquariumRepository::class.java)
@@ -179,74 +186,44 @@ fun TanksDashboardScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 8.dp)
         ) {
             item {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = NeoHeroContainer,
-                        contentColor = NeoHeroOnContainer
+                ElevatedCard(
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     ),
-                    shape = MaterialTheme.shapes.large,
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    shape = MaterialTheme.shapes.large
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Text(
                             text = "Today at a glance",
                             style = MaterialTheme.typography.titleMedium,
-                            color = NeoHeroOnContainer
+                            fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             text = uiState.headline,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = NeoHeroOnContainer.copy(alpha = 0.78f)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            MetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Tanks",
-                                value = uiState.summary.aquariumCount.toString()
-                            )
-                            MetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Residents",
-                                value = uiState.summary.residentCount.toString()
-                            )
-                            MetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Due",
-                                value = uiState.summary.dueTaskCount.toString()
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            MetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Open issues",
-                                value = uiState.summary.openIssueCount.toString()
-                            )
-                            MetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Alerts",
-                                value = uiState.summary.parameterAlertCount.toString()
-                            )
-                            MetricCard(
-                                modifier = Modifier.weight(1f),
-                                title = "Dosing logs",
-                                value = uiState.summary.dosingLogCount.toString()
-                            )
+                            MetricPill(title = "Tanks", value = uiState.summary.aquariumCount.toString())
+                            MetricPill(title = "Residents", value = uiState.summary.residentCount.toString())
+                            MetricPill(title = "Due", value = uiState.summary.dueTaskCount.toString())
+                            MetricPill(title = "Issues", value = uiState.summary.openIssueCount.toString())
+                            MetricPill(title = "Alerts", value = uiState.summary.parameterAlertCount.toString())
+                            MetricPill(title = "Dosing", value = uiState.summary.dosingLogCount.toString())
                         }
                     }
                 }
@@ -274,194 +251,76 @@ fun TanksDashboardScreen(
 
             if (uiState.isEmpty) {
                 item {
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ElevatedCard(
+                        shape = MaterialTheme.shapes.large
                     ) {
-                        Text(
-                            text = "No aquariums yet. Import a backup in Settings or add your first tank with the quick action above.",
-                            modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "No aquariums yet",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Import a backup in Settings or add your first tank with the quick action above.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
 
             if (uiState.alerts.isNotEmpty()) {
                 item {
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Water alerts",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            uiState.alerts.take(5).forEach { alert ->
-                                Text(
-                                    text = "${alert.aquariumName}: ${alert.label} ${alert.status} at ${formatAlertValue(alert.value, alert.unit)}",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                        }
-                    }
+                    AlertSummaryCard(alerts = uiState.alerts)
                 }
             }
 
             if (uiState.dueTasks.isNotEmpty()) {
                 item {
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Due tasks",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            uiState.dueTasks.take(6).forEach { task ->
-                                Text(
-                                    text = "${task.taskTitle} • ${task.aquariumName}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
+                    DueTasksSummaryCard(tasks = uiState.dueTasks)
                 }
             }
 
-            item {
-                Text(
-                    text = "Aquariums",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
-                )
+            if (uiState.aquariums.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Your tanks",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                    )
+                }
             }
 
             items(uiState.aquariums, key = { it.aquariumId }) { aquarium ->
-                Card(
-                    shape = MaterialTheme.shapes.large,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = aquarium.aquariumName,
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                IconButton(
-                                    onClick = {
-                                        isEditingAquarium = true
-                                        editingAquariumId = aquarium.aquariumId
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = "Edit tank",
-                                        modifier = Modifier.padding(2.dp)
-                                    )
-                                }
-                                AssistChip(
-                                    onClick = {},
-                                    label = {
-                                        Text("${aquarium.volumeLiters.toInt()}L")
-                                    }
-                                )
-                            }
-                        }
-
-                        Text(
-                            text = "${aquarium.waterTypeLabel} • Setup ${aquarium.setupDate.ifBlank { "unknown" }}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Text(
-                            text = aquarium.latestParameterSummary,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Text(
-                                text = "Residents ${aquarium.residentCount}",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            Text(
-                                text = "Issues ${aquarium.openIssueCount}",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            Text(
-                                text = "Due ${aquarium.dueTaskCount}",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            Text(
-                                text = "Alerts ${aquarium.activeAlertCount}",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
-
-                        Text(
-                            text = "NO3 trend: ${aquarium.nitrateTrend}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                AquariumCard(
+                    aquarium = aquarium,
+                    onEdit = {
+                        isEditingAquarium = true
+                        editingAquariumId = aquarium.aquariumId
                     }
-                }
+                )
             }
 
             uiState.statusMessage?.let { message ->
                 item {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                        )
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        ),
+                        shape = MaterialTheme.shapes.large
                     ) {
                         Text(
                             text = message,
                             modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
@@ -530,8 +389,8 @@ fun TanksDashboardScreen(
                     viewModel.prepareQuickLog()
                     showQuickLog = true
                 },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(bottom = 16.dp, end = 16.dp)
@@ -565,6 +424,34 @@ fun TanksDashboardScreen(
 }
 
 @Composable
+private fun MetricPill(
+    title: String,
+    value: String
+) {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
 private fun QuickCreateActionsCard(
     hasAquariums: Boolean,
     onCreateAquarium: () -> Unit,
@@ -575,28 +462,27 @@ private fun QuickCreateActionsCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = NeoHeroContainer.copy(alpha = 0.92f),
-            contentColor = NeoHeroOnContainer
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = "Quick actions",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = NeoHeroOnContainer
-            )
-            Text(
-                text = "Create tanks, residents, equipment, and consumables without leaving the dashboard.",
-                style = MaterialTheme.typography.bodySmall,
-                color = NeoHeroOnContainer.copy(alpha = 0.76f)
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Quick actions",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Create tanks, residents, equipment, and consumables.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -604,10 +490,6 @@ private fun QuickCreateActionsCard(
             ) {
                 FilledTonalButton(
                     onClick = onCreateAquarium,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Add tank")
@@ -615,10 +497,6 @@ private fun QuickCreateActionsCard(
                 FilledTonalButton(
                     onClick = onCreateLivestock,
                     enabled = hasAquariums,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Add resident")
@@ -632,10 +510,6 @@ private fun QuickCreateActionsCard(
                 FilledTonalButton(
                     onClick = onCreateAsset,
                     enabled = hasAquariums,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Add asset")
@@ -643,16 +517,163 @@ private fun QuickCreateActionsCard(
                 FilledTonalButton(
                     onClick = onCreateConsumable,
                     enabled = hasAquariums,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Add consumable")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AlertSummaryCard(alerts: List<AquariumAlertItem>) {
+    ElevatedCard(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Water alerts",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            alerts.take(5).forEach { alert ->
+                Text(
+                    text = "${alert.aquariumName}: ${alert.label} ${alert.status} at ${formatAlertValue(alert.value, alert.unit)}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DueTasksSummaryCard(tasks: List<DueTaskItem>) {
+    ElevatedCard(
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Due tasks",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            tasks.take(6).forEach { task ->
+                Text(
+                    text = "${task.taskTitle} • ${task.aquariumName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AquariumCard(
+    aquarium: AquariumDashboardCard,
+    onEdit: () -> Unit
+) {
+    ElevatedCard(
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = aquarium.aquariumName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = onEdit) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit tank",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ) {
+                        Text(
+                            text = "${aquarium.volumeLiters.toInt()}L",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = "${aquarium.waterTypeLabel} • Setup ${aquarium.setupDate.ifBlank { "unknown" }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (aquarium.latestParameterSummary.isNotBlank()) {
+                Text(
+                    text = aquarium.latestParameterSummary,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                AquariumStatChip(label = "Residents", value = aquarium.residentCount.toString())
+                AquariumStatChip(label = "Issues", value = aquarium.openIssueCount.toString())
+                AquariumStatChip(label = "Due", value = aquarium.dueTaskCount.toString())
+                AquariumStatChip(label = "Alerts", value = aquarium.activeAlertCount.toString())
+            }
+
+            if (aquarium.nitrateTrend.isNotBlank()) {
+                Text(
+                    text = "NO3 trend: ${aquarium.nitrateTrend}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AquariumStatChip(label: String, value: String) {
+    Surface(
+        shape = MaterialTheme.shapes.extraSmall,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Text(
+            text = "$label $value",
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
     }
 }
 
@@ -1039,39 +1060,6 @@ private fun ConsumableDraftDialog(
     )
 }
 
-@Composable
-private fun MetricCard(
-    title: String,
-    value: String,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primary
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.72f)
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary
-            )
-        }
-    }
-}
-
 private fun formatAlertValue(value: Double, unit: String): String {
     val rendered = if (value == value.toInt().toDouble()) {
         value.toInt().toString()
@@ -1115,7 +1103,8 @@ private fun TanksQuickLogBottomSheet(
         ) {
             Text(
                 text = "Quick log",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
             )
 
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1286,20 +1275,19 @@ private fun ParameterAnalyticsCard(
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
                 text = "Parameter analytics",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = "Track recent chemistry shifts and compare trends across tanks.",
@@ -1310,9 +1298,8 @@ private fun ParameterAnalyticsCard(
             Card(
                 shape = MaterialTheme.shapes.medium,
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
             ) {
                 Column(
                     modifier = Modifier
@@ -1396,7 +1383,6 @@ private fun ParameterTrendChart(
 ) {
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)
-    val surfaceColor = MaterialTheme.colorScheme.surface
 
     val values = data.map { it.value }
     val minValue = values.minOrNull() ?: 0.0

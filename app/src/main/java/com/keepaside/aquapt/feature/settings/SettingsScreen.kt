@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Assistant
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,8 +39,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.keepaside.aquapt.core.model.AppThemePreference
 import com.keepaside.aquapt.core.repository.AppSettingsStore
-import com.keepaside.aquapt.ui.theme.NeoHeroContainer
-import com.keepaside.aquapt.ui.theme.NeoHeroOnContainer
 import org.koin.java.KoinJavaComponent
 
 private data class SettingsGroupUiModel(
@@ -61,7 +60,7 @@ fun SettingsScreen(
     onOpenWorkflows: () -> Unit = {},
     onOpenMemoryTools: () -> Unit = {},
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(24.dp)
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp)
 ) {
     val appSettingsStore: AppSettingsStore = remember {
         KoinJavaComponent.get(AppSettingsStore::class.java)
@@ -117,31 +116,31 @@ fun SettingsScreen(
             .fillMaxSize()
             .padding(contentPadding)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Card(
+        ElevatedCard(
             shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(
-                containerColor = NeoHeroContainer,
-                contentColor = NeoHeroOnContainer
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = "Take control",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = NeoHeroOnContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
                     text = "Your settings are split into focused groups. Open the section you need and tweak without the clutter.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = NeoHeroOnContainer.copy(alpha = 0.76f)
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                 )
 
                 FlowRow(
@@ -165,18 +164,19 @@ fun SettingsScreen(
         }
 
         groupedDestinations.forEach { group ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = group.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 6.dp)
+                    text = group.title.uppercase(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
                 )
 
                 Card(
                     shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 ) {
                     Column(
@@ -187,8 +187,8 @@ fun SettingsScreen(
 
                             if (index < group.items.lastIndex) {
                                 HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 18.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                 )
                             }
                         }
@@ -207,13 +207,13 @@ private fun SettingsDestinationRow(destination: SettingsDestinationUiModel) {
             .clickable(onClick = destination.onOpen)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Surface(
-            modifier = Modifier.size(42.dp),
-            shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            modifier = Modifier.size(44.dp),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -229,7 +229,8 @@ private fun SettingsDestinationRow(destination: SettingsDestinationUiModel) {
         ) {
             Text(
                 text = destination.title,
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium
             )
             Text(
                 text = destination.description,
@@ -241,7 +242,8 @@ private fun SettingsDestinationRow(destination: SettingsDestinationUiModel) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
             contentDescription = "Open ${destination.title}",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
         )
     }
 }
@@ -253,17 +255,17 @@ private fun SettingsStatusPill(
 ) {
     Surface(
         shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = value,

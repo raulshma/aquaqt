@@ -16,7 +16,7 @@ import com.keepaside.aquapt.core.model.AppThemePreference
 @Composable
 fun AquaPTTheme(
     themePreference: AppThemePreference = AppThemePreference.SYSTEM,
-    dynamicColor: Boolean = false,
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val darkTheme = when (themePreference) {
